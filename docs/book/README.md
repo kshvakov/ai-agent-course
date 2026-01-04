@@ -62,12 +62,14 @@
 |----------------|-------------------------------------|
 | [01. Физика LLM](./01-llm-fundamentals/README.md) | Lab 00 (Capability Check) |
 | [02. Промптинг](./02-prompt-engineering/README.md) | Lab 01 (Basics) |
+| [03. Анатомия Агента](./03-agent-architecture/README.md) | Lab 01 (Basics), Lab 09 (Context Optimization) |
 | [04. Инструменты](./04-tools-and-function-calling/README.md) | Lab 02 (Tools), Lab 03 (Architecture) |
 | [05. Автономность](./05-autonomy-and-loops/README.md) | Lab 04 (Autonomy) |
 | [06. Безопасность](./06-safety-and-hitl/README.md) | Lab 05 (Human-in-the-Loop) |
 | [02. Промптинг (SOP)](./02-prompt-engineering/README.md) | Lab 06 (Incident) |
 | [07. RAG](./07-rag/README.md) | Lab 07 (RAG) |
 | [08. Multi-Agent](./08-multi-agent/README.md) | Lab 08 (Multi-Agent) |
+| [03. Анатомия Агента (Оптимизация)](./03-agent-architecture/README.md) | Lab 09 (Context Optimization) |
 
 ---
 

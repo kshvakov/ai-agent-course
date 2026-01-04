@@ -36,7 +36,341 @@ messages := []ChatCompletionMessage{
 
 **Проблема:** Если история слишком длинная, она не влезает в контекстное окно.
 
-**Решение:** Обрезка истории (оставляем только последние N сообщений) или суммаризация старых сообщений.
+**Пример проблемы:**
+
+```go
+// Контекстное окно: 4k токенов
+// System Prompt: 200 токенов
+// История диалога: 4000 токенов
+// Новый запрос: 100 токенов
+// ИТОГО: 4300 токенов > 4000 ❌ ОШИБКА!
+```
+
+### Оптимизация контекста (Context Optimization)
+
+Когда контекст близок к исчерпанию, нужно применять техники оптимизации.
+
+#### Техника 1: Подсчет токенов и мониторинг
+
+**Первый шаг** — всегда знать, сколько токенов используется:
+
+```go
+func estimateTokens(text string) int {
+    // Примерная оценка: 1 токен ≈ 4 символа (для английского)
+    // Для русского: 1 токен ≈ 3 символа
+    // ВАЖНО: Это приблизительная оценка!
+    // Для точного подсчета используйте библиотеки:
+    // - tiktoken (Python) - официальная библиотека OpenAI
+    // - github.com/pkoukk/tiktoken-go (Go) - порт tiktoken
+    return len(text) / 4
+}
+
+// Точный подсчет с использованием библиотеки (рекомендуется)
+import "github.com/pkoukk/tiktoken-go"
+
+func countTokensAccurate(text string, model string) int {
+    enc, _ := tiktoken.EncodingForModel(model)  // "gpt-3.5-turbo"
+    tokens := enc.Encode(text, nil, nil)
+    return len(tokens)
+}
+
+func countTokensInMessages(messages []openai.ChatCompletionMessage) int {
+    total := 0
+    for _, msg := range messages {
+        total += estimateTokens(msg.Content)
+        // Tool calls тоже занимают токены (примерно 50-100 токенов на вызов)
+        if len(msg.ToolCalls) > 0 {
+            total += len(msg.ToolCalls) * 80
+        }
+    }
+    return total
+}
+
+// Проверка перед каждым запросом
+func checkContextLimit(messages []openai.ChatCompletionMessage, maxTokens int) bool {
+    used := countTokensInMessages(messages)
+    return used < maxTokens*0.9  // Оставляем 10% запаса
+}
+```
+
+#### Техника 2: Обрезка истории (Truncation)
+
+**Простое решение:** Оставляем только последние N сообщений.
+
+```go
+func truncateHistory(messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
+    // Всегда оставляем System Prompt
+    systemMsg := messages[0]
+    
+    // Обрабатываем сообщения с конца
+    result := []openai.ChatCompletionMessage{systemMsg}
+    currentTokens := estimateTokens(systemMsg.Content)
+    
+    // Идем с конца и добавляем сообщения, пока не достигнем лимита
+    for i := len(messages) - 1; i > 0; i-- {
+        msgTokens := estimateTokens(messages[i].Content)
+        if currentTokens + msgTokens > maxTokens {
+            break
+        }
+        result = append([]openai.ChatCompletionMessage{messages[i]}, result...)
+        currentTokens += msgTokens
+    }
+    
+    return result
+}
+```
+
+**Проблема обрезки:** Теряем важную информацию из начала разговора.
+
+#### Техника 3: Сжатие контекста (Summarization)
+
+**Лучшее решение:** Сжимаем старые сообщения через саммаризацию.
+
+**Как это работает:**
+
+```go
+func compressOldMessages(messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
+    // 1. Подсчитываем токены
+    totalTokens := countTokensInMessages(messages)
+    
+    if totalTokens < maxTokens {
+        return messages  // Все влезает, ничего не делаем
+    }
+    
+    // 2. Разделяем на "старые" и "новые" сообщения
+    systemMsg := messages[0]
+    oldMessages := messages[1 : len(messages)-10]  // Все кроме последних 10
+    recentMessages := messages[len(messages)-10:]  // Последние 10
+    
+    // 3. Сжимаем старые сообщения через LLM
+    summary := summarizeMessages(oldMessages)
+    
+    // 4. Собираем новый контекст
+    compressed := []openai.ChatCompletionMessage{
+        systemMsg,
+        {
+            Role:    "system",
+            Content: fmt.Sprintf("Summary of previous conversation:\n%s", summary),
+        },
+    }
+    compressed = append(compressed, recentMessages...)
+    
+    return compressed
+}
+
+func summarizeMessages(messages []openai.ChatCompletionMessage) string {
+    // Формируем промпт для саммаризации
+    conversation := ""
+    for _, msg := range messages {
+        conversation += fmt.Sprintf("%s: %s\n", msg.Role, msg.Content)
+    }
+    
+    summaryPrompt := fmt.Sprintf(`Summarize this conversation, keeping only:
+1. Important decisions made
+2. Key facts discovered
+3. Current state of the task
+
+Conversation:
+%s`, conversation)
+    
+    // Используем LLM для саммаризации (можно другую модель с меньшим контекстом)
+    resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+        Model: openai.GPT3Dot5Turbo,
+        Messages: []openai.ChatCompletionMessage{
+            {Role: "system", Content: "You are a conversation summarizer. Create concise summaries."},
+            {Role: "user", Content: summaryPrompt},
+        },
+        Temperature: 0,
+    })
+    
+    return resp.Choices[0].Message.Content
+}
+```
+
+**Пример саммаризации:**
+
+```
+Исходная история (2000 токенов):
+- User: "Проверь сервер"
+- Assistant: Вызвал check_status
+- Tool: "Server is ONLINE"
+- User: "Проверь базу"
+- Assistant: Вызвал check_db
+- Tool: "Database is healthy"
+- User: "Проверь логи"
+- Assistant: Вызвал read_logs
+- Tool: "No errors found"
+... (еще 50 сообщений)
+
+Сжатая версия (200 токенов):
+Summary: "User requested server, database, and log checks. All systems are healthy. 
+No errors found in logs. Current task: monitoring system status."
+```
+
+**Преимущества саммаризации:**
+- Сохраняем важную информацию
+- Экономим токены
+- Модель видит контекст задачи
+
+#### Техника 4: Sliding Window (Скользящее окно)
+
+**Компромисс:** Сохраняем начало (важные детали) и конец (текущий контекст), сжимаем середину.
+
+```go
+func slidingWindowCompression(messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
+    systemMsg := messages[0]
+    
+    // Сохраняем первые 5 сообщений (начало разговора)
+    startMessages := messages[1:6]
+    
+    // Сохраняем последние 10 сообщений (текущий контекст)
+    endMessages := messages[len(messages)-10:]
+    
+    // Сжимаем середину
+    middleMessages := messages[6 : len(messages)-10]
+    summary := summarizeMessages(middleMessages)
+    
+    // Собираем
+    result := []openai.ChatCompletionMessage{systemMsg}
+    result = append(result, startMessages...)
+    result = append(result, openai.ChatCompletionMessage{
+        Role:    "system",
+        Content: fmt.Sprintf("Summary of middle conversation:\n%s", summary),
+    })
+    result = append(result, endMessages...)
+    
+    return result
+}
+```
+
+#### Техника 5: Приоритизация сообщений
+
+**Умное решение:** Сохраняем важные сообщения, удаляем менее важные.
+
+```go
+func prioritizeMessages(messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
+    // Важные сообщения (всегда сохраняем):
+    // - System Prompt
+    // - Последний запрос пользователя
+    // - Результаты инструментов (они могут быть важны для следующего шага)
+    // - Сообщения с ошибками
+    
+    important := []openai.ChatCompletionMessage{messages[0]}  // System
+    
+    for i := 1; i < len(messages); i++ {
+        msg := messages[i]
+        
+        // Всегда сохраняем последние 5 сообщений
+        if i >= len(messages)-5 {
+            important = append(important, msg)
+            continue
+        }
+        
+        // Сохраняем результаты инструментов (они важны для контекста)
+        if msg.Role == "tool" {
+            important = append(important, msg)
+            continue
+        }
+        
+        // Сохраняем сообщения с ошибками
+        if strings.Contains(strings.ToLower(msg.Content), "error") {
+            important = append(important, msg)
+            continue
+        }
+        
+        // Остальные можно удалить или сжать
+    }
+    
+    // Если все еще не влезает - применяем саммаризацию
+    if countTokensInMessages(important) > maxTokens {
+        return compressOldMessages(important, maxTokens)
+    }
+    
+    return important
+}
+```
+
+#### Когда применять какую технику?
+
+| Ситуация | Техника | Когда использовать |
+|----------|---------|-------------------|
+| Контекст почти полон (80-90%) | Подсчет токенов + мониторинг | Всегда |
+| Простые задачи, неважна история | Обрезка (truncation) | Быстрые одноразовые задачи |
+| Длинные диалоги, важна история | Саммаризация | Долгие сессии, важна контекстная информация |
+| Нужен баланс | Sliding Window | Средние задачи, важно и начало, и конец |
+| Критичные результаты инструментов | Приоритизация | Когда результаты инструментов важны для следующих шагов |
+
+#### Практический пример: Адаптивное управление контекстом
+
+```go
+func adaptiveContextManagement(messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
+    usedTokens := countTokensInMessages(messages)
+    threshold80 := int(float64(maxTokens) * 0.8)
+    threshold90 := int(float64(maxTokens) * 0.9)
+    
+    if usedTokens < threshold80 {
+        // Все хорошо, ничего не делаем
+        return messages
+    } else if usedTokens < threshold90 {
+        // Применяем легкую оптимизацию: приоритизация
+        return prioritizeMessages(messages, maxTokens)
+    } else {
+        // Критично! Применяем саммаризацию
+        return compressOldMessages(messages, maxTokens)
+    }
+}
+
+// Использование в цикле агента
+for i := 0; i < maxIterations; i++ {
+    // Перед каждым запросом проверяем и оптимизируем контекст
+    messages = adaptiveContextManagement(messages, maxContextTokens)
+    
+    resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+        Model:    openai.GPT3Dot5Turbo,
+        Messages: messages,
+        Tools:    tools,
+    })
+    
+    // ... остальной код
+}
+```
+
+#### Примеры оптимизации в разных доменах
+
+**DevOps:**
+```go
+// Важно сохранить:
+// - Результаты проверок (check_status, check_logs)
+// - Ошибки и их решения
+// - Текущее состояние системы
+
+// Можно сжать:
+// - Повторяющиеся проверки статуса
+// - Успешные операции без ошибок
+```
+
+**Support:**
+```go
+// Важно сохранить:
+// - Детали тикета
+// - Решения из базы знаний
+// - Текущий статус проблемы
+
+// Можно сжать:
+// - Вежливые фразы
+// - Повторяющиеся вопросы
+```
+
+**Data Analytics:**
+```go
+// Важно сохранить:
+// - Схемы таблиц (describe_table результаты)
+// - SQL запросы и их результаты
+// - Выводы анализа
+
+// Можно сжать:
+// - Промежуточные проверки качества данных
+```
 
 ### Long-term Memory (Долгосрочная память)
 
@@ -676,6 +1010,8 @@ if lastNActionsAreSame(history, 3) {
 ## Чек-лист: Архитектура агента
 
 - [ ] Short-term memory (история сообщений) управляется
+- [ ] Реализован подсчет токенов и мониторинг контекста
+- [ ] Применяется оптимизация контекста (саммаризация/приоритизация)
 - [ ] Long-term memory (RAG) настроена (если нужно)
 - [ ] Planning (ReAct/Plan-and-Solve) реализован
 - [ ] Runtime корректно парсит ответы LLM
