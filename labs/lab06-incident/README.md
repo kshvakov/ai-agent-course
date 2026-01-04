@@ -96,5 +96,3 @@ SOP для падения сервиса:
 - Агент должен **следовать SOP строго**, а не гадать
 - Агент должен **читать логи перед действием**, а не сразу рестартить
 - Агент должен **верифицировать результат** после фикса
-
-When you're done with your current set of changes to this file, you should call the read_lints tool with the specific file path and fix any newly introduced errors.

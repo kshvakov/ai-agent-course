@@ -726,7 +726,7 @@ compressed = append(compressed, recentMessages...)
 - **Обрезка:** Быстрые одноразовые задачи, неважна история
 - **Саммаризация:** Долгие сессии, важна контекстная информация, автономные агенты
 
-См. подробнее: [Глава 03: Оптимизация контекста](../03-agent-architecture/README.md#оптимизация-контекста-context-optimization) и [Lab 09: Context Optimization](../../labs/lab09-context-optimization/README.md)
+См. подробнее: раздел "Оптимизация контекста" в [Главе 03: Анатомия Агента](../03-agent-architecture/README.md#оптимизация-контекста-context-optimization) и [Lab 09: Context Optimization](../../labs/lab09-context-optimization/README.md)
 
 ### Ошибка 3: Галлюцинации
 
