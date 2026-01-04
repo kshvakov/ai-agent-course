@@ -1,4 +1,4 @@
-# DevOps AI Agent Course 🤖
+# AI Agent Course 🤖
 
 ## Зачем это нужно?
 
