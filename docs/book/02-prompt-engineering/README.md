@@ -216,11 +216,13 @@ Assistant: {"tool": "read_logs", "args": {"service": "nginx"}}
 
 Пример 2:
 User: "Перезапусти сервер web-01"
-Assistant: {"tool": "restart", "args": {"name": "web-01"}}"
+Assistant: {"tool": "restart", "args": {"name": "web-01"}}
 
 User: "Проверь статус сервера"
-Assistant: [Модель копирует паттерн из примеров]
+Assistant: {"tool": "check_status", "args": {"hostname": "web-01"}}
 ```
+
+> **Примечание:** Это учебная демонстрация формата ответа в тексте промпта. При реальном использовании Function Calling (см. [Главу 04: Инструменты](../04-tools-and-function-calling/README.md)) модель возвращает вызов инструмента в отдельном поле `tool_calls`, а не как текст в ответе.
 
 **Когда использовать:**
 - Сложный формат ответа (JSON, структурированные данные)
@@ -284,15 +286,15 @@ Assistant: check_status("web-01")  // Еще один формат!
 ```text
 Пример 1:
 User: "Проверь логи"
-Assistant: {"tool": "read_logs", "service": "nginx"}
+Assistant: {"tool": "read_logs", "args": {"service": "nginx"}}
 
 Пример 2:
 User: "Перезапусти сервер"
-Assistant: {"tool": "restart", "name": "web-01"}  // Тот же формат
+Assistant: {"tool": "restart", "args": {"name": "web-01"}}  // Тот же формат
 
 Пример 3:
 User: "Статус"
-Assistant: {"tool": "check_status", "hostname": "web-01"}  // Тот же формат
+Assistant: {"tool": "check_status", "args": {"hostname": "web-01"}}  // Тот же формат
 ```
 
 **Результат:** Модель четко понимает паттерн и следует ему.

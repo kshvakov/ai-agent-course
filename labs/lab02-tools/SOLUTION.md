@@ -32,9 +32,10 @@
    systemPrompt := `You are a DevOps assistant.
    Example:
    User: "Check server"
-   Assistant: [calls get_server_status]
+   Assistant: {"tool": "get_server_status", "args": {"ip": "192.168.1.1"}}
    `
    ```
+   > **Примечание:** Это учебная демонстрация формата в тексте промпта. При реальном Function Calling модель возвращает вызов в поле `tool_calls` (см. [Главу 04: Инструменты](../../docs/book/04-tools-and-function-calling/README.md)).
 
 ### Валидация вызова инструментов
 
