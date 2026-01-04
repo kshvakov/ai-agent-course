@@ -19,55 +19,6 @@ This course is designed for programmers who want to understand how modern LLM ag
 
 **Solution:** An AI agent with tools can independently check metrics → read logs → form hypotheses → apply fixes → verify results. This course will teach you to build such agents.
 
-## Course Structure
-
-The course consists of a preparatory stage (Lab 00) and 9 main laboratory assignments (Lab 01-09).
-
-### 🔬 [Lab 00: Model Benchmark](./labs/lab00-capability-check)
-**Diagnostics.** Before starting, we'll verify whether your model (especially a local one) is suitable for the course. We'll run a series of tests on JSON, Instruction Following, and Function Calling.
-
-### [Lab 01: Hello, LLM!](./labs/lab01-basics)
-**Basics and Memory.** You'll learn to programmatically communicate with LLMs, manage context (memory), and configure the agent's role through system prompts.
-
-### [Lab 02: Agent's Hands](./labs/lab02-tools)
-**Function Calling.** Learn how to turn Go functions into tools that an LLM can call. Implement the Tool Execution mechanism.
-
-### [Lab 03: Real-World Tools](./labs/lab03-real-world)
-**Infrastructure as Code Integration.** We'll connect real APIs (Proxmox, Ansible) to our agent.
-
-### [Lab 04: Autonomy Loop](./labs/lab04-autonomy)
-**The Agent Loop.** We'll implement the ReAct pattern (Reason + Act). The agent will learn to independently make decisions, execute actions, and analyze results in a loop.
-
-### [Lab 05: Human-in-the-Loop](./labs/lab05-human-interaction)
-**Dialogue and Safety.** The agent will learn to ask clarifying questions ("In which region should I create the server?") and request confirmation before dangerous actions ("Are you sure you want to delete the database?").
-
-### [Lab 06: Incident Management](./labs/lab06-incident)
-**Complex Scenarios.** We'll create an agent capable of independently investigating and resolving failures (e.g., service crashes) using a toolkit of tools.
-
-### [Lab 07: RAG & Knowledge Base](./labs/lab07-rag)
-**Working with Knowledge.** The agent will learn to read internal documentation (Wiki/Man pages) before executing actions. We'll implement simple document search.
-
-### [Lab 08: Agent Team (Multi-Agent)](./labs/lab08-multi-agent)
-**Supervisor Pattern.** We'll create a system where a main agent (Orchestrator) manages highly specialized sub-agents (Network Admin, DB Admin).
-
-### [Lab 09: Context Optimization](./labs/lab09-context-optimization)
-**Context Window Management.** Learn to count tokens, apply optimization techniques (truncation, summarization), and implement adaptive context management for long-lived agents.
-
-### 📋 Laboratory Assignments Table
-
-| Lab | Topic | Key Skills | Study Guide |
-| :--- | :--- | :--- | :--- |
-| **Lab 00** | **Capability Check** | Model testing. Unit tests for LLMs. | [METHOD.md](./labs/lab00-capability-check/METHOD.md) |
-| **Lab 01** | **Basics** | OpenAI API, Chat Loop, Memory Management. | [METHOD.md](./labs/lab01-basics/METHOD.md) |
-| **Lab 02** | **Tools** | Function definitions (JSON Schema), parsing ToolCalls. | [METHOD.md](./labs/lab02-tools/METHOD.md) |
-| **Lab 03** | **Architecture** | Go interfaces, Registry pattern, Mocking. | [METHOD.md](./labs/lab03-real-world/METHOD.md) |
-| **Lab 04** | **Autonomy (ReAct)** | `Think-Act-Observe` loop. Result processing. | [METHOD.md](./labs/lab04-autonomy/METHOD.md) |
-| **Lab 05** | **Human-in-the-Loop** | Interactivity. Clarifying questions. Safety. | [METHOD.md](./labs/lab05-human-interaction/METHOD.md) |
-| **Lab 06** | **Incident (SOP)** | Advanced planning. SOP integration in prompts. | [METHOD.md](./labs/lab06-incident/METHOD.md) |
-| **Lab 07** | **RAG** | Working with documentation. Knowledge search before action. | [METHOD.md](./labs/lab07-rag/METHOD.md) |
-| **Lab 08** | **Multi-Agent** | Orchestration. Task delegation. Context isolation. | [METHOD.md](./labs/lab08-multi-agent/METHOD.md) |
-| **Lab 09** | **Context Optimization** | Token counting, summarization, adaptive context management. | [METHOD.md](./labs/lab09-context-optimization/METHOD.md) |
-
 ## Theory
 
 **📚 Required Reading Before Starting:**
@@ -129,6 +80,55 @@ There you'll find a practical guide to production readiness: observability and t
 - After each textbook chapter, complete the corresponding laboratory assignment
 - Use the textbook as a reference when working on projects
 - Return to relevant sections when questions arise
+
+## Course Structure
+
+The course consists of a preparatory stage (Lab 00) and 9 main laboratory assignments (Lab 01-09).
+
+### 🔬 [Lab 00: Model Benchmark](./labs/lab00-capability-check)
+**Diagnostics.** Before starting, we'll verify whether your model (especially a local one) is suitable for the course. We'll run a series of tests on JSON, Instruction Following, and Function Calling.
+
+### [Lab 01: Hello, LLM!](./labs/lab01-basics)
+**Basics and Memory.** You'll learn to programmatically communicate with LLMs, manage context (memory), and configure the agent's role through system prompts.
+
+### [Lab 02: Agent's Hands](./labs/lab02-tools)
+**Function Calling.** Learn how to turn Go functions into tools that an LLM can call. Implement the Tool Execution mechanism.
+
+### [Lab 03: Real-World Tools](./labs/lab03-real-world)
+**Infrastructure as Code Integration.** We'll connect real APIs (Proxmox, Ansible) to our agent.
+
+### [Lab 04: Autonomy Loop](./labs/lab04-autonomy)
+**The Agent Loop.** We'll implement the ReAct pattern (Reason + Act). The agent will learn to independently make decisions, execute actions, and analyze results in a loop.
+
+### [Lab 05: Human-in-the-Loop](./labs/lab05-human-interaction)
+**Dialogue and Safety.** The agent will learn to ask clarifying questions ("In which region should I create the server?") and request confirmation before dangerous actions ("Are you sure you want to delete the database?").
+
+### [Lab 06: Incident Management](./labs/lab06-incident)
+**Complex Scenarios.** We'll create an agent capable of independently investigating and resolving failures (e.g., service crashes) using a toolkit of tools.
+
+### [Lab 07: RAG & Knowledge Base](./labs/lab07-rag)
+**Working with Knowledge.** The agent will learn to read internal documentation (Wiki/Man pages) before executing actions. We'll implement simple document search.
+
+### [Lab 08: Agent Team (Multi-Agent)](./labs/lab08-multi-agent)
+**Supervisor Pattern.** We'll create a system where a main agent (Orchestrator) manages highly specialized sub-agents (Network Admin, DB Admin).
+
+### [Lab 09: Context Optimization](./labs/lab09-context-optimization)
+**Context Window Management.** Learn to count tokens, apply optimization techniques (truncation, summarization), and implement adaptive context management for long-lived agents.
+
+### 📋 Laboratory Assignments Table
+
+| Lab | Topic | Key Skills | Study Guide |
+| :--- | :--- | :--- | :--- |
+| **Lab 00** | **Capability Check** | Model testing. Unit tests for LLMs. | [METHOD.md](./labs/lab00-capability-check/METHOD.md) |
+| **Lab 01** | **Basics** | OpenAI API, Chat Loop, Memory Management. | [METHOD.md](./labs/lab01-basics/METHOD.md) |
+| **Lab 02** | **Tools** | Function definitions (JSON Schema), parsing ToolCalls. | [METHOD.md](./labs/lab02-tools/METHOD.md) |
+| **Lab 03** | **Architecture** | Go interfaces, Registry pattern, Mocking. | [METHOD.md](./labs/lab03-real-world/METHOD.md) |
+| **Lab 04** | **Autonomy (ReAct)** | `Think-Act-Observe` loop. Result processing. | [METHOD.md](./labs/lab04-autonomy/METHOD.md) |
+| **Lab 05** | **Human-in-the-Loop** | Interactivity. Clarifying questions. Safety. | [METHOD.md](./labs/lab05-human-interaction/METHOD.md) |
+| **Lab 06** | **Incident (SOP)** | Advanced planning. SOP integration in prompts. | [METHOD.md](./labs/lab06-incident/METHOD.md) |
+| **Lab 07** | **RAG** | Working with documentation. Knowledge search before action. | [METHOD.md](./labs/lab07-rag/METHOD.md) |
+| **Lab 08** | **Multi-Agent** | Orchestration. Task delegation. Context isolation. | [METHOD.md](./labs/lab08-multi-agent/METHOD.md) |
+| **Lab 09** | **Context Optimization** | Token counting, summarization, adaptive context management. | [METHOD.md](./labs/lab09-context-optimization/METHOD.md) |
 
 ## Requirements
 
