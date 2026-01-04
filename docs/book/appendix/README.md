@@ -237,5 +237,5 @@ SOP для [ваша задача]:
 
 ---
 
-**Навигация:** [← Best Practices](../11-best-practices/README.md) | [Оглавление](../README.md)
+**Навигация:** [← Углублённое изучение](../12-advanced-study/README.md) | [Оглавление](../README.md)
 
