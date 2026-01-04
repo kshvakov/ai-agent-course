@@ -87,7 +87,7 @@
 
 Если вы хотите перейти от "учебного агента" к "прод-агенту", изучите **[Главу 12: Углублённое изучение](./docs/book/12-advanced-study/README.md)** в учебнике.
 
-Там вы найдёте роадмап по прод-темам: observability и tracing, cost & latency engineering, workflow и state management, политики доступа, prompt management, data/privacy, RAG в проде, evals в CI/CD и другие практические вопросы, которые почти всегда появляются в реальных системах.
+Там вы найдёте практическое руководство по прод-готовности: observability и tracing, cost & latency engineering, workflow и state management, безопасность и governance, prompt management, data/privacy, RAG в проде, evals в CI/CD и другие практические темы с пошаговыми рецептами внедрения, привязанными к вашему коду из лабораторных работ.
 
 ## Как проходить курс
 

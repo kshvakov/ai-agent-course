@@ -31,7 +31,7 @@
 
 - **[10. Кейсы из Реальной Практики](./10-case-studies/README.md)** — Примеры агентов в разных доменах (DevOps, Support, Data, Security, Product)
 - **[11. Best Practices и Области Применения](./11-best-practices/README.md)** — Лучшие практики создания и поддержки агентов, области применения
-- **[12. Углублённое изучение](./12-advanced-study/README.md)** — Роадмап для перехода от учебного агента к прод-агенту: observability, cost engineering, workflow, governance
+- **[12. Углублённое изучение](./12-advanced-study/README.md)** — Практическое руководство по прод-готовности: observability, cost engineering, workflow, governance и другие прод-темы с пошаговыми рецептами
 
 ### Приложения
 
@@ -59,7 +59,7 @@
 ### После завершения основного курса
 
 После изучения глав 1-11 переходите к:
-- **[12. Углублённое изучение](./12-advanced-study/README.md)** — роадмап для создания прод-агента: observability, cost engineering, workflow, governance и другие прод-темы
+- **[12. Углублённое изучение](./12-advanced-study/README.md)** — практическое руководство по прод-готовности: observability, cost engineering, workflow, governance и другие прод-темы с пошаговыми рецептами внедрения
 
 ---
 
