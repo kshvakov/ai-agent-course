@@ -219,6 +219,302 @@ if len(finalMsg.ToolCalls) == 0 {
 
 **Что происходит:** Модель видела результат `ping` и сформулировала понятный ответ для пользователя.
 
+## Сквозной протокол: полный запрос и два хода
+
+Теперь разберем **полный протокол** с точки зрения разработчика агента: где что хранится, как собирается запрос, и как runtime обрабатывает ответы.
+
+### Где что хранится в коде агента?
+
+```mermaid
+graph TB
+    A[System Prompt<br/>в коде/конфиге] --> D[ChatCompletionRequest]
+    B[Tools Registry<br/>в коде runtime] --> D
+    C[User Input<br/>от пользователя] --> D
+    D --> E[LLM API]
+    E --> F{Ответ}
+    F -->|tool_calls| G[Runtime валидирует]
+    G --> H[Runtime выполняет]
+    H --> I[Добавляет tool result]
+    I --> D
+    F -->|content| J[Финальный ответ]
+```
+
+**Схема хранения:**
+
+1. **System Prompt** — хранится в коде агента (константа или конфиг):
+   - Инструкции (Role, Goal, Constraints)
+   - Few-shot примеры (если используются)
+   - SOP (алгоритм действий)
+
+2. **Tools Schema** — хранится в **registry runtime** (не в промпте!):
+   - Определения инструментов (JSON Schema)
+   - Функции-обработчики инструментов
+   - Валидация и выполнение
+
+3. **User Input** — приходит от пользователя:
+   - Текущий запрос
+   - История диалога (хранится в `messages[]`)
+
+4. **Tool Results** — генерируются runtime'ом:
+   - После выполнения инструмента
+   - Добавляются в `messages[]` с `Role = "tool"`
+
+### Полный пример: два хода (tool call → финальный ответ)
+
+```go
+package main
+
+import (
+    "context"
+    "encoding/json"
+    "fmt"
+    "github.com/sashabaranov/go-openai"
+)
+
+// 1. System Prompt (хранится в коде агента)
+const systemPrompt = `Ты DevOps инженер. Используй инструменты для проверки сервисов.
+
+Примеры использования:
+User: "Проверь статус nginx"
+Agent: вызывает check_status("nginx")
+
+User: "Перезапусти сервер"
+Agent: вызывает restart_service("web-01")`
+
+// 2. Tools Schema (хранится в registry runtime)
+var tools = []openai.Tool{
+    {
+        Type: openai.ToolTypeFunction,
+        Function: &openai.FunctionDefinition{
+            Name:        "check_status",
+            Description: "Check if a service is running. Use this when user asks about service status.",
+            Parameters: json.RawMessage(`{
+                "type": "object",
+                "properties": {
+                    "service": {"type": "string", "description": "Service name"}
+                },
+                "required": ["service"]
+            }`),
+        },
+    },
+    {
+        Type: openai.ToolTypeFunction,
+        Function: &openai.FunctionDefinition{
+            Name:        "restart_service",
+            Description: "Restart a systemd service. Use this when user explicitly asks to restart a service.",
+            Parameters: json.RawMessage(`{
+                "type": "object",
+                "properties": {
+                    "service_name": {"type": "string", "description": "Service name to restart"}
+                },
+                "required": ["service_name"]
+            }`),
+        },
+    },
+}
+
+// 3. Функция-обработчик инструмента (хранится в registry runtime)
+func executeCheckStatus(service string) string {
+    // Реальная логика проверки статуса
+    return fmt.Sprintf("Service %s is ONLINE", service)
+}
+
+func executeRestartService(serviceName string) string {
+    // Реальная логика перезапуска
+    return fmt.Sprintf("Service %s restarted successfully", serviceName)
+}
+
+func main() {
+    ctx := context.Background()
+    client := openai.NewClientWithConfig(openai.DefaultConfig("your-api-key"))
+
+    // 4. User Input (приходит от пользователя)
+    userInput := "Проверь статус nginx"
+
+    // 5. Собираем первый запрос
+    messages := []openai.ChatCompletionMessage{
+        {Role: "system", Content: systemPrompt},  // ← System Prompt здесь
+        {Role: "user", Content: userInput},        // ← User Input здесь
+    }
+
+    req := openai.ChatCompletionRequest{
+        Model:    openai.GPT3Dot5Turbo,
+        Messages: messages,
+        Tools:    tools,  // ← Tools Schema здесь (отдельно от промпта!)
+        ToolChoice: "auto",  // Модель сама решает, вызывать ли инструмент
+    }
+
+    // 6. Отправляем первый запрос
+    resp, err := client.CreateChatCompletion(ctx, req)
+    if err != nil {
+        panic(err)
+    }
+
+    msg := resp.Choices[0].Message
+
+    // 7. Проверяем ответ модели
+    if len(msg.ToolCalls) > 0 {
+        // Модель решила вызвать инструмент
+        
+        // 8. Валидация tool calls (runtime)
+        for _, toolCall := range msg.ToolCalls {
+            // Проверяем, что инструмент существует
+            if toolCall.Function.Name != "check_status" && 
+               toolCall.Function.Name != "restart_service" {
+                panic(fmt.Sprintf("Unknown tool: %s", toolCall.Function.Name))
+            }
+
+            // Парсим аргументы
+            var args map[string]interface{}
+            if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
+                panic(fmt.Sprintf("Invalid JSON: %v", err))
+            }
+
+            // 9. Выполняем инструмент (runtime)
+            var result string
+            switch toolCall.Function.Name {
+            case "check_status":
+                service, _ := args["service"].(string)
+                result = executeCheckStatus(service)
+            case "restart_service":
+                serviceName, _ := args["service_name"].(string)
+                result = executeRestartService(serviceName)
+            }
+
+            // 10. Добавляем результат в messages (runtime)
+            messages = append(messages, openai.ChatCompletionMessage{
+                Role:       "assistant",
+                Content:    "",  // Пусто, т.к. был tool call
+                ToolCalls:  msg.ToolCalls,
+            })
+            messages = append(messages, openai.ChatCompletionMessage{
+                Role:       "tool",
+                Content:    result,                    // ← Tool Result здесь
+                ToolCallID: toolCall.ID,              // Связываем с вызовом
+            })
+        }
+
+        // 11. Отправляем второй запрос с результатом инструмента
+        req2 := openai.ChatCompletionRequest{
+            Model:    openai.GPT3Dot5Turbo,
+            Messages: messages,  // Теперь включает tool result!
+            Tools:    tools,
+        }
+
+        resp2, err := client.CreateChatCompletion(ctx, req2)
+        if err != nil {
+            panic(err)
+        }
+
+        finalMsg := resp2.Choices[0].Message
+        fmt.Println("Final answer:", finalMsg.Content)
+        // Output: "nginx работает нормально, сервис ONLINE"
+
+    } else {
+        // Модель вернула текстовый ответ (без инструментов)
+        fmt.Println("Answer:", msg.Content)
+    }
+}
+```
+
+### Что реально возвращает LLM (JSON)
+
+**Первый запрос — tool call:**
+
+```json
+{
+  "id": "chatcmpl-abc123",
+  "choices": [{
+    "message": {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [{
+        "id": "call_xyz789",
+        "type": "function",
+        "function": {
+          "name": "check_status",
+          "arguments": "{\"service\": \"nginx\"}"
+        }
+      }]
+    }
+  }]
+}
+```
+
+**Второй запрос — финальный ответ:**
+
+```json
+{
+  "id": "chatcmpl-def456",
+  "choices": [{
+    "message": {
+      "role": "assistant",
+      "content": "nginx работает нормально, сервис ONLINE",
+      "tool_calls": null
+    }
+  }]
+}
+```
+
+### Эволюция messages[] массива
+
+**До первого запроса:**
+```go
+messages = [
+    {role: "system", content: "Ты DevOps инженер..."},
+    {role: "user", content: "Проверь статус nginx"},
+]
+```
+
+**После первого запроса (добавили tool call):**
+```go
+messages = [
+    {role: "system", content: "Ты DevOps инженер..."},
+    {role: "user", content: "Проверь статус nginx"},
+    {role: "assistant", content: "", tool_calls: [{name: "check_status", ...}]},
+]
+```
+
+**После выполнения инструмента (добавили tool result):**
+```go
+messages = [
+    {role: "system", content: "Ты DevOps инженер..."},
+    {role: "user", content: "Проверь статус nginx"},
+    {role: "assistant", content: "", tool_calls: [...]},
+    {role: "tool", content: "Service nginx is ONLINE", tool_call_id: "call_xyz789"},
+]
+```
+
+**После второго запроса (модель видит tool result и формулирует ответ):**
+```go
+// Модель видит весь контекст и генерирует финальный ответ
+// finalMsg.Content = "nginx работает нормально, сервис ONLINE"
+```
+
+### Ключевые моменты для разработчика
+
+1. **System Prompt и Tools Schema — разные вещи:**
+   - System Prompt — текст в `Messages[0].Content` (может содержать few-shot примеры)
+   - Tools Schema — отдельное поле `Tools` в запросе (JSON Schema)
+
+2. **Few-shot примеры — внутри System Prompt:**
+   - Это текст, показывающий модели формат ответа или выбор инструментов
+   - Отличается от Tools Schema (которая описывает структуру инструментов)
+
+3. **Runtime управляет циклом:**
+   - Валидирует `tool_calls`
+   - Выполняет инструменты
+   - Добавляет результаты в `messages`
+   - Отправляет следующий запрос
+
+4. **Tools не "внутри промпта":**
+   - В API они передаются отдельным полем `Tools`
+   - Модель видит их вместе с промптом, но это разные части запроса
+
+См. как писать инструкции и примеры: **[Глава 02: Промптинг](../02-prompt-engineering/README.md)**
+
+Практика: **[Lab 02: Tools](../../labs/lab02-tools/README.md)**, **[Lab 04: Autonomy](../../labs/lab04-autonomy/README.md)**
+
 ### Почему это не магия?
 
 **Ключевые моменты:**

@@ -293,6 +293,186 @@ Agent: {"tool": "check_status", "hostname": "web-01"}  // Тот же форма
 - **[Lab 02: Tools](../../labs/lab02-tools/README.md)** — формат ответов через Function Calling
 - **[Lab 06: Incident (SOP)](../../labs/lab06-incident/README.md)** — SOP как алгоритм действий
 
+## Сквозной пример: что именно отправляет агент в LLM
+
+Когда мы разрабатываем агента, важно понимать, **где именно** находятся разные части промпта и как они попадают в запрос к LLM.
+
+### Структура запроса к LLM
+
+```mermaid
+graph LR
+    A[System Prompt<br/>инструкции + few-shot] --> D[ChatCompletionRequest]
+    B[Tools Schema<br/>JSON Schema] --> D
+    C[User Input<br/>role=user] --> D
+    D --> E[LLM API]
+    E --> F{Ответ}
+    F -->|Text| G[assistant content]
+    F -->|Tool Call| H[tool_calls]
+    H --> I[Runtime выполняет]
+    I --> J[tool result]
+    J --> K[Добавляет в messages]
+    K --> D
+```
+
+### Где что находится?
+
+**1. System Prompt** — в поле `Messages[0].Role = "system"`:
+- Инструкции (Role, Goal, Constraints)
+- Few-shot примеры (если используются)
+- SOP (алгоритм действий)
+
+**2. Tools Schema** — в отдельном поле `Tools` (НЕ внутри промпта!):
+- JSON Schema описания инструментов
+- Отдельно от промпта, но модель видит их вместе
+
+**3. User Input** — в поле `Messages[N].Role = "user"`:
+- Текущий запрос пользователя
+- История диалога (предыдущие user/assistant сообщения)
+
+**4. Tool Results** — добавляются runtime'ом в `Messages`:
+- После выполнения инструмента
+- `Role = "tool"`, `ToolCallID` связывает с вызовом
+
+### Пример 1: Text-only ответ (без инструментов)
+
+```go
+// 1. System Prompt (инструкции + few-shot примеры)
+systemPrompt := `Ты DevOps инженер.
+
+Примеры:
+User: "Как дела?"
+Assistant: "Все хорошо, чем могу помочь?"
+
+User: "Проверь статус"
+Assistant: "Сейчас проверю статус сервисов."`
+
+// 2. User Input
+userInput := "Привет!"
+
+// 3. Собираем запрос
+messages := []openai.ChatCompletionMessage{
+    {Role: "system", Content: systemPrompt},  // ← System Prompt здесь
+    {Role: "user", Content: userInput},        // ← User Input здесь
+}
+
+req := openai.ChatCompletionRequest{
+    Model:    openai.GPT3Dot5Turbo,
+    Messages: messages,
+    // Tools: НЕТ (не нужны инструменты)
+}
+
+// 4. Отправляем запрос
+resp, _ := client.CreateChatCompletion(ctx, req)
+
+// 5. Модель возвращает текст
+assistantMsg := resp.Choices[0].Message
+// assistantMsg.Content = "Привет! Чем могу помочь?"
+// assistantMsg.ToolCalls = nil (нет вызовов инструментов)
+```
+
+**Что происходит:**
+- System Prompt содержит инструкции и few-shot примеры
+- User Input — текущий запрос
+- Модель видит оба и генерирует текстовый ответ
+- **Tools не передаются** (не нужны)
+
+### Пример 2: Tool-call ответ (с инструментами)
+
+```go
+// 1. System Prompt (инструкции)
+systemPrompt := `Ты DevOps инженер. Используй инструменты для проверки сервисов.`
+
+// 2. Tools Schema (отдельно от промпта!)
+tools := []openai.Tool{
+    {
+        Type: openai.ToolTypeFunction,
+        Function: &openai.FunctionDefinition{
+            Name:        "check_status",
+            Description: "Check service status",
+            Parameters: json.RawMessage(`{
+                "type": "object",
+                "properties": {
+                    "service": {"type": "string"}
+                },
+                "required": ["service"]
+            }`),
+        },
+    },
+}
+
+// 3. User Input
+userInput := "Проверь статус nginx"
+
+// 4. Собираем запрос
+messages := []openai.ChatCompletionMessage{
+    {Role: "system", Content: systemPrompt},  // ← System Prompt здесь
+    {Role: "user", Content: userInput},        // ← User Input здесь
+}
+
+req := openai.ChatCompletionRequest{
+    Model:    openai.GPT3Dot5Turbo,
+    Messages: messages,
+    Tools:    tools,  // ← Tools Schema здесь (отдельно!)
+}
+
+// 5. Отправляем запрос
+resp, _ := client.CreateChatCompletion(ctx, req)
+msg := resp.Choices[0].Message
+
+// 6. Модель возвращает tool call
+if len(msg.ToolCalls) > 0 {
+    // msg.ToolCalls[0].Function.Name = "check_status"
+    // msg.ToolCalls[0].Function.Arguments = `{"service": "nginx"}`
+    
+    // 7. Runtime выполняет инструмент
+    result := checkStatus("nginx")  // "nginx is ONLINE"
+    
+    // 8. Runtime добавляет результат в messages
+    messages = append(messages, openai.ChatCompletionMessage{
+        Role:       "tool",
+        Content:    result,                    // ← Tool Result здесь
+        ToolCallID: msg.ToolCalls[0].ID,
+    })
+    
+    // 9. Отправляем второй запрос с результатом
+    req2 := openai.ChatCompletionRequest{
+        Model:    openai.GPT3Dot5Turbo,
+        Messages: messages,  // Теперь включает tool result!
+        Tools:    tools,
+    }
+    
+    resp2, _ := client.CreateChatCompletion(ctx, req2)
+    finalMsg := resp2.Choices[0].Message
+    // finalMsg.Content = "nginx работает нормально"
+}
+```
+
+**Что происходит:**
+- System Prompt содержит инструкции (может содержать few-shot примеры выбора инструментов)
+- **Tools Schema передается отдельным полем** (не внутри промпта!)
+- User Input — текущий запрос
+- Модель видит все три части и решает вызвать инструмент
+- Runtime выполняет инструмент и добавляет результат в `messages`
+- Второй запрос включает tool result, модель формулирует финальный ответ
+
+### Ключевые моменты
+
+1. **System Prompt** — это текст в `Messages[0].Content`. Может содержать инструкции, few-shot примеры, SOP.
+
+2. **Tools Schema** — это отдельное поле `Tools` в запросе. **Не находится внутри промпта**, но модель видит его вместе с промптом.
+
+3. **Few-shot примеры** — находятся **внутри System Prompt** (текст). Они показывают модели формат ответа или выбор инструментов.
+
+4. **User Input** — это `Messages[N].Role = "user"`. Может быть несколько сообщений (история диалога).
+
+5. **Tool Results** — добавляются runtime'ом в `Messages` с `Role = "tool"` после выполнения инструмента.
+
+**Важно:** Tools Schema и System Prompt — это **разные вещи**:
+- **System Prompt** — текст для модели (инструкции, примеры)
+- **Tools Schema** — структурированное описание инструментов (JSON Schema)
+
+См. детальный протокол: **[Глава 04: Инструменты и Function Calling](../04-tools-and-function-calling/README.md)**
+
 ## Chain-of-Thought (CoT)
 
 **Chain-of-Thought** — это техника "Думай по шагам".
