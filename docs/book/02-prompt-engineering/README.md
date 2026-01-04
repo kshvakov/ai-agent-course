@@ -108,11 +108,11 @@ SOP для анализа:
 ```text
 Пример 1:
 User: "Проверь логи nginx"
-Agent: {"tool": "read_logs", "args": {"service": "nginx"}}
+Assistant: {"tool": "read_logs", "args": {"service": "nginx"}}
 
 Пример 2:
 User: "Перезапусти сервер"
-Agent: {"tool": "restart", "args": {"name": "web-01"}}
+Assistant: {"tool": "restart", "args": {"name": "web-01"}}
 ```
 
 **Плюсы:**
@@ -152,7 +152,7 @@ ICL может работать в двух режимах:
 System Prompt: "Ты DevOps инженер. Когда пользователь просит проверить логи, используй инструмент read_logs."
 
 User: "Проверь логи nginx"
-Agent: [Модель должна сама догадаться, что делать на основе инструкции]
+Assistant: [Модель должна сама догадаться, что делать на основе инструкции]
 ```
 
 **Что происходит:**
@@ -176,14 +176,14 @@ System Prompt: "Ты DevOps инженер. Примеры:
 
 Пример 1:
 User: "Проверь логи nginx"
-Agent: {"tool": "read_logs", "args": {"service": "nginx"}}
+Assistant: {"tool": "read_logs", "args": {"service": "nginx"}}
 
 Пример 2:
 User: "Перезапусти сервер web-01"
-Agent: {"tool": "restart", "args": {"name": "web-01"}}"
+Assistant: {"tool": "restart", "args": {"name": "web-01"}}"
 
 User: "Проверь статус сервера"
-Agent: [Модель копирует паттерн из примеров]
+Assistant: [Модель копирует паттерн из примеров]
 ```
 
 **Что происходит:**
@@ -221,11 +221,11 @@ Examples of how to respond:
 
 Example 1:
 User: "Мой аккаунт заблокирован"
-Agent: {"action": "check_account", "user_id": "extract_from_ticket"}
+Assistant: {"action": "check_account", "user_id": "extract_from_ticket"}
 
 Example 2:
 User: "Не могу войти в систему"
-Agent: {"action": "check_login", "user_id": "extract_from_ticket"}`
+Assistant: {"action": "check_login", "user_id": "extract_from_ticket"}`
 
 messages := []openai.ChatCompletionMessage{
     {Role: "system", Content: systemPrompt},
@@ -251,15 +251,15 @@ messages := []openai.ChatCompletionMessage{
 ```text
 Пример 1:
 User: "Проверь логи"
-Agent: {"tool": "read_logs", "service": "nginx"}
+Assistant: {"tool": "read_logs", "service": "nginx"}
 
 Пример 2:
 User: "Перезапусти сервер"
-Agent: {"action": "restart", "target": "web-01"}  // Разный формат!
+Assistant: {"action": "restart", "target": "web-01"}  // Разный формат!
 
 Пример 3:
 User: "Статус"
-Agent: check_status("web-01")  // Еще один формат!
+Assistant: check_status("web-01")  // Еще один формат!
 ```
 
 **Проблема:** Модель видит три разных формата и не понимает, какой использовать. Результат непредсказуем.
@@ -269,15 +269,15 @@ Agent: check_status("web-01")  // Еще один формат!
 ```text
 Пример 1:
 User: "Проверь логи"
-Agent: {"tool": "read_logs", "service": "nginx"}
+Assistant: {"tool": "read_logs", "service": "nginx"}
 
 Пример 2:
 User: "Перезапусти сервер"
-Agent: {"tool": "restart", "name": "web-01"}  // Тот же формат
+Assistant: {"tool": "restart", "name": "web-01"}  // Тот же формат
 
 Пример 3:
 User: "Статус"
-Agent: {"tool": "check_status", "hostname": "web-01"}  // Тот же формат
+Assistant: {"tool": "check_status", "hostname": "web-01"}  // Тот же формат
 ```
 
 **Результат:** Модель четко понимает паттерн и следует ему.
@@ -533,8 +533,8 @@ graph LR
 - System Prompt содержит инструкции (может содержать few-shot примеры выбора инструментов)
 - **Tools Schema передается отдельным полем** `tools[]` (не внутри промпта!)
 - User Input — текущий запрос
-- Модель видит все три части и решает вызвать инструмент
-- Runtime выполняет инструмент и добавляет результат в `messages` с `role = "tool"`
+- Модель видит все три части и **генерирует tool_call** (имя инструмента + аргументы)
+- **Runtime (агент)** валидирует tool_call, выполняет инструмент и добавляет результат в `messages` с `role = "tool"`
 - Второй запрос включает tool result, модель формулирует финальный ответ
 
 ### Ключевые моменты
@@ -705,13 +705,13 @@ SOP для триажа алерта:
 **Без декомпозиции:**
 ```
 User: "Разберись с проблемой базы"
-Agent: [Может попытаться сделать всё сразу и запутаться]
+Assistant: [Может попытаться сделать всё сразу и запутаться]
 ```
 
 **С декомпозицией:**
 ```
 User: "Разберись с проблемой базы"
-Agent:
+Assistant:
 1. Проверю доступность БД (ping_db)
 2. Проверю метрики (cpu, memory, connections)
 3. Прочитаю логи (read_db_logs)

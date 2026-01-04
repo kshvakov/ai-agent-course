@@ -73,10 +73,10 @@ msg1 := resp1.Choices[0].Message
 // }]
 ```
 
-**Почему модель вызвала поиск?**
+**Почему модель сгенерировала tool_call на поиск?**
 - System Prompt говорит: "Always search knowledge base before actions"
 - Description инструмента говорит: "Use this BEFORE performing actions"
-- Модель видит слово "регламенту" в запросе и связывает это с поиском
+- Модель видит слово "регламенту" в запросе и связывает это с инструментом поиска
 
 **Шаг 4: Runtime выполняет поиск**
 

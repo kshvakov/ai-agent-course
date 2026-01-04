@@ -78,7 +78,7 @@ msg := resp.Choices[0].Message
 }
 ```
 
-**Что происходит:** Модель выбрала инструмент `ping` и сгенерировала JSON с аргументами. Это **не магия** — модель видела `Description: "Ping a host to check connectivity"` и связала это с запросом пользователя.
+**Что происходит:** Модель **сгенерировала tool_call** для инструмента `ping` и JSON с аргументами. Это **не магия** — модель видела `Description: "Ping a host to check connectivity"` и связала это с запросом пользователя.
 
 **Как модель выбирает между несколькими инструментами?**
 
@@ -269,7 +269,7 @@ graph TB
   "messages": [
     {
       "role": "system",
-      "content": "Ты DevOps инженер. Используй инструменты для проверки сервисов.\n\nПримеры использования:\nUser: \"Проверь статус nginx\"\nAgent: вызывает check_status(\"nginx\")\n\nUser: \"Перезапусти сервер\"\nAgent: вызывает restart_service(\"web-01\")"
+      "content": "Ты DevOps инженер. Используй инструменты для проверки сервисов.\n\nПримеры использования:\nUser: \"Проверь статус nginx\"\nAssistant: возвращает tool_call check_status(\"nginx\")\n\nUser: \"Перезапусти сервер\"\nAssistant: возвращает tool_call restart_service(\"web-01\")"
     },
     {
       "role": "user",
@@ -359,7 +359,7 @@ graph TB
   "messages": [
     {
       "role": "system",
-      "content": "Ты DevOps инженер. Используй инструменты для проверки сервисов.\n\nПримеры использования:\nUser: \"Проверь статус nginx\"\nAgent: вызывает check_status(\"nginx\")\n\nUser: \"Перезапусти сервер\"\nAgent: вызывает restart_service(\"web-01\")"
+      "content": "Ты DevOps инженер. Используй инструменты для проверки сервисов.\n\nПримеры использования:\nUser: \"Проверь статус nginx\"\nAssistant: возвращает tool_call check_status(\"nginx\")\n\nUser: \"Перезапусти сервер\"\nAssistant: возвращает tool_call restart_service(\"web-01\")"
     },
     {
       "role": "user",
@@ -764,9 +764,9 @@ func executeTool(name string, args json.RawMessage) (string, error) {
 
 ## Типовые проблемы
 
-### Проблема 1: Модель не вызывает инструменты
+### Проблема 1: Модель не генерирует tool_call
 
-**Симптом:** Агент отвечает текстом вместо вызова инструмента.
+**Симптом:** Агент получает от модели текстовый ответ вместо `tool_calls` (то есть runtime не получает структурированный запрос на вызов инструмента).
 
 **Решение:**
 - Используйте модель с поддержкой tools (Hermes-2-Pro, Llama-3-Instruct)
