@@ -227,9 +227,9 @@ if len(finalMsg.ToolCalls) == 0 {
 
 ```mermaid
 graph TB
-    A[System Prompt<br/>в коде/конфиге] --> D[ChatCompletionRequest]
-    B[Tools Registry<br/>в коде runtime] --> D
-    C[User Input<br/>от пользователя] --> D
+    A["System Prompt (в коде/конфиге)"] --> D[ChatCompletionRequest]
+    B["Tools Registry (в коде runtime)"] --> D
+    C["User Input (от пользователя)"] --> D
     D --> E[LLM API]
     E --> F{Ответ}
     F -->|tool_calls| G[Runtime валидирует]

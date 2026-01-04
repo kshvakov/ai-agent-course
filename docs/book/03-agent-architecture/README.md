@@ -559,8 +559,6 @@ Agent: "Все шаги выполнены. Инцидент решен."
 
 Самая популярная архитектура. Формула: `Thought -> Action -> Observation`.
 
-Самая популярная архитектура. Формула: `Thought -> Action -> Observation`.
-
 ```mermaid
 sequenceDiagram
     participant User
@@ -902,8 +900,6 @@ plan := []string{
 - [ ] План включает верификацию результата
 - [ ] Выбран правильный уровень планирования (ReAct / Plan-and-Solve / Hierarchical)
 - [ ] План адаптируется к результатам выполнения (для ReAct)
-
-### ReAct (Reason + Act)
 
 ### Reflexion (Самокоррекция)
 

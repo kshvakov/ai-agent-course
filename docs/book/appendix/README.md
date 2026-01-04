@@ -101,5 +101,5 @@ SOP для обработки тикета:
 
 ---
 
-**Навигация:** [← Кейсы](../10-case-studies/README.md) | [Оглавление](../README.md)
+**Навигация:** [← Best Practices](../11-best-practices/README.md) | [Оглавление](../README.md)
 
