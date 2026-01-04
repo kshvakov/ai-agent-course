@@ -593,18 +593,20 @@ req := openai.ChatCompletionRequest{
    - ✅ Хорошо: Модели с fine-tuning на function calling (например, `Hermes-2-Pro`, `Llama-3-Instruct`, `Mistral-7B-Instruct` на момент написания)
    - ❌ Плохо: Базовые модели без fine-tuning на tools
    
-   > **Примечание:** Конкретные модели могут меняться. Важно проверить поддержку function calling через Lab 00 (Capability Check).
+   > **Примечание:** Конкретные модели могут меняться. Важно проверить поддержку function calling через capability benchmark (см. [Приложение: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization)).
 
 2. **Размер контекста:** Для сложных задач нужен большой контекст.
    - Минимум: 4k токенов
    - Рекомендуется: 8k+
 
 3. **Качество следования инструкциям:** Модель должна строго следовать System Prompt.
-   - Проверяется через Lab 00 (Capability Check)
+   - Проверяется через capability benchmark (см. [Приложение: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization))
 
 ### Как проверить модель?
 
-См. `Lab 00: Model Capability Benchmark`
+**Теория:** См. [Приложение: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization) — подробное описание того, что проверяем и почему это важно.
+
+**Практика:** См. [Lab 00: Model Capability Benchmark](../../labs/lab00-capability-check/README.md) — готовый инструмент для проверки модели.
 
 ## Типовые проблемы и их решение
 

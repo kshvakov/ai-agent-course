@@ -931,14 +931,135 @@ Runtime — это код, который связывает LLM с инстру
 3. **Управление историей:** Добавление результатов в контекст
 4. **Управление циклом:** Определение, когда остановиться
 
-**Пример Runtime (как это работает на практике):**
+### Паттерн Registry для расширяемости
+
+Чтобы агент был расширяемым, мы не должны хардкодить логику инструментов в `main.go`. Нам нужен паттерн **Registry** (Реестр).
+
+**Проблема без Registry:**
+- Добавление нового инструмента требует правок в десятках мест
+- Код становится нечитаемым
+- Сложно тестировать отдельные инструменты
+
+**Решение: Интерфейсы Go + Registry**
+
+#### Определение интерфейса Tool
 
 ```go
-func runAgent(ctx context.Context, client *openai.Client, userInput string) {
+type Tool interface {
+    Name() string
+    Description() string
+    Parameters() json.RawMessage
+    Execute(args json.RawMessage) (string, error)
+}
+```
+
+Любой инструмент (Proxmox, Ansible, SSH) должен реализовывать этот интерфейс.
+
+#### Реализация инструмента
+
+```go
+type ProxmoxListVMsTool struct{}
+
+func (t *ProxmoxListVMsTool) Name() string {
+    return "list_vms"
+}
+
+func (t *ProxmoxListVMsTool) Description() string {
+    return "List all VMs in the Proxmox cluster"
+}
+
+func (t *ProxmoxListVMsTool) Parameters() json.RawMessage {
+    return json.RawMessage(`{
+        "type": "object",
+        "properties": {},
+        "required": []
+    }`)
+}
+
+func (t *ProxmoxListVMsTool) Execute(args json.RawMessage) (string, error) {
+    // Реальная логика вызова API Proxmox
+    return "VM-100 (Running), VM-101 (Stopped)", nil
+}
+```
+
+#### Registry (Реестр инструментов)
+
+Registry — это хранилище инструментов, доступное по имени.
+
+```go
+type ToolRegistry struct {
+    tools map[string]Tool
+}
+
+func NewToolRegistry() *ToolRegistry {
+    return &ToolRegistry{
+        tools: make(map[string]Tool),
+    }
+}
+
+func (r *ToolRegistry) Register(tool Tool) {
+    r.tools[tool.Name()] = tool
+}
+
+func (r *ToolRegistry) Get(name string) (Tool, bool) {
+    tool, exists := r.tools[name]
+    return tool, exists
+}
+
+func (r *ToolRegistry) ToOpenAITools() []openai.Tool {
+    var result []openai.Tool
+    for _, tool := range r.tools {
+        result = append(result, openai.Tool{
+            Type: openai.ToolTypeFunction,
+            Function: &openai.FunctionDefinition{
+                Name:        tool.Name(),
+                Description: tool.Description(),
+                Parameters:  tool.Parameters(),
+            },
+        })
+    }
+    return result
+}
+```
+
+#### Использование Registry
+
+```go
+// Инициализация
+registry := NewToolRegistry()
+registry.Register(&ProxmoxListVMsTool{})
+registry.Register(&AnsibleRunPlaybookTool{})
+
+// Получение списка инструментов для LLM
+tools := registry.ToOpenAITools()
+
+// Выполнение инструмента по имени
+toolCall := msg.ToolCalls[0]
+if tool, exists := registry.Get(toolCall.Function.Name); exists {
+    result, err := tool.Execute(json.RawMessage(toolCall.Function.Arguments))
+    if err != nil {
+        return fmt.Errorf("tool execution failed: %v", err)
+    }
+    // Добавляем результат в историю
+}
+```
+
+**Преимущества Registry:**
+- ✅ Добавление нового инструмента — просто реализовать интерфейс и зарегистрировать
+- ✅ Код инструментов изолирован и легко тестируется
+- ✅ Runtime не знает про конкретные инструменты, работает через интерфейс
+- ✅ Легко добавлять валидацию, логирование, метрики на уровне Registry
+
+**Пример Runtime с Registry:**
+
+```go
+func runAgent(ctx context.Context, client *openai.Client, registry *ToolRegistry, userInput string) {
     messages := []openai.ChatCompletionMessage{
         {Role: "system", Content: systemPrompt},
         {Role: "user", Content: userInput},
     }
+    
+    tools := registry.ToOpenAITools()  // Получаем список инструментов из Registry
     
     for i := 0; i < maxIterations; i++ {
         resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
@@ -956,9 +1077,24 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) {
             break
         }
         
-        // Выполняем инструменты
+        // Выполняем инструменты через Registry
         for _, toolCall := range msg.ToolCalls {
-            result := executeTool(toolCall.Function.Name, toolCall.Function.Arguments)
+            tool, exists := registry.Get(toolCall.Function.Name)
+            if !exists {
+                result := fmt.Sprintf("Error: Unknown tool %s", toolCall.Function.Name)
+                messages = append(messages, openai.ChatCompletionMessage{
+                    Role: "tool",
+                    Content: result,
+                    ToolCallID: toolCall.ID,
+                })
+                continue
+            }
+            
+            result, err := tool.Execute(json.RawMessage(toolCall.Function.Arguments))
+            if err != nil {
+                result = fmt.Sprintf("Error: %v", err)
+            }
+            
             messages = append(messages, openai.ChatCompletionMessage{
                 Role: "tool",
                 Content: result,

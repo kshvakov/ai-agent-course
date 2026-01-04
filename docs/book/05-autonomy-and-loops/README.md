@@ -162,6 +162,73 @@ for i := 0; i < maxIterations; i++ {
 }
 ```
 
+### Обработка ошибок в цикле
+
+**Важно:** Не забудьте обрабатывать ошибки и добавлять их в историю! Если инструмент упал, LLM должна это узнать и попробовать что-то другое.
+
+**Правильная обработка ошибок:**
+
+```go
+for _, toolCall := range msg.ToolCalls {
+    result, err := executeTool(toolCall.Function.Name, toolCall.Function.Arguments)
+    
+    if err != nil {
+        // Ошибка — это тоже результат! Добавляем её в историю
+        result = fmt.Sprintf("Error: %v", err)
+    }
+    
+    // Добавляем результат (или ошибку) в историю
+    messages = append(messages, openai.ChatCompletionMessage{
+        Role:       openai.ChatMessageRoleTool,
+        Content:    result,  // Модель увидит ошибку!
+        ToolCallID: toolCall.ID,
+    })
+}
+```
+
+**Что происходит:**
+
+1. Инструмент возвращает ошибку: `Error: connection refused`
+2. Ошибка добавляется в историю как результат инструмента
+3. Модель видит ошибку в контексте
+4. Модель может:
+   - Попробовать другой инструмент
+   - Сообщить пользователю о проблеме
+   - Эскалировать проблему
+
+**Пример:**
+
+```
+Итерация 1:
+Action: check_database_status("prod")
+Observation: Error: connection refused
+
+Итерация 2 (модель видит ошибку):
+Thought: "База недоступна. Проверю сетевую связность"
+Action: ping_host("db-prod.example.com")
+Observation: "Host is unreachable"
+
+Итерация 3:
+Thought: "Сеть недоступна. Сообщу пользователю о проблеме"
+Action: [Финальный ответ] "База данных недоступна. Проверьте сетевую связность."
+```
+
+**Анти-паттерн:** Не скрывайте ошибки от модели!
+
+```go
+// ПЛОХО: Скрываем ошибку
+if err != nil {
+    log.Printf("Error: %v", err)  // Только в лог
+    continue  // Пропускаем инструмент
+}
+
+// ХОРОШО: Показываем ошибку модели
+if err != nil {
+    result := fmt.Sprintf("Error: %v", err)
+    messages = append(messages, ...)  // Добавляем в историю
+}
+```
+
 ## Типовые проблемы
 
 ### Проблема 1: Зацикливание
