@@ -1,29 +1,29 @@
 # Lab 09 Solution: Context Optimization
 
-## 🎯 Цель
-В этой лабораторной работе мы научились управлять контекстным окном LLM: подсчитывать токены, применять техники оптимизации (обрезка, саммаризация) и реализовать адаптивное управление контекстом.
+## 🎯 Goal
+In this lab, we learned to manage LLM context window: count tokens, apply optimization techniques (truncation, summarization) and implement adaptive context management.
 
-## 📝 Разбор решения
+## 📝 Solution Breakdown
 
-### 1. Подсчет токенов
+### 1. Token Counting
 
-**Приблизительный подсчет:**
+**Approximate counting:**
 ```go
 func estimateTokens(text string) int {
-    // Для русского: 1 токен ≈ 3 символа
-    // Для английского: 1 токен ≈ 4 символа
-    // Используем среднее значение
+    // For Russian: 1 token ≈ 3 characters
+    // For English: 1 token ≈ 4 characters
+    // Use average value
     return len(text) / 4
 }
 ```
 
-**Подсчет во всех сообщениях:**
+**Counting in all messages:**
 ```go
 func countTokensInMessages(messages []openai.ChatCompletionMessage) int {
     total := 0
     for _, msg := range messages {
         total += estimateTokens(msg.Content)
-        // Tool calls тоже занимают токены (примерно 80 токенов на вызов)
+        // Tool calls also take tokens (approximately 80 tokens per call)
         if len(msg.ToolCalls) > 0 {
             total += len(msg.ToolCalls) * 80
         }
@@ -32,7 +32,7 @@ func countTokensInMessages(messages []openai.ChatCompletionMessage) int {
 }
 ```
 
-### 2. Обрезка истории
+### 2. History Truncation
 
 ```go
 func truncateHistory(messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
@@ -40,17 +40,17 @@ func truncateHistory(messages []openai.ChatCompletionMessage, maxTokens int) []o
         return messages
     }
     
-    // Всегда сохраняем System Prompt
+    // Always keep System Prompt
     systemMsg := messages[0]
     result := []openai.ChatCompletionMessage{systemMsg}
     currentTokens := estimateTokens(systemMsg.Content)
     
-    // Идем с конца и добавляем сообщения, пока не достигнем лимита
+    // Go from end and add messages until we reach limit
     for i := len(messages) - 1; i > 0; i-- {
         msg := messages[i]
         msgTokens := estimateTokens(msg.Content)
         
-        // Учитываем Tool calls
+        // Account for Tool calls
         if len(msg.ToolCalls) > 0 {
             msgTokens += len(msg.ToolCalls) * 80
         }
@@ -59,7 +59,7 @@ func truncateHistory(messages []openai.ChatCompletionMessage, maxTokens int) []o
             break
         }
         
-        // Добавляем в начало результата (чтобы сохранить порядок)
+        // Add to beginning of result (to preserve order)
         result = append([]openai.ChatCompletionMessage{msg}, result...)
         currentTokens += msgTokens
     }
@@ -68,11 +68,11 @@ func truncateHistory(messages []openai.ChatCompletionMessage, maxTokens int) []o
 }
 ```
 
-### 3. Саммаризация
+### 3. Summarization
 
 ```go
 func summarizeMessages(ctx context.Context, client *openai.Client, messages []openai.ChatCompletionMessage) string {
-    // Собираем текст всех сообщений (кроме System)
+    // Collect text of all messages (except System)
     conversation := ""
     for i := 1; i < len(messages); i++ {
         msg := messages[i]
@@ -85,7 +85,7 @@ func summarizeMessages(ctx context.Context, client *openai.Client, messages []op
         conversation += fmt.Sprintf("%s: %s\n", role, msg.Content)
     }
     
-    // Создаем промпт для саммаризации
+    // Create summarization prompt
     summaryPrompt := fmt.Sprintf(`Summarize this conversation, keeping only:
 1. Important facts about the user (name, role, preferences, context)
 2. Key decisions made
@@ -94,7 +94,7 @@ func summarizeMessages(ctx context.Context, client *openai.Client, messages []op
 Conversation:
 %s`, conversation)
     
-    // Вызываем LLM для саммаризации
+    // Call LLM for summarization
     resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
         Model: openai.GPT3Dot5Turbo,
         Messages: []openai.ChatCompletionMessage{
@@ -107,7 +107,7 @@ Conversation:
                 Content: summaryPrompt,
             },
         },
-        Temperature: 0,  // Детерминированная саммаризация
+        Temperature: 0,  // Deterministic summarization
     })
     
     if err != nil {
@@ -118,22 +118,22 @@ Conversation:
 }
 ```
 
-### 4. Сжатие контекста
+### 4. Context Compression
 
 ```go
 func compressOldMessages(ctx context.Context, client *openai.Client, messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
     if len(messages) <= 10 {
-        return messages  // Нечего сжимать
+        return messages  // Nothing to compress
     }
     
     systemMsg := messages[0]
-    oldMessages := messages[1 : len(messages)-10]  // Все кроме последних 10
-    recentMessages := messages[len(messages)-10:]   // Последние 10
+    oldMessages := messages[1 : len(messages)-10]  // All except last 10
+    recentMessages := messages[len(messages)-10:]   // Last 10
     
-    // Сжимаем старые сообщения
+    // Compress old messages
     summary := summarizeMessages(ctx, client, oldMessages)
     
-    // Собираем новый контекст
+    // Assemble new context
     compressed := []openai.ChatCompletionMessage{
         systemMsg,
         {
@@ -147,7 +147,7 @@ func compressOldMessages(ctx context.Context, client *openai.Client, messages []
 }
 ```
 
-### 5. Приоритизация
+### 5. Prioritization
 
 ```go
 func prioritizeMessages(messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
@@ -157,18 +157,18 @@ func prioritizeMessages(messages []openai.ChatCompletionMessage, maxTokens int) 
     
     important := []openai.ChatCompletionMessage{messages[0]}  // System
     
-    // Всегда сохраняем последние 5 сообщений (текущий контекст)
+    // Always keep last 5 messages (current context)
     startIdx := len(messages) - 5
     if startIdx < 1 {
         startIdx = 1
     }
     
-    // Добавляем последние сообщения
+    // Add recent messages
     for i := startIdx; i < len(messages); i++ {
         important = append(important, messages[i])
     }
     
-    // Сохраняем результаты инструментов и ошибки из старых сообщений
+    // Keep tool results and errors from old messages
     for i := 1; i < startIdx; i++ {
         msg := messages[i]
         if msg.Role == openai.ChatMessageRoleTool {
@@ -182,32 +182,32 @@ func prioritizeMessages(messages []openai.ChatCompletionMessage, maxTokens int) 
 }
 ```
 
-### 6. Адаптивное управление
+### 6. Adaptive Management
 
 ```go
 func adaptiveContextManagement(ctx context.Context, client *openai.Client, messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
     usedTokens := countTokensInMessages(messages)
     
     if usedTokens < threshold80 {
-        // Все хорошо, ничего не делаем
+        // Everything is fine, do nothing
         return messages
     } else if usedTokens < threshold90 {
-        // Применяем легкую оптимизацию: приоритизация
+        // Apply light optimization: prioritization
         optimized := prioritizeMessages(messages, maxTokens)
-        fmt.Printf("  ⚡ Применена приоритизация (было %d токенов)\n", usedTokens)
+        fmt.Printf("  ⚡ Prioritization applied (was %d tokens)\n", usedTokens)
         return optimized
     } else {
-        // Критично! Применяем саммаризацию
-        fmt.Printf("  🔥 Применена саммаризация (было %d токенов)\n", usedTokens)
+        // Critical! Apply summarization
+        fmt.Printf("  🔥 Summarization applied (was %d tokens)\n", usedTokens)
         compressed := compressOldMessages(ctx, client, messages, maxTokens)
         newTokens := countTokensInMessages(compressed)
-        fmt.Printf("  ✅ После сжатия: %d токенов (сэкономлено %d)\n", newTokens, usedTokens-newTokens)
+        fmt.Printf("  ✅ After compression: %d tokens (saved %d)\n", newTokens, usedTokens-newTokens)
         return compressed
     }
 }
 ```
 
-## 🔍 Полный код решения
+## 🔍 Complete Solution Code
 
 ```go
 package main
@@ -246,42 +246,42 @@ func main() {
 	messages := []openai.ChatCompletionMessage{
 		{
 			Role:    openai.ChatMessageRoleSystem,
-			Content: "Ты вежливый помощник. Помни важные детали о пользователе.",
+			Content: "You are a polite assistant. Remember important details about the user.",
 		},
 	}
 
 	fmt.Println("=== Lab 09: Context Optimization ===")
-	fmt.Println("Введите сообщения. После 10+ сообщений контекст начнет оптимизироваться.")
-	fmt.Println("Попробуйте спросить о ранних сообщениях после оптимизации.\n")
+	fmt.Println("Enter messages. After 10+ messages, context will start optimizing.")
+	fmt.Println("Try asking about early messages after optimization.\n")
 
 	testMessages := []string{
-		"Привет! Меня зовут Иван, я работаю DevOps инженером в компании TechCorp.",
-		"У нас есть сервер на Ubuntu 22.04.",
-		"Мы используем Docker для контейнеризации приложений.",
-		"Наш основной стек: PostgreSQL, Redis, Nginx.",
-		"Мы развернули мониторинг через Prometheus и Grafana.",
-		"У нас есть CI/CD на GitLab CI.",
-		"Мы используем Terraform для управления инфраструктурой.",
-		"Наши приложения работают в Kubernetes кластере.",
-		"Мы используем Ansible для конфигурации серверов.",
-		"У нас есть резервное копирование через Bacula.",
-		"Мы мониторим логи через ELK Stack.",
-		"У нас есть система алертинга через PagerDuty.",
-		"Мы используем Vault для управления секретами.",
-		"Наш код хранится в GitLab.",
-		"Мы используем Jira для управления задачами.",
-		"У нас есть документация в Confluence.",
-		"Мы проводим код-ревью для всех изменений.",
-		"У нас есть автоматизированное тестирование.",
-		"Мы используем SonarQube для анализа кода.",
-		"У нас есть staging окружение для тестирования.",
-		"Как меня зовут?",
-		"Где я работаю?",
-		"Какой у нас стек?",
+		"Hello! My name is Ivan, I work as a DevOps engineer at TechCorp.",
+		"We have a server on Ubuntu 22.04.",
+		"We use Docker for application containerization.",
+		"Our main stack: PostgreSQL, Redis, Nginx.",
+		"We deployed monitoring via Prometheus and Grafana.",
+		"We have CI/CD on GitLab CI.",
+		"We use Terraform for infrastructure management.",
+		"Our applications run in Kubernetes cluster.",
+		"We use Ansible for server configuration.",
+		"We have backup via Bacula.",
+		"We monitor logs via ELK Stack.",
+		"We have alerting system via PagerDuty.",
+		"We use Vault for secret management.",
+		"Our code is stored in GitLab.",
+		"We use Jira for task management.",
+		"We have documentation in Confluence.",
+		"We conduct code reviews for all changes.",
+		"We have automated testing.",
+		"We use SonarQube for code analysis.",
+		"We have staging environment for testing.",
+		"What's my name?",
+		"Where do I work?",
+		"What's our stack?",
 	}
 
 	for i, userMsg := range testMessages {
-		fmt.Printf("\n[Сообщение %d] User: %s\n", i+1, userMsg)
+		fmt.Printf("\n[Message %d] User: %s\n", i+1, userMsg)
 
 		messages = append(messages, openai.ChatCompletionMessage{
 			Role:    openai.ChatMessageRoleUser,
@@ -291,7 +291,7 @@ func main() {
 		messages = adaptiveContextManagement(ctx, client, messages, maxContextTokens)
 
 		usedTokens := countTokensInMessages(messages)
-		fmt.Printf("📊 Токенов использовано: %d / %d (%.1f%%)\n", usedTokens, maxContextTokens, float64(usedTokens)/float64(maxContextTokens)*100)
+		fmt.Printf("📊 Tokens used: %d / %d (%.1f%%)\n", usedTokens, maxContextTokens, float64(usedTokens)/float64(maxContextTokens)*100)
 
 		resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 			Model:     openai.GPT3Dot5Turbo,
@@ -299,7 +299,7 @@ func main() {
 			Temperature: 0.7,
 		})
 		if err != nil {
-			fmt.Printf("❌ Ошибка: %v\n", err)
+			fmt.Printf("❌ Error: %v\n", err)
 			continue
 		}
 
@@ -309,7 +309,7 @@ func main() {
 		messages = append(messages, assistantMsg)
 	}
 
-	fmt.Println("\n=== Тест завершен ===")
+	fmt.Println("\n=== Test completed ===")
 }
 
 func estimateTokens(text string) int {
@@ -455,34 +455,33 @@ func adaptiveContextManagement(ctx context.Context, client *openai.Client, messa
 		return messages
 	} else if usedTokens < threshold90 {
 		optimized := prioritizeMessages(messages, maxTokens)
-		fmt.Printf("  ⚡ Применена приоритизация (было %d токенов)\n", usedTokens)
+		fmt.Printf("  ⚡ Prioritization applied (was %d tokens)\n", usedTokens)
 		return optimized
 	} else {
-		fmt.Printf("  🔥 Применена саммаризация (было %d токенов)\n", usedTokens)
+		fmt.Printf("  🔥 Summarization applied (was %d tokens)\n", usedTokens)
 		compressed := compressOldMessages(ctx, client, messages, maxTokens)
 		newTokens := countTokensInMessages(compressed)
-		fmt.Printf("  ✅ После сжатия: %d токенов (сэкономлено %d)\n", newTokens, usedTokens-newTokens)
+		fmt.Printf("  ✅ After compression: %d tokens (saved %d)\n", newTokens, usedTokens-newTokens)
 		return compressed
 	}
 }
 ```
 
-## 🎓 Ключевые моменты
+## 🎓 Key Points
 
-1. **Подсчет токенов** — всегда знайте, сколько токенов используется
-2. **Адаптивное управление** — выбирайте технику в зависимости от заполненности контекста
-3. **Саммаризация** — сохраняет важную информацию при сжатии контекста
-4. **Приоритизация** — быстрая оптимизация без вызова LLM
+1. **Token counting** — always know how many tokens are used
+2. **Adaptive management** — choose technique based on context fullness
+3. **Summarization** — preserves important information when compressing context
+4. **Prioritization** — fast optimization without LLM call
 
-## 🧪 Тестирование
+## 🧪 Testing
 
-Запустите код и убедитесь, что:
-- После 10+ сообщений применяется приоритизация
-- После 20+ сообщений применяется саммаризация
-- Агент помнит имя пользователя и другие важные детали
-- Контекст не переполняется
+Run the code and verify:
+- After 10+ messages, prioritization is applied
+- After 20+ messages, summarization is applied
+- Agent remembers user's name and other important details
+- Context doesn't overflow
 
 ---
 
-**Следующий шаг:** После успешного прохождения Lab 09 вы освоили все ключевые техники работы с агентами! Можете перейти к изучению [Multi-Agent Systems](../lab08-multi-agent/README.md) или [RAG](../lab07-rag/README.md).
-
+**Next step:** After successfully completing Lab 09, you've mastered all key agent techniques! You can proceed to study [Multi-Agent Systems](../lab08-multi-agent/README.md) or [RAG](../lab07-rag/README.md).

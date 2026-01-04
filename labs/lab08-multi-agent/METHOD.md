@@ -1,64 +1,64 @@
-# Методическое пособие: Lab 08 — Multi-Agent Systems
+# Study Guide: Lab 08 — Multi-Agent Systems
 
-## Зачем это нужно?
+## Why This Lab?
 
-Один агент "мастер на все руки" часто путается в инструментах. Эффективнее разделить ответственность: создать команду узких специалистов, управляемую главным агентом (Supervisor).
+One agent "jack of all trades" often gets confused with tools. It's more efficient to divide responsibility: create a team of narrow specialists, managed by a main agent (Supervisor).
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Пользователь просит: "Проверь, доступен ли сервер БД, и если да — узнай версию базы."
+**Situation:** User asks: "Check if DB server is available, and if yes — find out database version."
 
-**Без Multi-Agent:**
-- Один агент должен знать и `ping`, и SQL
-- Контекст переполняется
-- Агент может перепутать инструменты
+**Without Multi-Agent:**
+- One agent must know both `ping` and SQL
+- Context overflows
+- Agent may confuse tools
 
-**С Multi-Agent:**
-- Supervisor: Раздает задачи специалистам
-- Network Specialist: Знает только `ping`
-- DB Specialist: Знает только SQL
-- Каждый специалист фокусируется на своей задаче
+**With Multi-Agent:**
+- Supervisor: Distributes tasks to specialists
+- Network Specialist: Knows only `ping`
+- DB Specialist: Knows only SQL
+- Each specialist focuses on their task
 
-**Разница:** Изоляция контекста и специализация повышают надежность.
+**Difference:** Context isolation and specialization increase reliability.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### Паттерн Supervisor (Начальник-Подчиненный)
+### Supervisor Pattern (Boss-Subordinate)
 
-**Архитектура:**
+**Architecture:**
 
-- **Supervisor:** Главный мозг. Не имеет инструментов, но знает, кто что умеет.
-- **Workers:** Специализированные агенты с узким набором инструментов.
+- **Supervisor:** Main brain. Has no tools, but knows who can do what.
+- **Workers:** Specialized agents with narrow tool sets.
 
-**Изоляция контекста:** Worker не видит всей переписки Supervisor-а, только свою задачу. Это экономит токены и фокусирует внимание.
+**Context isolation:** Worker doesn't see all Supervisor's conversation, only their task. This saves tokens and focuses attention.
 
-**Пример:**
+**Example:**
 
 ```
-Supervisor получает: "Проверь, доступен ли сервер БД, и если да — узнай версию"
+Supervisor receives: "Check if DB server is available, and if yes — find out version"
 
-Supervisor думает:
-- Сначала нужно проверить сеть → делегирую Network Specialist
-- Потом нужно проверить БД → делегирую DB Specialist
+Supervisor thinks:
+- First need to check network → delegate to Network Specialist
+- Then need to check DB → delegate to DB Specialist
 
-Network Specialist получает: "Проверь доступность db-host.example.com"
-→ Вызывает ping("db-host.example.com")
-→ Возвращает: "Host is reachable"
+Network Specialist receives: "Check availability of db-host.example.com"
+→ Calls ping("db-host.example.com")
+→ Returns: "Host is reachable"
 
-DB Specialist получает: "Какая версия PostgreSQL на db-host?"
-→ Вызывает sql_query("SELECT version()")
-→ Возвращает: "PostgreSQL 15.2"
+DB Specialist receives: "What PostgreSQL version on db-host?"
+→ Calls sql_query("SELECT version()")
+→ Returns: "PostgreSQL 15.2"
 
-Supervisor собирает результаты и отвечает пользователю
+Supervisor collects results and responds to user
 ```
 
-### Рекурсия и изоляция
+### Recursion and Isolation
 
-Технически, вызов агента — это просто вызов функции. Внутри функции `runWorkerAgent` мы создаем **новый** контекст диалога (новый массив `messages`). У работника своя короткая память, он не видит переписку супервайзера с пользователем (инкапсуляция контекста).
+Technically, calling an agent is just calling a function. Inside the `runWorkerAgent` function, we create a **new** dialogue context (new `messages` array). Worker has its own short memory, doesn't see Supervisor's conversation with user (context encapsulation).
 
-## Алгоритм выполнения
+## Execution Algorithm
 
-### Шаг 1: Определение инструментов для Supervisor
+### Step 1: Defining Tools for Supervisor
 
 ```go
 supervisorTools := []openai.Tool{
@@ -85,9 +85,9 @@ supervisorTools := []openai.Tool{
 }
 ```
 
-**Важно:** Инструменты Supervisor-а — это функции вызова других агентов!
+**Important:** Supervisor's tools are functions that call other agents!
 
-### Шаг 2: Определение инструментов для Workers
+### Step 2: Defining Tools for Workers
 
 ```go
 netTools := []openai.Tool{
@@ -99,17 +99,17 @@ dbTools := []openai.Tool{
 }
 ```
 
-### Шаг 3: Функция запуска Worker-а
+### Step 3: Worker Launch Function
 
 ```go
 func runWorkerAgent(role, prompt, question string, tools []openai.Tool, client *openai.Client) string {
-    // Создаем НОВЫЙ контекст для работника
+    // Create NEW context for worker
     messages := []openai.ChatCompletionMessage{
         {Role: openai.ChatMessageRoleSystem, Content: prompt},
         {Role: openai.ChatMessageRoleUser, Content: question},
     }
     
-    // Простой цикл для работника (1-2 шага обычно)
+    // Simple loop for worker (usually 1-2 steps)
     for i := 0; i < 5; i++ {
         resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
             Model: openai.GPT3Dot5Turbo,
@@ -120,10 +120,10 @@ func runWorkerAgent(role, prompt, question string, tools []openai.Tool, client *
         messages = append(messages, msg)
         
         if len(msg.ToolCalls) == 0 {
-            return msg.Content  // Возвращаем финальный ответ работника
+            return msg.Content  // Return worker's final answer
         }
         
-        // Выполняем инструменты работника
+        // Execute worker's tools
         for _, tc := range msg.ToolCalls {
             result := executeWorkerTool(tc.Function.Name)
             messages = append(messages, toolResult)
@@ -133,7 +133,7 @@ func runWorkerAgent(role, prompt, question string, tools []openai.Tool, client *
 }
 ```
 
-### Шаг 4: Цикл Supervisor-а
+### Step 4: Supervisor Loop
 
 ```go
 for i := 0; i < 10; i++ {
@@ -154,7 +154,7 @@ for i := 0; i < 10; i++ {
             workerResponse = runWorkerAgent("DBAdmin", "You are a DBA", question, dbTools, client)
         }
         
-        // Возвращаем ответ работника Supervisor-у
+        // Return worker's answer to Supervisor
         messages = append(messages, ChatCompletionMessage{
             Role: openai.ChatMessageRoleTool,
             Content: workerResponse,
@@ -164,61 +164,61 @@ for i := 0; i < 10; i++ {
 }
 ```
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: Worker видит контекст Supervisor-а
+### Mistake 1: Worker Sees Supervisor's Context
 
-**Симптом:** Worker получает всю историю Supervisor-а, контекст переполняется.
+**Symptom:** Worker receives all Supervisor's history, context overflows.
 
-**Причина:** Вы передаете `messages` Supervisor-а в Worker.
+**Cause:** You're passing Supervisor's `messages` to Worker.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
-runWorkerAgent(supervisorMessages, ...)  // Worker видит всю историю!
+// BAD
+runWorkerAgent(supervisorMessages, ...)  // Worker sees all history!
 
-// ХОРОШО
-runWorkerAgent([]ChatCompletionMessage{systemMsg, questionMsg}, ...)  // Только своя задача
+// GOOD
+runWorkerAgent([]ChatCompletionMessage{systemMsg, questionMsg}, ...)  // Only own task
 ```
 
-### Ошибка 2: Supervisor не получает ответ Worker-а
+### Mistake 2: Supervisor Doesn't Receive Worker's Answer
 
-**Симптом:** Supervisor вызывает Worker, но не видит результат.
+**Symptom:** Supervisor calls Worker, but doesn't see result.
 
-**Причина:** Ответ Worker-а не добавлен в историю Supervisor-а.
+**Cause:** Worker's answer not added to Supervisor's history.
 
-**Решение:**
+**Solution:**
 ```go
-// ОБЯЗАТЕЛЬНО добавляйте ответ Worker-а:
+// MUST add Worker's answer:
 messages = append(messages, ChatCompletionMessage{
     Role: openai.ChatMessageRoleTool,
-    Content: workerResponse,  // Supervisor должен это увидеть!
+    Content: workerResponse,  // Supervisor must see this!
     ToolCallID: tc.ID,
 })
 ```
 
-### Ошибка 3: Worker зацикливается
+### Mistake 3: Worker Loops Infinitely
 
-**Симптом:** Worker выполняет цикл бесконечно.
+**Symptom:** Worker executes loop infinitely.
 
-**Причина:** Нет лимита итераций для Worker-а.
+**Cause:** No iteration limit for Worker.
 
-**Решение:**
+**Solution:**
 ```go
-for i := 0; i < 5; i++ {  // Лимит для Worker-а
+for i := 0; i < 5; i++ {  // Limit for Worker
     // ...
 }
 ```
 
-## Мини-упражнения
+## Mini-Exercises
 
-### Упражнение 1: Добавьте третьего специалиста
+### Exercise 1: Add Third Specialist
 
-Создайте Security Specialist с инструментами `query_siem` и `check_ip_reputation`.
+Create Security Specialist with tools `query_siem` and `check_ip_reputation`.
 
-### Упражнение 2: Добавьте логирование
+### Exercise 2: Add Logging
 
-Логируйте, кто что делает:
+Log who does what:
 
 ```go
 fmt.Printf("[Supervisor] Delegating to: %s\n", workerName)
@@ -226,20 +226,19 @@ fmt.Printf("[Worker: %s] Executing: %s\n", workerName, action)
 fmt.Printf("[Worker: %s] Result: %s\n", workerName, result)
 ```
 
-## Критерии сдачи
+## Completion Criteria
 
-✅ **Сдано:**
-- Supervisor делегирует задачи Workers
-- Workers работают изолированно
-- Ответы Workers возвращаются Supervisor-у
-- Supervisor собирает результаты и отвечает пользователю
+✅ **Completed:**
+- Supervisor delegates tasks to Workers
+- Workers work in isolation
+- Worker answers returned to Supervisor
+- Supervisor collects results and responds to user
 
-❌ **Не сдано:**
-- Supervisor не делегирует задачи
-- Workers видят контекст Supervisor-а
-- Ответы Workers не возвращаются
+❌ **Not completed:**
+- Supervisor doesn't delegate tasks
+- Workers see Supervisor's context
+- Worker answers not returned
 
 ---
 
-**Поздравляем!** Вы завершили курс. Теперь вы умеете строить промышленных AI-агентов.
-
+**Congratulations!** You've completed the course. Now you can build production AI agents.

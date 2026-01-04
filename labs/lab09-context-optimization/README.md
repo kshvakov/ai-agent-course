@@ -21,7 +21,7 @@ When an agent works in a long dialogue or executes many steps in an autonomous l
 3. **Summarization** — compress old messages via LLM
 4. **Adaptive management** — choose technique based on fill level
 
-See more: [Chapter 03: Context Optimization](../../docs/book/03-agent-architecture/README.md#оптимизация-контекста-context-optimization)
+See more: [Chapter 03: Context Optimization](../../docs/book/03-agent-architecture/README.md#context-optimization)
 
 ## Assignment
 

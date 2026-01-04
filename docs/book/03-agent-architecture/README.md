@@ -1,91 +1,91 @@
-# 03. Анатомия агента — компоненты и их взаимодействие
+# 03. Agent Anatomy — Components and Their Interaction
 
-## Зачем это нужно?
+## Why This Chapter?
 
-Агент — это не просто LLM с инструментами. Это сложная система с памятью, планированием и средой выполнения. Без понимания архитектуры вы не сможете:
-- Правильно управлять контекстом и историей диалога
-- Реализовать автономный цикл работы агента
-- Оптимизировать использование токенов
-- Создать расширяемую систему
+An agent is not just an LLM with tools. It's a complex system with memory, planning, and runtime. Without understanding the architecture, you won't be able to:
+- Properly manage context and dialogue history
+- Implement an autonomous agent loop
+- Optimize token usage
+- Create an extensible system
 
-Эта глава объясняет компоненты агента и как они взаимодействуют друг с другом.
+This chapter explains agent components and how they interact with each other.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Вы создали агента для DevOps. После 20 сообщений агент "забывает" начало разговора и перестает помнить контекст задачи.
+**Situation:** You've created a DevOps agent. After 20 messages, the agent "forgets" the start of the conversation and stops remembering the task context.
 
-**Проблема:** История диалога переполняет контекстное окно модели. Старые сообщения "выталкиваются", и агент теряет важную информацию.
+**Problem:** Dialogue history overflows the model's context window. Old messages are "pushed out", and the agent loses important information.
 
-**Решение:** Понимание архитектуры памяти позволяет реализовать оптимизацию контекста через саммаризацию или приоритизацию сообщений.
+**Solution:** Understanding memory architecture allows implementing context optimization through summarization or message prioritization.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-Уравнение агента:
+Agent equation:
 
 $$ Agent = LLM + Memory + Tools + Planning $$
 
-## Memory (Память)
+## Memory
 
-Агент должен "помнить" контекст разговора и историю действий.
+The agent must "remember" conversation context and action history.
 
-### Short-term Memory (Краткосрочная память)
+### Short-term Memory
 
-Это история сообщений (`messages` array). Ограничена контекстным окном.
+This is the message history (`messages` array). Limited by the context window.
 
-**Структура сообщения:**
+**Message structure:**
 
 ```go
 type ChatCompletionMessage struct {
     Role    string  // "system", "user", "assistant", "tool"
-    Content string  // Текст сообщения
-    ToolCallID string  // Если это результат инструмента
+    Content string  // Message text
+    ToolCallID string  // If this is a tool result
 }
 ```
 
-**Пример истории:**
+**Example history:**
 
 ```go
 messages := []ChatCompletionMessage{
-    {Role: "system", Content: "Ты DevOps инженер"},
-    {Role: "user", Content: "Проверь статус сервера"},
-    {Role: "assistant", Content: "", ToolCalls: [...]},  // Вызов инструмента
+    {Role: "system", Content: "You are a DevOps engineer"},
+    {Role: "user", Content: "Check server status"},
+    {Role: "assistant", Content: "", ToolCalls: [...]},  // Tool call
     {Role: "tool", Content: "Server is ONLINE", ToolCallID: "call_123"},
-    {Role: "assistant", Content: "Сервер работает нормально"},
+    {Role: "assistant", Content: "Server is working normally"},
 }
 ```
 
-**Проблема:** Если история слишком длинная, она не влезает в контекстное окно.
+**Problem:** If history is too long, it doesn't fit in the context window.
 
-**Пример проблемы:**
+**Example problem:**
 
 ```go
-// Контекстное окно: 4k токенов
-// System Prompt: 200 токенов
-// История диалога: 4000 токенов
-// Новый запрос: 100 токенов
-// ИТОГО: 4300 токенов > 4000 ❌ ОШИБКА!
+// Context window: 4k tokens
+// System Prompt: 200 tokens
+// Dialogue history: 4000 tokens
+// New request: 100 tokens
+// TOTAL: 4300 tokens > 4000 ❌ ERROR!
 ```
 
-### Оптимизация контекста (Context Optimization)
+### Context Optimization
 
-Когда контекст близок к исчерпанию, нужно применять техники оптимизации.
+When context is close to exhaustion, optimization techniques need to be applied.
 
-#### Техника 1: Подсчет токенов и мониторинг
+#### Technique 1: Token Counting and Monitoring
 
-**Первый шаг** — всегда знать, сколько токенов используется:
+**First step** — always know how many tokens are used:
 
 ```go
 func estimateTokens(text string) int {
-    // Примерная оценка: 1 токен ≈ 4 символа (для английского)
-    // Для русского: 1 токен ≈ 3 символа
-    // ВАЖНО: Это приблизительная оценка!
-    // Для точного подсчета используйте библиотеки:
-    // - tiktoken (Python) - официальная библиотека OpenAI
-    // - github.com/pkoukk/tiktoken-go (Go) - порт tiktoken
+    // Approximate estimate: 1 token ≈ 4 characters (for English)
+    // For Russian: 1 token ≈ 3 characters
+    // IMPORTANT: This is an approximate estimate!
+    // For accurate counting, use libraries:
+    // - tiktoken (Python) - official OpenAI library
+    // - github.com/pkoukk/tiktoken-go (Go) - tiktoken port
     return len(text) / 4
 }
 
-// Точный подсчет с использованием библиотеки (рекомендуется)
+// Accurate counting using library (recommended)
 import "github.com/pkoukk/tiktoken-go"
 
 func countTokensAccurate(text string, model string) int {
@@ -98,7 +98,7 @@ func countTokensInMessages(messages []openai.ChatCompletionMessage) int {
     total := 0
     for _, msg := range messages {
         total += estimateTokens(msg.Content)
-        // Tool calls тоже занимают токены (примерно 50-100 токенов на вызов)
+        // Tool calls also take tokens (approximately 50-100 tokens per call)
         if len(msg.ToolCalls) > 0 {
             total += len(msg.ToolCalls) * 80
         }
@@ -106,27 +106,27 @@ func countTokensInMessages(messages []openai.ChatCompletionMessage) int {
     return total
 }
 
-// Проверка перед каждым запросом
+// Check before each request
 func checkContextLimit(messages []openai.ChatCompletionMessage, maxTokens int) bool {
     used := countTokensInMessages(messages)
-    return used < maxTokens*0.9  // Оставляем 10% запаса
+    return used < maxTokens*0.9  // Leave 10% reserve
 }
 ```
 
-#### Техника 2: Обрезка истории (Truncation)
+#### Technique 2: History Truncation
 
-**Простое решение:** Оставляем только последние N сообщений.
+**Simple solution:** Keep only the last N messages.
 
 ```go
 func truncateHistory(messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
-    // Всегда оставляем System Prompt
+    // Always keep System Prompt
     systemMsg := messages[0]
     
-    // Обрабатываем сообщения с конца
+    // Process messages from the end
     result := []openai.ChatCompletionMessage{systemMsg}
     currentTokens := estimateTokens(systemMsg.Content)
     
-    // Идем с конца и добавляем сообщения, пока не достигнем лимита
+    // Go from end and add messages until limit reached
     for i := len(messages) - 1; i > 0; i-- {
         msgTokens := estimateTokens(messages[i].Content)
         if currentTokens + msgTokens > maxTokens {
@@ -140,32 +140,32 @@ func truncateHistory(messages []openai.ChatCompletionMessage, maxTokens int) []o
 }
 ```
 
-**Проблема обрезки:** Теряем важную информацию из начала разговора.
+**Truncation problem:** We lose important information from the start of the conversation.
 
-#### Техника 3: Сжатие контекста (Summarization)
+#### Technique 3: Context Compression (Summarization)
 
-**Лучшее решение:** Сжимаем старые сообщения через саммаризацию.
+**Better solution:** Compress old messages through summarization.
 
-**Как это работает:**
+**How it works:**
 
 ```go
 func compressOldMessages(messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
-    // 1. Подсчитываем токены
+    // 1. Count tokens
     totalTokens := countTokensInMessages(messages)
     
     if totalTokens < maxTokens {
-        return messages  // Все влезает, ничего не делаем
+        return messages  // Everything fits, do nothing
     }
     
-    // 2. Разделяем на "старые" и "новые" сообщения
+    // 2. Split into "old" and "new" messages
     systemMsg := messages[0]
-    oldMessages := messages[1 : len(messages)-10]  // Все кроме последних 10
-    recentMessages := messages[len(messages)-10:]  // Последние 10
+    oldMessages := messages[1 : len(messages)-10]  // All except last 10
+    recentMessages := messages[len(messages)-10:]  // Last 10
     
-    // 3. Сжимаем старые сообщения через LLM
+    // 3. Compress old messages via LLM
     summary := summarizeMessages(oldMessages)
     
-    // 4. Собираем новый контекст
+    // 4. Assemble new context
     compressed := []openai.ChatCompletionMessage{
         systemMsg,
         {
@@ -179,7 +179,7 @@ func compressOldMessages(messages []openai.ChatCompletionMessage, maxTokens int)
 }
 
 func summarizeMessages(messages []openai.ChatCompletionMessage) string {
-    // Формируем промпт для саммаризации
+    // Form prompt for summarization
     conversation := ""
     for _, msg := range messages {
         conversation += fmt.Sprintf("%s: %s\n", msg.Role, msg.Content)
@@ -193,7 +193,7 @@ func summarizeMessages(messages []openai.ChatCompletionMessage) string {
 Conversation:
 %s`, conversation)
     
-    // Используем LLM для саммаризации (можно другую модель с меньшим контекстом)
+    // Use LLM for summarization (can use another model with smaller context)
     resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
         Model: openai.GPT3Dot5Turbo,
         Messages: []openai.ChatCompletionMessage{
@@ -207,50 +207,50 @@ Conversation:
 }
 ```
 
-**Пример саммаризации:**
+**Summarization example:**
 
 ```
-Исходная история (2000 токенов):
-- User: "Проверь сервер"
-- Assistant: Вызвал check_status
+Original history (2000 tokens):
+- User: "Check server"
+- Assistant: Called check_status
 - Tool: "Server is ONLINE"
-- User: "Проверь базу"
-- Assistant: Вызвал check_db
+- User: "Check database"
+- Assistant: Called check_db
 - Tool: "Database is healthy"
-- User: "Проверь логи"
-- Assistant: Вызвал read_logs
+- User: "Check logs"
+- Assistant: Called read_logs
 - Tool: "No errors found"
-... (еще 50 сообщений)
+... (50 more messages)
 
-Сжатая версия (200 токенов):
+Compressed version (200 tokens):
 Summary: "User requested server, database, and log checks. All systems are healthy. 
 No errors found in logs. Current task: monitoring system status."
 ```
 
-**Преимущества саммаризации:**
-- Сохраняем важную информацию
-- Экономим токены
-- Модель видит контекст задачи
+**Summarization advantages:**
+- Preserve important information
+- Save tokens
+- Model sees task context
 
-#### Техника 4: Sliding Window (Скользящее окно)
+#### Technique 4: Sliding Window
 
-**Компромисс:** Сохраняем начало (важные детали) и конец (текущий контекст), сжимаем середину.
+**Compromise:** Preserve start (important details) and end (current context), compress middle.
 
 ```go
 func slidingWindowCompression(messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
     systemMsg := messages[0]
     
-    // Сохраняем первые 5 сообщений (начало разговора)
+    // Preserve first 5 messages (start of conversation)
     startMessages := messages[1:6]
     
-    // Сохраняем последние 10 сообщений (текущий контекст)
+    // Preserve last 10 messages (current context)
     endMessages := messages[len(messages)-10:]
     
-    // Сжимаем середину
+    // Compress middle
     middleMessages := messages[6 : len(messages)-10]
     summary := summarizeMessages(middleMessages)
     
-    // Собираем
+    // Assemble
     result := []openai.ChatCompletionMessage{systemMsg}
     result = append(result, startMessages...)
     result = append(result, openai.ChatCompletionMessage{
@@ -263,45 +263,45 @@ func slidingWindowCompression(messages []openai.ChatCompletionMessage, maxTokens
 }
 ```
 
-#### Техника 5: Приоритизация сообщений
+#### Technique 5: Message Prioritization
 
-**Умное решение:** Сохраняем важные сообщения, удаляем менее важные.
+**Smart solution:** Preserve important messages, remove less important ones.
 
 ```go
 func prioritizeMessages(messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
-    // Важные сообщения (всегда сохраняем):
+    // Important messages (always preserve):
     // - System Prompt
-    // - Последний запрос пользователя
-    // - Результаты инструментов (они могут быть важны для следующего шага)
-    // - Сообщения с ошибками
+    // - Last user request
+    // - Tool results (they may be important for next step)
+    // - Error messages
     
     important := []openai.ChatCompletionMessage{messages[0]}  // System
     
     for i := 1; i < len(messages); i++ {
         msg := messages[i]
         
-        // Всегда сохраняем последние 5 сообщений
+        // Always preserve last 5 messages
         if i >= len(messages)-5 {
             important = append(important, msg)
             continue
         }
         
-        // Сохраняем результаты инструментов (они важны для контекста)
+        // Preserve tool results (they're important for context)
         if msg.Role == "tool" {
             important = append(important, msg)
             continue
         }
         
-        // Сохраняем сообщения с ошибками
+        // Preserve error messages
         if strings.Contains(strings.ToLower(msg.Content), "error") {
             important = append(important, msg)
             continue
         }
         
-        // Остальные можно удалить или сжать
+        // Others can be deleted or compressed
     }
     
-    // Если все еще не влезает - применяем саммаризацию
+    // If still doesn't fit - apply summarization
     if countTokensInMessages(important) > maxTokens {
         return compressOldMessages(important, maxTokens)
     }
@@ -310,17 +310,17 @@ func prioritizeMessages(messages []openai.ChatCompletionMessage, maxTokens int) 
 }
 ```
 
-#### Когда применять какую технику?
+#### When to Use Which Technique?
 
-| Ситуация | Техника | Когда использовать |
-|----------|---------|-------------------|
-| Контекст почти полон (80-90%) | Подсчет токенов + мониторинг | Всегда |
-| Простые задачи, неважна история | Обрезка (truncation) | Быстрые одноразовые задачи |
-| Длинные диалоги, важна история | Саммаризация | Долгие сессии, важна контекстная информация |
-| Нужен баланс | Sliding Window | Средние задачи, важно и начало, и конец |
-| Критичные результаты инструментов | Приоритизация | Когда результаты инструментов важны для следующих шагов |
+| Situation | Technique | When to use |
+|-----------|-----------|-------------|
+| Context almost full (80-90%) | Token counting + monitoring | Always |
+| Simple tasks, history not important | Truncation | Quick one-time tasks |
+| Long dialogues, history important | Summarization | Long sessions, contextual information important |
+| Need balance | Sliding Window | Medium tasks, both start and end important |
+| Critical tool results | Prioritization | When tool results are important for next steps |
 
-#### Практический пример: Адаптивное управление контекстом
+#### Practical Example: Adaptive Context Management
 
 ```go
 func adaptiveContextManagement(messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
@@ -329,20 +329,20 @@ func adaptiveContextManagement(messages []openai.ChatCompletionMessage, maxToken
     threshold90 := int(float64(maxTokens) * 0.9)
     
     if usedTokens < threshold80 {
-        // Все хорошо, ничего не делаем
+        // All good, do nothing
         return messages
     } else if usedTokens < threshold90 {
-        // Применяем легкую оптимизацию: приоритизация
+        // Apply light optimization: prioritization
         return prioritizeMessages(messages, maxTokens)
     } else {
-        // Критично! Применяем саммаризацию
+        // Critical! Apply summarization
         return compressOldMessages(messages, maxTokens)
     }
 }
 
-// Использование в цикле агента
+// Usage in agent loop
 for i := 0; i < maxIterations; i++ {
-    // Перед каждым запросом проверяем и оптимизируем контекст
+    // Before each request, check and optimize context
     messages = adaptiveContextManagement(messages, maxContextTokens)
     
     resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
@@ -351,233 +351,233 @@ for i := 0; i < maxIterations; i++ {
         Tools:    tools,
     })
     
-    // ... остальной код
+    // ... rest of code
 }
 ```
 
-#### Примеры оптимизации в разных доменах
+#### Optimization Examples in Different Domains
 
 **DevOps:**
 ```go
-// Важно сохранить:
-// - Результаты проверок (check_status, check_logs)
-// - Ошибки и их решения
-// - Текущее состояние системы
+// Important to preserve:
+// - Check results (check_status, check_logs)
+// - Errors and their solutions
+// - Current system state
 
-// Можно сжать:
-// - Повторяющиеся проверки статуса
-// - Успешные операции без ошибок
+// Can compress:
+// - Repeated status checks
+// - Successful operations without errors
 ```
 
 **Support:**
 ```go
-// Важно сохранить:
-// - Детали тикета
-// - Решения из базы знаний
-// - Текущий статус проблемы
+// Important to preserve:
+// - Ticket details
+// - Solutions from knowledge base
+// - Current problem status
 
-// Можно сжать:
-// - Вежливые фразы
-// - Повторяющиеся вопросы
+// Can compress:
+// - Polite phrases
+// - Repeated questions
 ```
 
 **Data Analytics:**
 ```go
-// Важно сохранить:
-// - Схемы таблиц (describe_table результаты)
-// - SQL запросы и их результаты
-// - Выводы анализа
+// Important to preserve:
+// - Table schemas (describe_table results)
+// - SQL queries and their results
+// - Analysis conclusions
 
-// Можно сжать:
-// - Промежуточные проверки качества данных
+// Can compress:
+// - Intermediate data quality checks
 ```
 
-### Long-term Memory (Долгосрочная память)
+### Long-term Memory
 
-Это векторная база данных (RAG). Позволяет хранить гигабайты документов и находить нужное по смыслу (Semantic Search).
+This is a vector database (RAG). Allows storing gigabytes of documents and finding what's needed by meaning (Semantic Search).
 
-**Как это работает:**
+**How it works:**
 
-1. Документы разбиваются на чанки (chunks)
-2. Каждый чанк преобразуется в вектор (embedding)
-3. При запросе агента ищутся похожие векторы
-4. Релевантные чанки добавляются в контекст
+1. Documents are split into chunks
+2. Each chunk is converted to a vector (embedding)
+3. When agent queries, similar vectors are searched
+4. Relevant chunks are added to context
 
-**Примеры использования:**
+**Usage examples:**
 
-- **DevOps:** Хранение регламентов, runbooks, документации по сервисам
-- **Support:** База знаний с решениями типовых проблем
-- **Data:** Схемы баз данных, документация по API
-- **Security:** Playbooks для инцидентов, политики безопасности
+- **DevOps:** Storing regulations, runbooks, service documentation
+- **Support:** Knowledge base with solutions to common problems
+- **Data:** Database schemas, API documentation
+- **Security:** Incident playbooks, security policies
 
-См. [Глава 07: RAG](../07-rag/README.md)
+See [Chapter 07: RAG](../07-rag/README.md)
 
-## Planning (Планирование)
+## Planning
 
-**Planning** — это способность агента разбить сложную задачу на последовательность простых шагов и выполнить их в правильном порядке.
+**Planning** is the agent's ability to break down a complex task into a sequence of simple steps and execute them in the correct order.
 
-### Зачем нужно планирование?
+### Why Is Planning Needed?
 
-Представьте задачу: *"У нас проблемы с базой данных, разберись"*
+Imagine the task: *"We have database problems, investigate"*
 
-**Без планирования:**
-- Агент может попытаться сделать всё сразу и запутаться
-- Агент может пропустить важные шаги
-- Агент может выполнить шаги в неправильном порядке
+**Without planning:**
+- Agent may try to do everything at once and get confused
+- Agent may skip important steps
+- Agent may execute steps in wrong order
 
-**С планированием:**
-- Агент сначала анализирует задачу
-- Агент разбивает её на подзадачи
-- Агент выполняет подзадачи последовательно
-- Агент проверяет результат каждого шага
+**With planning:**
+- Agent first analyzes the task
+- Agent breaks it down into subtasks
+- Agent executes subtasks sequentially
+- Agent checks result of each step
 
-### Уровни планирования
+### Planning Levels
 
-#### Уровень 1: Имплицитное планирование (ReAct)
+#### Level 1: Implicit Planning (ReAct)
 
-Агент не создает явный план, а планирует "на лету" в процессе выполнения.
+Agent doesn't create an explicit plan, but plans "on the fly" during execution.
 
-**Как это работает:**
-1. Агент получает задачу
-2. Агент думает: "Что мне нужно сделать первым?"
-3. Агент выполняет действие
-4. Агент видит результат и думает: "Что делать дальше?"
-5. Повторяет до завершения задачи
+**How it works:**
+1. Agent receives task
+2. Agent thinks: "What do I need to do first?"
+3. Agent executes action
+4. Agent sees result and thinks: "What to do next?"
+5. Repeats until task completion
 
-**Пример (DevOps):**
+**Example (DevOps):**
 ```
-User: "Проверь, почему сервер медленно отвечает"
+User: "Check why server is responding slowly"
 
-Итерация 1:
-Thought: "Нужно проверить метрики сервера"
+Iteration 1:
+Thought: "Need to check server metrics"
 Action: get_cpu_metrics()
 Observation: CPU 95%
 
-Итерация 2:
-Thought: "CPU высокий. Нужно посмотреть, какой процесс жрет ресурсы"
+Iteration 2:
+Thought: "CPU is high. Need to see which process is consuming resources"
 Action: get_top_processes()
 Observation: Process: ffmpeg, CPU: 90%
 
-Итерация 3:
-Thought: "ffmpeg жрет CPU. Нужно проверить, что это за процесс"
+Iteration 3:
+Thought: "ffmpeg is consuming CPU. Need to check what this process is"
 Action: get_process_info(pid=12345)
-Observation: Это видео-конвертация, запущенная пользователем
+Observation: This is video conversion started by user
 
-Итерация 4:
-Thought: "Это легитимный процесс, но он блокирует систему. Предложу пользователю ограничить приоритет"
-Action: [Финальный ответ пользователю]
+Iteration 4:
+Thought: "This is a legitimate process, but it's blocking the system. I'll suggest the user limit priority"
+Action: [Final answer to user]
 ```
 
-**Преимущества:**
-- Гибкость: агент может адаптироваться к результатам
-- Простота реализации
-- Подходит для задач средней сложности
+**Advantages:**
+- Flexibility: agent can adapt to results
+- Simple implementation
+- Suitable for medium complexity tasks
 
-**Недостатки:**
-- Может "заблудиться" в деталях
-- Может пропустить важные шаги
-- Сложно отследить прогресс
+**Disadvantages:**
+- May "get lost" in details
+- May skip important steps
+- Hard to track progress
 
-#### Уровень 2: Явное планирование (Plan-and-Solve)
+#### Level 2: Explicit Planning (Plan-and-Solve)
 
-Агент сначала создает полный план, затем выполняет его по пунктам.
+Agent first creates a full plan, then executes it point by point.
 
-**Как это работает:**
-1. Агент получает задачу
-2. Агент генерирует полный план (список шагов)
-3. Агент выполняет шаги по очереди
-4. Агент отмечает выполненные шаги
-5. Агент завершает, когда все шаги выполнены
+**How it works:**
+1. Agent receives task
+2. Agent generates full plan (list of steps)
+3. Agent executes steps in order
+4. Agent marks completed steps
+5. Agent completes when all steps are done
 
-**Пример (DevOps - Инцидент):**
+**Example (DevOps - Incident):**
 ```
-User: "Сервис оплаты недоступен (502). Разберись"
+User: "Payment service unavailable (502). Investigate"
 
-Шаг 1: Планирование
-Agent думает: "Нужно создать план расследования"
-Agent генерирует план:
-  1. Проверить HTTP статус сервиса
-  2. Если не 200 — прочитать логи
-  3. Проанализировать ошибки в логах
-  4. Определить причину (config error / connection error / memory)
-  5. Применить фикс (rollback / restart / scale)
-  6. Верифицировать, что сервис восстановлен
+Step 1: Planning
+Agent thinks: "Need to create investigation plan"
+Agent generates plan:
+  1. Check service HTTP status
+  2. If not 200 — read logs
+  3. Analyze errors in logs
+  4. Determine cause (config error / connection error / memory)
+  5. Apply fix (rollback / restart / scale)
+  6. Verify service is restored
 
-Шаг 2: Выполнение
-Agent: "Выполняю пункт 1: Проверяю HTTP статус"
+Step 2: Execution
+Agent: "Executing step 1: Checking HTTP status"
 Action: check_http_status("payment-service")
 Observation: 502 Bad Gateway
 
-Agent: "Выполняю пункт 2: Читаю логи"
+Agent: "Executing step 2: Reading logs"
 Action: read_logs("payment-service", lines=50)
 Observation: ERROR: Config syntax error in line 42
 
-Agent: "Выполняю пункт 3: Анализирую ошибки"
-Thought: "Логи показывают синтаксическую ошибку в конфиге. Это не временная проблема."
+Agent: "Executing step 3: Analyzing errors"
+Thought: "Logs show syntax error in config. This is not a transient problem."
 
-Agent: "Выполняю пункт 4: Определяю причину"
-Thought: "Причина: Config error. Решение: Rollback"
+Agent: "Executing step 4: Determining cause"
+Thought: "Cause: Config error. Solution: Rollback"
 
-Agent: "Выполняю пункт 5: Применяю фикс"
+Agent: "Executing step 5: Applying fix"
 Action: rollback_deploy("payment-service", version="v1.9")
 Observation: Rollback complete. Service restarted.
 
-Agent: "Выполняю пункт 6: Верифицирую"
+Agent: "Executing step 6: Verifying"
 Action: check_http_status("payment-service")
 Observation: 200 OK
 
-Agent: "Все шаги выполнены. Инцидент решен."
+Agent: "All steps completed. Incident resolved."
 ```
 
-**Преимущества:**
-- Гарантия выполнения всех шагов
-- Легко отследить прогресс
-- Подходит для сложных задач (5+ шагов)
+**Advantages:**
+- Guarantee all steps will be executed
+- Easy to track progress
+- Suitable for complex tasks (5+ steps)
 
-**Недостатки:**
-- Менее гибкий: план может быть неоптимальным
-- Требует больше токенов (генерация плана)
-- Может быть избыточным для простых задач
+**Disadvantages:**
+- Less flexible: plan may be suboptimal
+- Requires more tokens (plan generation)
+- May be excessive for simple tasks
 
-#### Уровень 3: Иерархическое планирование (Hierarchical Planning)
+#### Level 3: Hierarchical Planning
 
-Для очень сложных задач план разбивается на подпланы.
+For very complex tasks, the plan is broken down into sub-plans.
 
-**Пример (Security - Расследование инцидента):**
+**Example (Security - Incident Investigation):**
 ```
-Главная задача: "Расследовать подозрительную активность на хосте 192.168.1.10"
+Main task: "Investigate suspicious activity on host 192.168.1.10"
 
-План верхнего уровня:
-  1. Триаж алерта
-  2. Сбор доказательств
-  3. Анализ угрозы
-  4. Принятие мер (containment)
-  5. Генерация отчета
+Top-level plan:
+  1. Alert triage
+  2. Evidence gathering
+  3. Threat analysis
+  4. Containment actions
+  5. Report generation
 
-Подплан для шага 2 (Сбор доказательств):
-  2.1. Запросить логи SIEM за последний час
-  2.2. Проверить сетевой трафик
-  2.3. Проверить метрики системы
-  2.4. Проверить запущенные процессы
-  2.5. Проверить файловую систему на изменения
+Sub-plan for step 2 (Evidence gathering):
+  2.1. Request SIEM logs for last hour
+  2.2. Check network traffic
+  2.3. Check system metrics
+  2.4. Check running processes
+  2.5. Check filesystem for changes
 
-Подплан для шага 3 (Анализ угрозы):
-  3.1. Определить тип атаки
-  3.2. Оценить критичность
-  3.3. Определить scope (затронутые системы)
-  3.4. Оценить ущерб
+Sub-plan for step 3 (Threat analysis):
+  3.1. Determine attack type
+  3.2. Assess criticality
+  3.3. Determine scope (affected systems)
+  3.4. Assess damage
 ```
 
-**Когда использовать:**
-- Очень сложные задачи (10+ шагов)
-- Задачи с множественными зависимостями
-- Задачи, требующие координации нескольких специалистов
+**When to use:**
+- Very complex tasks (10+ steps)
+- Tasks with multiple dependencies
+- Tasks requiring coordination of multiple specialists
 
-### Стратегии планирования
+### Planning Strategies
 
 #### 1. ReAct (Reason + Act)
 
-Самая популярная архитектура. Формула: `Thought -> Action -> Observation`.
+Most popular architecture. Formula: `Thought -> Action -> Observation`.
 
 ```mermaid
 sequenceDiagram
@@ -585,384 +585,384 @@ sequenceDiagram
     participant Agent
     participant Tool
 
-    User->>Agent: "Проверь сервер"
-    Note over Agent: Thought: "Нужно проверить статус"
+    User->>Agent: "Check server"
+    Note over Agent: Thought: "Need to check status"
     Agent->>Tool: check_status()
     Tool->>Agent: "ONLINE"
-    Note over Agent: Thought: "Сервер работает. Проверю метрики"
+    Note over Agent: Thought: "Server is working. I'll check metrics"
     Agent->>Tool: get_metrics()
     Tool->>Agent: "CPU: 50%"
-    Agent->>User: "Сервер работает нормально"
+    Agent->>User: "Server is working normally"
 ```
 
-**Цикл ReAct:**
+**ReAct cycle:**
 
-1. **Thought:** Модель генерирует CoT (план действий)
-2. **Action:** Модель генерирует токен вызова инструмента
-3. **Runtime:** Наш код перехватывает вызов, выполняет функцию, получает результат
-4. **Observation:** Результат подается обратно в модель
-5. **Loop:** Повторяем до тех пор, пока модель не решит, что задача решена
+1. **Thought:** Model generates CoT (action plan)
+2. **Action:** Model generates tool call token
+3. **Runtime:** Our code intercepts call, executes function, gets result
+4. **Observation:** Result is fed back to model
+5. **Loop:** Repeat until model decides task is solved
 
-**Примеры ReAct в разных доменах:**
+**ReAct examples in different domains:**
 
 **DevOps:**
 ```
-Thought: Пользователь жалуется на тормоза. Надо проверить CPU.
+Thought: User complains about slowness. Need to check CPU.
 Action: get_cpu_metrics()
 Observation: CPU 99% process: ffmpeg
-Thought: ffmpeg жрет все. Надо его убить или ограничить.
+Thought: ffmpeg is consuming everything. Need to kill or limit it.
 Action: kill_process(pid=123)
 ```
 
 **Support:**
 ```
-Thought: Пользователь не может войти. Проверю статус аккаунта.
+Thought: User can't log in. I'll check account status.
 Action: check_account_status(user_id="12345")
 Observation: Account is locked due to suspicious activity
-Thought: Аккаунт заблокирован. Нужно разблокировать, но сначала проверю логи.
+Thought: Account is locked. Need to unlock, but first I'll check logs.
 Action: check_security_logs(user_id="12345")
 Observation: Multiple failed login attempts from unknown IP
-Thought: Это похоже на взлом. Разблокирую, но отправлю уведомление о смене пароля.
+Thought: This looks like a hack. I'll unlock, but send password change notification.
 Action: unlock_account(user_id="12345")
 ```
 
 **Data Analytics:**
 ```
-Thought: Пользователь спрашивает про продажи. Нужно понять структуру данных.
+Thought: User asks about sales. Need to understand data structure.
 Action: describe_table("sales")
-Observation: Таблица содержит: date, region, amount
-Thought: Теперь сформулирую SQL-запрос.
+Observation: Table contains: date, region, amount
+Thought: Now I'll formulate SQL query.
 Action: sql_select("SELECT region, SUM(amount) FROM sales GROUP BY region")
 Observation: Region A: 100k, Region B: 150k
-Thought: Проанализирую результаты и сформулирую выводы.
+Thought: I'll analyze results and formulate conclusions.
 ```
 
 ### Plan-and-Solve
 
-Для сложных задач (Lab 06 Incident) ReAct может "заблудиться" в деталях.
+For complex tasks (Lab 06 Incident), ReAct may "get lost" in details.
 
-**Архитектура:**
+**Architecture:**
 
-1. **Planner:** Сначала сгенерируй полный план
+1. **Planner:** First generate full plan
    ```
-   План:
-   1. Проверить HTTP статус
-   2. Прочитать логи
-   3. Проанализировать ошибки
-   4. Применить фикс
-   5. Верифицировать
+   Plan:
+   1. Check HTTP status
+   2. Read logs
+   3. Analyze errors
+   4. Apply fix
+   5. Verify
    ```
 
-2. **Solver:** Выполняй пункты плана по очереди
+2. **Solver:** Execute plan points in order
 
-**Когда использовать Plan-and-Solve вместо ReAct?**
+**When to use Plan-and-Solve instead of ReAct?**
 
-- Задача очень сложная (5+ шагов)
-- Нужна гарантия, что все шаги будут выполнены
-- Агент часто "забывает" про важные шаги
-- Задача имеет четкую структуру (например, SOP для инцидентов)
+- Task is very complex (5+ steps)
+- Need guarantee all steps will be executed
+- Agent often "forgets" important steps
+- Task has clear structure (e.g., SOP for incidents)
 
-**Реализация Plan-and-Solve:**
+**Plan-and-Solve implementation:**
 
 ```go
 func planAndSolve(ctx context.Context, client *openai.Client, task string) {
-    // Шаг 1: Генерация плана
-    planPrompt := fmt.Sprintf(`Разбей задачу на шаги:
-Задача: %s
+    // Step 1: Plan generation
+    planPrompt := fmt.Sprintf(`Break down the task into steps:
+Task: %s
 
-Создай план действий. Каждый шаг должен быть конкретным и выполнимым.`, task)
+Create an action plan. Each step must be specific and executable.`, task)
     
     planResp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
         Model: openai.GPT4,
         Messages: []openai.ChatCompletionMessage{
-            {Role: "system", Content: "Ты планировщик задач. Создавай детальные планы."},
+            {Role: "system", Content: "You are a task planner. Create detailed plans."},
             {Role: "user", Content: planPrompt},
         },
     })
     
     plan := planResp.Choices[0].Message.Content
-    fmt.Printf("План:\n%s\n", plan)
+    fmt.Printf("Plan:\n%s\n", plan)
     
-    // Шаг 2: Выполнение плана
-    executionPrompt := fmt.Sprintf(`Выполни план по шагам:
-План:
+    // Step 2: Plan execution
+    executionPrompt := fmt.Sprintf(`Execute plan step by step:
+Plan:
 %s
 
-Выполняй шаги по очереди. После каждого шага сообщай о результате.`, plan)
+Execute steps in order. After each step, report the result.`, plan)
     
-    // Запускаем агента с планом в контексте
+    // Run agent with plan in context
     runAgentWithPlan(ctx, client, executionPrompt, plan)
 }
 ```
 
 #### 3. Tree-of-Thoughts (ToT)
 
-Агент рассматривает несколько вариантов решения и выбирает лучший.
+Agent considers several solution options and chooses the best one.
 
-**Как это работает:**
-1. Агент генерирует несколько возможных путей решения
-2. Агент оценивает каждый путь
-3. Агент выбирает лучший путь
-4. Агент выполняет выбранный путь
+**How it works:**
+1. Agent generates several possible solution paths
+2. Agent evaluates each path
+3. Agent chooses best path
+4. Agent executes chosen path
 
-**Пример (Data Analytics):**
+**Example (Data Analytics):**
 ```
-Задача: "Почему упали продажи в регионе X?"
+Task: "Why did sales drop in region X?"
 
-Вариант 1: Проверить данные о продажах напрямую
-  - Плюсы: Быстро
-  - Минусы: Может не показать причину
+Option 1: Check sales data directly
+  - Pros: Fast
+  - Cons: May not show cause
 
-Вариант 2: Проверить данные о продажах + маркетинговые кампании + конкурентов
-  - Плюсы: Более полная картина
-  - Минусы: Дольше
+Option 2: Check sales data + marketing campaigns + competitors
+  - Pros: More complete picture
+  - Cons: Longer
 
-Вариант 3: Проверить качество данных сначала
-  - Плюсы: Убедимся, что данные корректны
-  - Минусы: Может быть избыточно
+Option 3: Check data quality first
+  - Pros: Ensure data is correct
+  - Cons: May be excessive
 
-Агент выбирает Вариант 2 (наиболее полный)
-```
-
-**Когда использовать:**
-- Задача имеет несколько возможных подходов
-- Нужно выбрать оптимальный путь
-- Важна эффективность решения
-
-#### 4. Self-Consistency (Самосогласованность)
-
-Агент генерирует несколько планов и выбирает наиболее согласованный.
-
-**Как это работает:**
-1. Агент генерирует N планов (например, 5)
-2. Агент находит общие элементы во всех планах
-3. Агент создает финальный план на основе общих элементов
-
-**Пример:**
-```
-План 1: [A, B, C, D]
-План 2: [A, B, E, F]
-План 3: [A, C, D, G]
-План 4: [A, B, C, H]
-План 5: [A, B, D, I]
-
-Общие элементы: A (всех 5), B (в 4 из 5), C (в 2 из 5)
-Финальный план: [A, B, C, ...] (на основе наиболее частых элементов)
+Agent chooses Option 2 (most complete)
 ```
 
-### Декомпозиция задач
+**When to use:**
+- Task has several possible approaches
+- Need to choose optimal path
+- Solution efficiency is important
 
-#### Как правильно разбивать задачи?
+#### 4. Self-Consistency
 
-**Принципы декомпозиции:**
+Agent generates several plans and chooses the most consistent one.
 
-1. **Атомарность:** Каждый шаг должен быть выполним одним действием
-   - ❌ Плохо: "Проверить и починить сервер"
-   - ✅ Хорошо: "Проверить статус сервера" → "Прочитать логи" → "Применить фикс"
+**How it works:**
+1. Agent generates N plans (e.g., 5)
+2. Agent finds common elements in all plans
+3. Agent creates final plan based on common elements
 
-2. **Зависимости:** Шаги должны выполняться в правильном порядке
-   - ❌ Плохо: "Применить фикс" → "Прочитать логи"
-   - ✅ Хорошо: "Прочитать логи" → "Проанализировать" → "Применить фикс"
+**Example:**
+```
+Plan 1: [A, B, C, D]
+Plan 2: [A, B, E, F]
+Plan 3: [A, C, D, G]
+Plan 4: [A, B, C, H]
+Plan 5: [A, B, D, I]
 
-3. **Проверяемость:** Каждый шаг должен иметь четкий критерий успеха
-   - ❌ Плохо: "Улучшить производительность"
-   - ✅ Хорошо: "Снизить CPU с 95% до 50%"
+Common elements: A (all 5), B (4 of 5), C (2 of 5)
+Final plan: [A, B, C, ...] (based on most frequent elements)
+```
 
-**Пример декомпозиции (Support):**
+### Task Decomposition
+
+#### How to Properly Break Down Tasks?
+
+**Decomposition principles:**
+
+1. **Atomicity:** Each step must be executable with one action
+   - ❌ Bad: "Check and fix server"
+   - ✅ Good: "Check server status" → "Read logs" → "Apply fix"
+
+2. **Dependencies:** Steps must execute in correct order
+   - ❌ Bad: "Apply fix" → "Read logs"
+   - ✅ Good: "Read logs" → "Analyze" → "Apply fix"
+
+3. **Verifiability:** Each step must have a clear success criterion
+   - ❌ Bad: "Improve performance"
+   - ✅ Good: "Reduce CPU from 95% to 50%"
+
+**Decomposition example (Support):**
 
 ```
-Исходная задача: "Обработать тикет пользователя о проблеме с входом"
+Original task: "Handle user ticket about login problem"
 
-Декомпозиция:
-1. Прочитать тикет полностью
-   - Критерий успеха: Получены все детали проблемы
+Decomposition:
+1. Read ticket completely
+   - Success criterion: Got all problem details
    
-2. Собрать контекст
-   - Критерий успеха: Известны версия ПО, ОС, браузер
+2. Gather context
+   - Success criterion: Known software version, OS, browser
    
-3. Поискать в базе знаний
-   - Критерий успеха: Найдены похожие случаи или решение
+3. Search knowledge base
+   - Success criterion: Found similar cases or solution
    
-4. Проверить статус аккаунта
-   - Критерий успеха: Известен статус (активен/заблокирован)
+4. Check account status
+   - Success criterion: Known status (active/locked)
    
-5. Сформулировать ответ
-   - Критерий успеха: Ответ готов и содержит решение
+5. Formulate response
+   - Success criterion: Response ready and contains solution
    
-6. Отправить ответ или эскалировать
-   - Критерий успеха: Тикет обработан
+6. Send response or escalate
+   - Success criterion: Ticket processed
 ```
 
-### Практические примеры планирования
+### Practical Planning Examples
 
-#### Пример 1: DevOps - Расследование инцидента
+#### Example 1: DevOps - Incident Investigation
 
 ```go
-// Задача: "Сервис недоступен. Разберись."
+// Task: "Service unavailable. Investigate."
 
-// План (генерируется агентом):
+// Plan (generated by agent):
 plan := []string{
-    "1. Проверить HTTP статус сервиса",
-    "2. Если не 200 — прочитать логи",
-    "3. Проанализировать ошибки",
-    "4. Определить причину",
-    "5. Применить фикс",
-    "6. Верифицировать восстановление",
+    "1. Check service HTTP status",
+    "2. If not 200 — read logs",
+    "3. Analyze errors",
+    "4. Determine cause",
+    "5. Apply fix",
+    "6. Verify recovery",
 }
 
-// Выполнение:
+// Execution:
 for i, step := range plan {
-    fmt.Printf("Выполняю шаг %d: %s\n", i+1, step)
+    fmt.Printf("Executing step %d: %s\n", i+1, step)
     result := executeStep(step)
     if !result.Success {
-        fmt.Printf("Шаг %d провален: %s\n", i+1, result.Error)
-        // Агент может перепланировать или эскалировать
+        fmt.Printf("Step %d failed: %s\n", i+1, result.Error)
+        // Agent can replan or escalate
         break
     }
 }
 ```
 
-#### Пример 2: Data Analytics - Анализ продаж
+#### Example 2: Data Analytics - Sales Analysis
 
 ```go
-// Задача: "Почему упали продажи в регионе X?"
+// Task: "Why did sales drop in region X?"
 
-// План:
+// Plan:
 plan := []string{
-    "1. Проверить качество данных (nulls, duplicates)",
-    "2. Получить данные о продажах за последний месяц",
-    "3. Сравнить с предыдущим периодом",
-    "4. Проверить маркетинговые кампании",
-    "5. Проверить конкурентов",
-    "6. Проанализировать тренды",
-    "7. Сгенерировать отчет с выводами",
+    "1. Check data quality (nulls, duplicates)",
+    "2. Get sales data for last month",
+    "3. Compare with previous period",
+    "4. Check marketing campaigns",
+    "5. Check competitors",
+    "6. Analyze trends",
+    "7. Generate report with conclusions",
 }
 ```
 
-#### Пример 3: Security - Триаж алерта
+#### Example 3: Security - Alert Triage
 
 ```go
-// Задача: "Алерт: подозрительная активность на хосте 192.168.1.10"
+// Task: "Alert: suspicious activity on host 192.168.1.10"
 
-// План:
+// Plan:
 plan := []string{
-    "1. Определить severity алерта",
-    "2. Собрать доказательства (логи, метрики, трафик)",
-    "3. Проанализировать паттерны атаки",
-    "4. Определить scope (затронутые системы)",
-    "5. Оценить критичность",
-    "6. Принять решение (False Positive / True Positive)",
-    "7. Если True Positive — containment (с подтверждением)",
-    "8. Сгенерировать отчет для SOC",
+    "1. Determine alert severity",
+    "2. Gather evidence (logs, metrics, traffic)",
+    "3. Analyze attack patterns",
+    "4. Determine scope (affected systems)",
+    "5. Assess criticality",
+    "6. Make decision (False Positive / True Positive)",
+    "7. If True Positive — containment (with confirmation)",
+    "8. Generate report for SOC",
 }
 ```
 
-### Типовые ошибки планирования
+### Common Planning Mistakes
 
-#### Ошибка 1: Слишком общий план
+#### Mistake 1: Too General Plan
 
-❌ **Плохо:**
+❌ **Bad:**
 ```
-План:
-1. Разобраться с проблемой
-2. Починить
-3. Проверить
-```
-
-✅ **Хорошо:**
-```
-План:
-1. Проверить HTTP статус сервиса (check_http)
-2. Если 502 — прочитать последние 50 строк логов (read_logs)
-3. Найти ключевые слова ошибок в логах
-4. Если "Syntax error" — выполнить rollback (rollback_deploy)
-5. Если "Connection refused" — перезапустить сервис (restart_service)
-6. Верифицировать: проверить HTTP статус снова (check_http)
+Plan:
+1. Investigate problem
+2. Fix
+3. Check
 ```
 
-#### Ошибка 2: Неправильный порядок шагов
-
-❌ **Плохо:**
+✅ **Good:**
 ```
-1. Применить фикс
-2. Прочитать логи
-3. Проверить статус
-```
-
-✅ **Хорошо:**
-```
-1. Проверить статус
-2. Прочитать логи
-3. Применить фикс
+Plan:
+1. Check service HTTP status (check_http)
+2. If 502 — read last 50 lines of logs (read_logs)
+3. Find error keywords in logs
+4. If "Syntax error" — execute rollback (rollback_deploy)
+5. If "Connection refused" — restart service (restart_service)
+6. Verify: check HTTP status again (check_http)
 ```
 
-#### Ошибка 3: Пропуск важных шагов
+#### Mistake 2: Wrong Step Order
 
-❌ **Плохо:**
+❌ **Bad:**
 ```
-1. Прочитать логи
-2. Применить фикс
-(Пропущен шаг верификации!)
-```
-
-✅ **Хорошо:**
-```
-1. Прочитать логи
-2. Применить фикс
-3. Верифицировать результат
+1. Apply fix
+2. Read logs
+3. Check status
 ```
 
-### Чек-лист: Планирование
+✅ **Good:**
+```
+1. Check status
+2. Read logs
+3. Apply fix
+```
 
-- [ ] Задача разбита на атомарные шаги
-- [ ] Шаги выполняются в правильном порядке
-- [ ] Каждый шаг имеет четкий критерий успеха
-- [ ] План включает верификацию результата
-- [ ] Выбран правильный уровень планирования (ReAct / Plan-and-Solve / Hierarchical)
-- [ ] План адаптируется к результатам выполнения (для ReAct)
+#### Mistake 3: Skipping Important Steps
 
-### Reflexion (Самокоррекция)
+❌ **Bad:**
+```
+1. Read logs
+2. Apply fix
+(Missing verification step!)
+```
 
-Агенты часто ошибаются. Reflexion добавляет шаг критики.
+✅ **Good:**
+```
+1. Read logs
+2. Apply fix
+3. Verify result
+```
 
-Цикл: `Act -> Observe -> Fail -> REFLECT -> Plan Again`
+### Checklist: Planning
 
-**Пример:**
+- [ ] Task broken down into atomic steps
+- [ ] Steps execute in correct order
+- [ ] Each step has clear success criterion
+- [ ] Plan includes result verification
+- [ ] Correct planning level chosen (ReAct / Plan-and-Solve / Hierarchical)
+- [ ] Plan adapts to execution results (for ReAct)
+
+### Reflexion (Self-Correction)
+
+Agents often make mistakes. Reflexion adds a criticism step.
+
+Cycle: `Act -> Observe -> Fail -> REFLECT -> Plan Again`
+
+**Example:**
 
 ```
 Action: read_file("/etc/nginx/nginx.conf")
 Observation: Permission denied
-Reflection: "Я пытался прочитать файл, но получил Permission Denied. 
-            Значит, у меня нет прав. В следующий раз надо использовать sudo 
-            или проверить права доступа сначала."
+Reflection: "I tried to read the file, but got Permission Denied. 
+            This means I don't have rights. Next time I should use sudo 
+            or check access rights first."
 Action: check_permissions("/etc/nginx/nginx.conf")
 Observation: File is readable by root only
 Action: read_file_sudo("/etc/nginx/nginx.conf")
 ```
 
-## Runtime (Среда выполнения)
+## Runtime
 
-Runtime — это код, который связывает LLM с инструментами.
+Runtime is the code that connects LLM with tools.
 
-**Основные функции Runtime:**
+**Main Runtime functions:**
 
-1. **Парсинг ответов LLM:** Определение, хочет ли модель вызвать инструмент
-2. **Выполнение инструментов:** Вызов реальных функций Go
-3. **Управление историей:** Добавление результатов в контекст
-4. **Управление циклом:** Определение, когда остановиться
+1. **Parsing LLM responses:** Determining if model wants to call a tool
+2. **Tool execution:** Calling real Go functions
+3. **History management:** Adding results to context
+4. **Loop management:** Determining when to stop
 
-### Паттерн Registry для расширяемости
+### Registry Pattern for Extensibility
 
-Чтобы агент был расширяемым, мы не должны хардкодить логику инструментов в `main.go`. Нам нужен паттерн **Registry** (Реестр).
+To make the agent extensible, we shouldn't hardcode tool logic in `main.go`. We need the **Registry** pattern.
 
-**Проблема без Registry:**
-- Добавление нового инструмента требует правок в десятках мест
-- Код становится нечитаемым
-- Сложно тестировать отдельные инструменты
+**Problem without Registry:**
+- Adding a new tool requires changes in dozens of places
+- Code becomes unreadable
+- Hard to test individual tools
 
-**Решение: Интерфейсы Go + Registry**
+**Solution: Go Interfaces + Registry**
 
-#### Определение интерфейса Tool
+#### Defining Tool Interface
 
 ```go
 type Tool interface {
@@ -973,9 +973,9 @@ type Tool interface {
 }
 ```
 
-Любой инструмент (Proxmox, Ansible, SSH) должен реализовывать этот интерфейс.
+Any tool (Proxmox, Ansible, SSH) must implement this interface.
 
-#### Реализация инструмента
+#### Tool Implementation
 
 ```go
 type ProxmoxListVMsTool struct{}
@@ -997,14 +997,14 @@ func (t *ProxmoxListVMsTool) Parameters() json.RawMessage {
 }
 
 func (t *ProxmoxListVMsTool) Execute(args json.RawMessage) (string, error) {
-    // Реальная логика вызова API Proxmox
+    // Real Proxmox API call logic
     return "VM-100 (Running), VM-101 (Stopped)", nil
 }
 ```
 
-#### Registry (Реестр инструментов)
+#### Registry (Tool Registry)
 
-Registry — это хранилище инструментов, доступное по имени.
+Registry is a storage of tools, accessible by name.
 
 ```go
 type ToolRegistry struct {
@@ -1042,35 +1042,35 @@ func (r *ToolRegistry) ToOpenAITools() []openai.Tool {
 }
 ```
 
-#### Использование Registry
+#### Using Registry
 
 ```go
-// Инициализация
+// Initialization
 registry := NewToolRegistry()
 registry.Register(&ProxmoxListVMsTool{})
 registry.Register(&AnsibleRunPlaybookTool{})
 
-// Получение списка инструментов для LLM
+// Get list of tools for LLM
 tools := registry.ToOpenAITools()
 
-// Выполнение инструмента по имени
+// Execute tool by name
 toolCall := msg.ToolCalls[0]
 if tool, exists := registry.Get(toolCall.Function.Name); exists {
     result, err := tool.Execute(json.RawMessage(toolCall.Function.Arguments))
     if err != nil {
         return fmt.Errorf("tool execution failed: %v", err)
     }
-    // Добавляем результат в историю
+    // Add result to history
 }
 ```
 
-**Преимущества Registry:**
-- ✅ Добавление нового инструмента — просто реализовать интерфейс и зарегистрировать
-- ✅ Код инструментов изолирован и легко тестируется
-- ✅ Runtime не знает про конкретные инструменты, работает через интерфейс
-- ✅ Легко добавлять валидацию, логирование, метрики на уровне Registry
+**Registry advantages:**
+- ✅ Adding new tool — just implement interface and register
+- ✅ Tool code is isolated and easily testable
+- ✅ Runtime doesn't know about specific tools, works through interface
+- ✅ Easy to add validation, logging, metrics at Registry level
 
-**Пример Runtime с Registry:**
+**Runtime Example with Registry:**
 
 ```go
 func runAgent(ctx context.Context, client *openai.Client, registry *ToolRegistry, userInput string) {
@@ -1079,7 +1079,7 @@ func runAgent(ctx context.Context, client *openai.Client, registry *ToolRegistry
         {Role: "user", Content: userInput},
     }
     
-    tools := registry.ToOpenAITools()  // Получаем список инструментов из Registry
+    tools := registry.ToOpenAITools()  // Get tool list from Registry
     
     for i := 0; i < maxIterations; i++ {
         resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
@@ -1092,12 +1092,12 @@ func runAgent(ctx context.Context, client *openai.Client, registry *ToolRegistry
         messages = append(messages, msg)
         
         if len(msg.ToolCalls) == 0 {
-            // Финальный ответ
+            // Final answer
             fmt.Println(msg.Content)
             break
         }
         
-        // Выполняем инструменты через Registry
+        // Execute tools through Registry
         for _, toolCall := range msg.ToolCalls {
             tool, exists := registry.Get(toolCall.Function.Name)
             if !exists {
@@ -1125,62 +1125,62 @@ func runAgent(ctx context.Context, client *openai.Client, registry *ToolRegistry
 }
 ```
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: История переполняется
+### Mistake 1: History Overflows
 
-**Симптом:** Агент "забывает" начало разговора. После N сообщений перестает помнить контекст задачи.
+**Symptom:** Agent "forgets" start of conversation. After N messages, stops remembering task context.
 
-**Причина:** История диалога превышает размер контекстного окна модели. Старые сообщения "выталкиваются" из контекста.
+**Cause:** Dialogue history exceeds model's context window size. Old messages are "pushed out" of context.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО: Просто обрезаем историю (теряем информацию)
+// BAD: Simply truncate history (lose information)
 if len(messages) > maxHistoryLength {
     messages = append(
         []openai.ChatCompletionMessage{messages[0]},  // System
-        messages[len(messages)-maxHistoryLength+1:]...,  // Последние
+        messages[len(messages)-maxHistoryLength+1:]...,  // Last ones
     )
 }
 
-// ХОРОШО: Сжимаем старые сообщения через саммаризацию
+// GOOD: Compress old messages through summarization
 compressed := compressContext(messages, maxTokens)
 ```
 
-См. подробнее: [Оптимизация контекста](#оптимизация-контекста-context-optimization)
+See more: [Context Optimization](#context-optimization)
 
-### Ошибка 2: Агент зацикливается
+### Mistake 2: Agent Loops Infinitely
 
-**Симптом:** Агент повторяет одно и то же действие бесконечно.
+**Symptom:** Agent repeats the same action infinitely.
 
-**Причина:** Нет лимита итераций и детекции повторяющихся действий.
+**Cause:** No iteration limit and detection of repeating actions.
 
-**Решение:**
+**Solution:**
 ```go
-// ХОРОШО: Лимит итераций + детекция застревания
+// GOOD: Iteration limit + stuck detection
 for i := 0; i < maxIterations; i++ {
     // ...
     
-    // Детекция застревания
+    // Stuck detection
     if lastNActionsAreSame(history, 3) {
         break
     }
 }
 ```
 
-### Ошибка 3: Результат инструмента не добавляется в историю
+### Mistake 3: Tool Result Not Added to History
 
-**Симптом:** Агент не видит результат инструмента и продолжает выполнять то же действие.
+**Symptom:** Agent doesn't see tool result and continues executing the same action.
 
-**Причина:** Результат выполнения инструмента не добавляется в `messages[]`.
+**Cause:** Tool execution result not added to `messages[]`.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО: Результат не добавляется
+// BAD: Result not added
 result := executeTool(toolCall)
-// История не обновлена!
+// History not updated!
 
-// ХОРОШО: Результат добавляется в историю
+// GOOD: Result added to history
 result := executeTool(toolCall)
 messages = append(messages, openai.ChatCompletionMessage{
     Role:       openai.ChatMessageRoleTool,
@@ -1189,70 +1189,69 @@ messages = append(messages, openai.ChatCompletionMessage{
 })
 ```
 
-## Мини-упражнения
+## Mini-Exercises
 
-### Упражнение 1: Подсчет токенов в истории
+### Exercise 1: Token Counting in History
 
-Реализуйте функцию подсчета токенов в истории сообщений:
+Implement a function to count tokens in message history:
 
 ```go
 func countTokensInMessages(messages []openai.ChatCompletionMessage) int {
-    // Подсчитайте общее количество токенов
-    // Учтите: Content, ToolCalls, системные сообщения
+    // Count total tokens
+    // Account for: Content, ToolCalls, system messages
 }
 ```
 
-**Ожидаемый результат:**
-- Функция возвращает точное количество токенов
-- Учитывает все типы сообщений (system, user, assistant, tool)
+**Expected result:**
+- Function returns accurate token count
+- Accounts for all message types (system, user, assistant, tool)
 
-### Упражнение 2: Оптимизация контекста
+### Exercise 2: Context Optimization
 
-Реализуйте функцию сжатия контекста через саммаризацию:
+Implement a function to compress context through summarization:
 
 ```go
 func compressContext(messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
-    // Если токенов меньше maxTokens, верните как есть
-    // Иначе сожмите старые сообщения через саммаризацию
+    // If tokens less than maxTokens, return as is
+    // Otherwise compress old messages through summarization
 }
 ```
 
-**Ожидаемый результат:**
-- System Prompt всегда остается первым
-- Старые сообщения сжимаются через LLM
-- Последние N сообщений сохраняются полностью
+**Expected result:**
+- System Prompt always remains first
+- Old messages compressed via LLM
+- Last N messages preserved completely
 
-## Критерии сдачи / Чек-лист
+## Completion Criteria / Checklist
 
-✅ **Сдано:**
-- Short-term memory (история сообщений) управляется
-- Реализован подсчет токенов и мониторинг контекста
-- Применяется оптимизация контекста (саммаризация/приоритизация)
-- Long-term memory (RAG) настроена (если нужно)
-- Planning (ReAct/Plan-and-Solve) реализован
-- Runtime корректно парсит ответы LLM
-- Runtime выполняет инструменты
-- Runtime управляет циклом
-- Есть защита от зацикливания
+✅ **Completed:**
+- Short-term memory (message history) managed
+- Token counting and context monitoring implemented
+- Context optimization applied (summarization/prioritization)
+- Long-term memory (RAG) configured (if needed)
+- Planning (ReAct/Plan-and-Solve) implemented
+- Runtime correctly parses LLM responses
+- Runtime executes tools
+- Runtime manages loop
+- Has protection against infinite loops
 
-❌ **Не сдано:**
-- История переполняется (нет оптимизации контекста)
-- Агент зацикливается (нет лимита итераций)
-- Результаты инструментов не добавляются в историю
-- Нет мониторинга использования токенов
+❌ **Not completed:**
+- History overflows (no context optimization)
+- Agent loops infinitely (no iteration limit)
+- Tool results not added to history
+- No token usage monitoring
 
-## Связь с другими главами
+## Connection with Other Chapters
 
-- **Физика LLM:** Понимание контекстного окна помогает управлять памятью, см. [Главу 01: Физика LLM](../01-llm-fundamentals/README.md)
-- **Инструменты:** Как Runtime выполняет инструменты, см. [Главу 04: Инструменты](../04-tools-and-function-calling/README.md)
-- **Автономность:** Как Planning работает в цикле агента, см. [Главу 05: Автономность](../05-autonomy-and-loops/README.md)
+- **LLM Physics:** Understanding context window helps manage memory, see [Chapter 01: LLM Physics](../01-llm-fundamentals/README.md)
+- **Tools:** How Runtime executes tools, see [Chapter 04: Tools](../04-tools-and-function-calling/README.md)
+- **Autonomy:** How Planning works in agent loop, see [Chapter 05: Autonomy](../05-autonomy-and-loops/README.md)
 
-## Что дальше?
+## What's Next?
 
-После изучения архитектуры переходите к:
-- **[04. Инструменты и Function Calling](../04-tools-and-function-calling/README.md)** — как агент взаимодействует с реальным миром
+After studying architecture, proceed to:
+- **[04. Tools and Function Calling](../04-tools-and-function-calling/README.md)** — how the agent interacts with the real world
 
 ---
 
-**Навигация:** [← Промптинг](../02-prompt-engineering/README.md) | [Оглавление](../README.md) | [Инструменты →](../04-tools-and-function-calling/README.md)
-
+**Navigation:** [← Prompting](../02-prompt-engineering/README.md) | [Table of Contents](../README.md) | [Tools →](../04-tools-and-function-calling/README.md)

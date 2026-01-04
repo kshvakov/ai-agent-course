@@ -1,45 +1,45 @@
 # Lab 05 Solution: Human-in-the-Loop
 
-## 📝 Разбор решения
+## 📝 Solution Breakdown
 
-### Локальные модели и безопасность
-Для этой лабы **критически** важно качество модели. 
-Маленькие модели (7B) часто игнорируют инструкции безопасности ("Always ask confirmation").
-Рекомендуется использовать:
-*   `Llama 3 70B` (если влезает в память/квантованная)
+### Local Models and Safety
+For this lab, model quality is **critical**. 
+Small models (7B) often ignore safety instructions ("Always ask confirmation").
+Recommended models:
+*   `Llama 3 70B` (if fits in memory/quantized)
 *   `Mixtral 8x7B`
 *   `Command R+`
 
-Если модель удаляет базу без спроса — попробуйте усилить System Prompt, добавив примеры (Few-Shot Prompting).
+If model deletes database without asking — try strengthening System Prompt by adding examples (Few-Shot Prompting).
 
-### 🛡️ Дополнительная защита: Runtime Confirmation Gate
+### 🛡️ Additional Protection: Runtime Confirmation Gate
 
-**Важно:** Нельзя полагаться только на промпт и качество модели для безопасности. Даже если модель вернула `tool_call` для опасного действия, **runtime должен проверить риск и заблокировать выполнение** до получения явного подтверждения от пользователя.
+**Important:** Cannot rely only on prompt and model quality for safety. Even if model returned `tool_call` for dangerous action, **runtime must check risk and block execution** until explicit user confirmation is received.
 
-**Почему это критично:**
-- Маленькие модели (7B) могут игнорировать инструкции безопасности
-- Даже большие модели могут ошибаться или быть скомпрометированы через prompt injection
-- Безопасность должна быть **встроена в слой исполнения**, а не зависеть от "дисциплины" модели
+**Why this is critical:**
+- Small models (7B) may ignore safety instructions
+- Even large models can make mistakes or be compromised via prompt injection
+- Safety must be **built into execution layer**, not depend on model "discipline"
 
-**Как это работает:**
+**How it works:**
 
 ```go
-// Функция проверки риска на уровне runtime
+// Risk check function at runtime level
 func calculateRisk(toolName string, args json.RawMessage) float64 {
     risks := map[string]float64{
-        "delete_db":     0.9,  // Критическое действие
-        "restart_service": 0.3, // Средний риск
-        "read_logs":     0.0,  // Безопасное действие
+        "delete_db":     0.9,  // Critical action
+        "restart_service": 0.3, // Medium risk
+        "read_logs":     0.0,  // Safe action
     }
     return risks[toolName]
 }
 
-// Проверка наличия подтверждения в истории
+// Check for confirmation in history
 func hasConfirmationInHistory(messages []openai.ChatCompletionMessage) bool {
     for _, msg := range messages {
         if msg.Role == openai.ChatMessageRoleUser {
             content := strings.ToLower(strings.TrimSpace(msg.Content))
-            if content == "yes" || content == "подтверждаю" || strings.Contains(content, "confirm") {
+            if content == "yes" || content == "confirm" || strings.Contains(content, "confirm") {
                 return true
             }
         }
@@ -47,52 +47,52 @@ func hasConfirmationInHistory(messages []openai.ChatCompletionMessage) bool {
     return false
 }
 
-// Модифицированная функция выполнения инструмента
+// Modified tool execution function with safety check
 func executeToolWithSafetyCheck(toolCall openai.ToolCall, messages []openai.ChatCompletionMessage) (string, error) {
-    // Проверка риска на уровне Runtime
+    // Risk check at Runtime level
     riskScore := calculateRisk(toolCall.Function.Name, json.RawMessage(toolCall.Function.Arguments))
     
     if riskScore > 0.8 {
-        // Проверяем, было ли подтверждение
+        // Check if there was confirmation
         if !hasConfirmationInHistory(messages) {
-            // НЕ выполняем инструмент! Возвращаем специальный код
+            // DON'T execute tool! Return special code
             return "REQUIRES_CONFIRMATION: This action requires explicit user confirmation. Ask the user to confirm.", nil
         }
     }
     
-    // Если подтверждение есть или риск низкий — выполняем
+    // If confirmation exists or risk is low — execute
     return executeTool(toolCall)
 }
 ```
 
-**Интеграция в цикл агента:**
+**Integration into agent loop:**
 
 ```go
-// В цикле выполнения инструментов
+// In tool execution loop
 for _, toolCall := range msg.ToolCalls {
     fmt.Printf("  [⚙️ System] Checking tool: %s\n", toolCall.Function.Name)
     
     result, err := executeToolWithSafetyCheck(toolCall, messages)
     if err != nil {
-        // Обработка ошибки
+        // Handle error
         break
     }
     
-    // Если требуется подтверждение — НЕ выполняем, а возвращаем в модель
+    // If confirmation required — DON'T execute, return to model
     if strings.Contains(result, "REQUIRES_CONFIRMATION") {
-        // Добавляем результат как tool message
+        // Add result as tool message
         messages = append(messages, openai.ChatCompletionMessage{
             Role:       openai.ChatMessageRoleTool,
-            Content:    result,  // Модель увидит "REQUIRES_CONFIRMATION"
+            Content:    result,  // Model will see "REQUIRES_CONFIRMATION"
             ToolCallID: toolCall.ID,
         })
         
-        // Отправляем запрос снова — модель увидит требование подтверждения
-        // и сгенерирует текстовый вопрос пользователю
-        continue  // Продолжаем цикл агента
+        // Send request again — model will see confirmation requirement
+        // and generate text question to user
+        continue  // Continue agent loop
     }
     
-    // Если подтверждение получено — выполняем инструмент
+    // If confirmation received — execute tool
     fmt.Printf("  [✅ Result] %s\n", result)
     messages = append(messages, openai.ChatCompletionMessage{
         Role:       openai.ChatMessageRoleTool,
@@ -102,42 +102,42 @@ for _, toolCall := range msg.ToolCalls {
 }
 ```
 
-**UI Flow с кнопками подтверждения:**
+**UI Flow with confirmation buttons:**
 
-В реальном приложении вместо текстового подтверждения можно использовать UI:
+In a real application, instead of text confirmation, you can use UI:
 
-1. **Runtime обнаруживает опасное действие:**
-   - Модель вернула `tool_call("delete_db", {"name": "prod"})`
-   - Runtime проверяет риск → `riskScore = 0.9 > 0.8`
-   - Подтверждения нет → блокируем выполнение
+1. **Runtime detects dangerous action:**
+   - Model returned `tool_call("delete_db", {"name": "prod"})`
+   - Runtime checks risk → `riskScore = 0.9 > 0.8`
+   - No confirmation → block execution
 
-2. **Показываем пользователю превью:**
+2. **Show user preview:**
    ```
-   ⚠️ Опасное действие требует подтверждения
+   ⚠️ Dangerous action requires confirmation
    
-   Действие: Удаление базы данных
-   Параметры: name = "prod"
-   Риск: Высокий (0.9)
+   Action: Delete database
+   Parameters: name = "prod"
+   Risk: High (0.9)
    
-   [Подтвердить] [Отменить]
+   [Confirm] [Cancel]
    ```
 
-3. **После подтверждения:**
-   - Пользователь нажимает "Подтвердить"
-   - Добавляем в историю: `{role: "user", content: "yes"}`
-   - Повторяем цикл агента
-   - Теперь `hasConfirmationInHistory()` вернёт `true`
-   - Runtime разрешает выполнение
+3. **After confirmation:**
+   - User clicks "Confirm"
+   - Add to history: `{role: "user", content: "yes"}`
+   - Repeat agent loop
+   - Now `hasConfirmationInHistory()` returns `true`
+   - Runtime allows execution
 
-**Преимущества подхода:**
-- ✅ Безопасность не зависит от размера модели
-- ✅ Даже если модель "галлюцинирует" опасное действие, оно не выполнится
-- ✅ Пользователь видит превью действия перед подтверждением
-- ✅ Можно добавить дополнительные проверки (allowlist, валидация аргументов)
+**Advantages of approach:**
+- ✅ Safety doesn't depend on model size
+- ✅ Even if model "hallucinates" dangerous action, it won't execute
+- ✅ User sees action preview before confirmation
+- ✅ Can add additional checks (allowlist, argument validation)
 
-**Подробнее:** См. [Главу 06: Безопасность и Human-in-the-Loop](../../docs/book/06-safety-and-hitl/README.md) для расширенного описания этого подхода.
+**More details:** See [Chapter 06: Safety and Human-in-the-Loop](../../docs/book/06-safety-and-hitl/README.md) for extended description of this approach.
 
-### 🔍 Полный код решения
+### 🔍 Complete Solution Code
 
 ```go
 package main
@@ -250,13 +250,13 @@ func main() {
 			msg := resp.Choices[0].Message
 			messages = append(messages, msg)
 
-			// Если это текст - выводим и отдаем управление пользователю
+			// If this is text - output and return control to user
 			if len(msg.ToolCalls) == 0 {
 				fmt.Printf("Agent > %s\n", msg.Content)
 				break
 			}
 
-			// Если это инструменты - выполняем их автономно
+			// If these are tools - execute them autonomously
 			for _, toolCall := range msg.ToolCalls {
 				fmt.Printf("  [⚙️ System] Executing tool: %s\n", toolCall.Function.Name)
 

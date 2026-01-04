@@ -1,44 +1,44 @@
-# Безопасность и Governance
+# Security and Governance
 
-## Зачем это нужно?
+## Why This Chapter?
 
-Агент выполняет критичные операции без подтверждения. Пользователь пишет "удали базу данных", и агент сразу удаляет её. Без безопасности и governance вы не можете:
-- Защититься от опасных действий
-- Контролировать, кто что может делать
-- Аудировать действия агента
-- Защититься от prompt injection
+Agent performs critical operations without confirmation. User writes "delete database", and agent immediately deletes it. Without security and governance, you cannot:
+- Protect from dangerous actions
+- Control who can do what
+- Audit agent actions
+- Protect from prompt injection
 
-Безопасность — это не опция, а обязательное требование для прод-агентов. Без неё агент может нанести непоправимый ущерб.
+Security is not an option, but a mandatory requirement for production agents. Without it, agent can cause irreparable damage.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Агент для DevOps имеет доступ к инструменту `delete_database`. Пользователь пишет "удали старую базу test_db", и агент сразу удаляет её.
+**Situation:** DevOps agent has access to `delete_database` tool. User writes "delete old test_db database", and agent immediately deletes it.
 
-**Проблема:** База содержала важные данные. Нет подтверждения, нет оценки риска, нет аудита. Невозможно понять, кто и когда удалил базу.
+**Problem:** Database contained important data. No confirmation, no risk assessment, no audit. Cannot understand who and when deleted database.
 
-**Решение:** Risk scoring для инструментов, подтверждения для критичных действий, RBAC для контроля доступа, аудит всех операций. Теперь критичные действия требуют подтверждения, а все операции логируются для аудита.
+**Solution:** Risk scoring for tools, confirmations for critical actions, RBAC for access control, audit of all operations. Now critical actions require confirmation, and all operations are logged for audit.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### Что такое Threat Modeling?
+### What Is Threat Modeling?
 
-Threat Modeling — это оценка рисков для каждого инструмента. Инструменты делятся на уровни риска:
-- **Низкий риск:** чтение логов, проверка статуса
-- **Средний риск:** перезапуск сервисов, изменение настроек
-- **Высокий риск:** удаление данных, изменение критичных конфигов
+Threat Modeling is risk assessment for each tool. Tools divided into risk levels:
+- **Low risk:** reading logs, checking status
+- **Medium risk:** restarting services, changing settings
+- **High risk:** deleting data, changing critical configs
 
-### Что такое RBAC?
+### What Is RBAC?
 
-RBAC (Role-Based Access Control) — это контроль доступа на основе ролей. Разные пользователи имеют доступ к разным инструментам:
-- **Viewer:** только чтение
-- **Operator:** чтение + безопасные действия
-- **Admin:** все действия
+RBAC (Role-Based Access Control) is role-based access control. Different users have access to different tools:
+- **Viewer:** read-only
+- **Operator:** read + safe actions
+- **Admin:** all actions
 
-## Как это работает (пошагово)
+## How It Works (Step-by-Step)
 
-### Шаг 1: Risk Scoring для инструментов
+### Step 1: Risk Scoring for Tools
 
-Оцените риск каждого инструмента:
+Assess risk of each tool:
 
 ```go
 type ToolRisk string
@@ -57,7 +57,7 @@ type ToolDefinition struct {
 }
 
 func assessRisk(tool ToolDefinition) ToolRisk {
-    // Оцениваем риск на основе имени и описания
+    // Assess risk based on name and description
     if strings.Contains(tool.Name, "delete") || strings.Contains(tool.Name, "remove") {
         return RiskHigh
     }
@@ -68,16 +68,16 @@ func assessRisk(tool ToolDefinition) ToolRisk {
 }
 ```
 
-### Шаг 2: Подтверждения для критичных действий
+### Step 2: Confirmations for Critical Actions
 
-Требуйте подтверждение перед выполнением критичных операций (см. `labs/lab05-human-interaction/main.go`):
+Require confirmation before executing critical operations (see `labs/lab05-human-interaction/main.go`):
 
 ```go
 func executeToolWithConfirmation(toolCall openai.ToolCall, userID string) (string, error) {
     tool := getToolDefinition(toolCall.Function.Name)
     
     if tool.RequiresConfirmation {
-        // Запрашиваем подтверждение
+        // Request confirmation
         confirmed := requestConfirmation(userID, toolCall)
         if !confirmed {
             return "Operation cancelled by user", nil
@@ -88,9 +88,9 @@ func executeToolWithConfirmation(toolCall openai.ToolCall, userID string) (strin
 }
 ```
 
-### Шаг 3: RBAC к инструментам
+### Step 3: RBAC for Tools
 
-Контролируйте доступ к инструментам на основе роли пользователя:
+Control tool access based on user role:
 
 ```go
 type UserRole string
@@ -123,9 +123,9 @@ func canUseTool(userRole UserRole, toolName string) bool {
 }
 ```
 
-### Шаг 4: Защита от Prompt Injection
+### Step 4: Prompt Injection Protection
 
-Валидируйте и санитизируйте входные данные пользователя:
+Validate and sanitize user input:
 
 ```go
 func sanitizeUserInput(input string) string {
@@ -152,9 +152,9 @@ func buildMessages(userInput string, systemPrompt string) []openai.ChatCompletio
 }
 ```
 
-### Шаг 5: Dry-Run режимы
+### Step 5: Dry-Run Modes
 
-Реализуйте режим, где инструменты не выполняются реально:
+Implement mode where tools don't execute for real:
 
 ```go
 type ToolExecutor struct {
@@ -170,9 +170,9 @@ func (e *ToolExecutor) Execute(toolName string, args map[string]interface{}) (st
 }
 ```
 
-### Шаг 6: Аудит
+### Step 6: Audit
 
-Логируйте все вызовы инструментов для аудита:
+Log all tool calls for audit:
 
 ```go
 type AuditLog struct {
@@ -185,27 +185,27 @@ type AuditLog struct {
 }
 
 func logAudit(log AuditLog) {
-    // Отправляем в отдельную систему аудита
+    // Send to separate audit system
     auditJSON, _ := json.Marshal(log)
-    // Отправляем в отдельный сервис аудита (не в обычные логи)
+    // Send to separate audit service (not regular logs)
     fmt.Printf("AUDIT: %s\n", string(auditJSON))
 }
 ```
 
-## Где это встраивать в нашем коде
+## Where to Integrate in Our Code
 
-### Точка интеграции 1: Tool Execution
+### Integration Point 1: Tool Execution
 
-В `labs/lab02-tools/main.go` добавьте проверку доступа и подтверждение:
+In `labs/lab02-tools/main.go`, add access check and confirmation:
 
 ```go
 func executeTool(toolCall openai.ToolCall, userRole UserRole) (string, error) {
-    // Проверяем доступ
+    // Check access
     if !canUseTool(userRole, toolCall.Function.Name) {
         return "", fmt.Errorf("access denied for tool: %s", toolCall.Function.Name)
     }
     
-    // Проверяем риск и запрашиваем подтверждение
+    // Check risk and request confirmation
     tool := getToolDefinition(toolCall.Function.Name)
     if tool.RequiresConfirmation {
         if !requestConfirmation(toolCall) {
@@ -213,21 +213,21 @@ func executeTool(toolCall openai.ToolCall, userRole UserRole) (string, error) {
         }
     }
     
-    // Логируем для аудита
+    // Log for audit
     logAudit(AuditLog{
         ToolName: toolCall.Function.Name,
         Arguments: parseArguments(toolCall.Function.Arguments),
         Timestamp: time.Now(),
     })
     
-    // Выполняем инструмент
+    // Execute tool
     return executeToolImpl(toolCall)
 }
 ```
 
-### Точка интеграции 2: Human-in-the-Loop
+### Integration Point 2: Human-in-the-Loop
 
-В `labs/lab05-human-interaction/main.go` уже есть подтверждения. Расширьте их для risk scoring:
+In `labs/lab05-human-interaction/main.go`, confirmations already exist. Extend them for risk scoring:
 
 ```go
 func requestConfirmation(toolCall openai.ToolCall) bool {
@@ -236,16 +236,16 @@ func requestConfirmation(toolCall openai.ToolCall) bool {
     if tool.Risk == RiskHigh {
         fmt.Printf("⚠️  WARNING: High-risk operation: %s\n", toolCall.Function.Name)
         fmt.Printf("Type 'yes' to confirm: ")
-        // ... запрос подтверждения ...
+        // ... request confirmation ...
     }
     
     return true
 }
 ```
 
-## Мини-пример кода
+## Mini Code Example
 
-Полный пример с безопасностью на базе `labs/lab05-human-interaction/main.go`:
+Complete example with security based on `labs/lab05-human-interaction/main.go`:
 
 ```go
 package main
@@ -406,7 +406,7 @@ func main() {
             break
         }
         
-        // Санитизируем входные данные
+        // Sanitize input
         sanitizedInput := sanitizeUserInput(input)
         
         messages = append(messages, openai.ChatCompletionMessage{
@@ -438,7 +438,7 @@ func main() {
             for _, toolCall := range msg.ToolCalls {
                 fmt.Printf("  [System] Executing tool: %s\n", toolCall.Function.Name)
                 
-                // Проверяем риск и запрашиваем подтверждение
+                // Check risk and request confirmation
                 if !requestConfirmation(toolCall) {
                     result := "Operation cancelled by user"
                     messages = append(messages, openai.ChatCompletionMessage{
@@ -463,7 +463,7 @@ func main() {
                     )
                 }
                 
-                // Логируем для аудита
+                // Log for audit
                 logAudit(AuditLog{
                     Timestamp: time.Now(),
                     ToolName:  toolCall.Function.Name,
@@ -482,22 +482,22 @@ func main() {
 }
 ```
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: Нет оценки риска
+### Mistake 1: No Risk Assessment
 
-**Симптом:** Все инструменты обрабатываются одинаково, критичные действия не требуют подтверждения.
+**Symptom:** All tools handled the same, critical actions don't require confirmation.
 
-**Причина:** Нет risk scoring для инструментов.
+**Cause:** No risk scoring for tools.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
+// BAD
 func executeTool(toolCall openai.ToolCall) {
-    // Все инструменты выполняются одинаково
+    // All tools executed the same
 }
 
-// ХОРОШО
+// GOOD
 tool := getToolDefinition(toolCall.Function.Name)
 if tool.Risk == RiskHigh && tool.RequiresConfirmation {
     if !requestConfirmation(toolCall) {
@@ -506,59 +506,59 @@ if tool.Risk == RiskHigh && tool.RequiresConfirmation {
 }
 ```
 
-### Ошибка 2: Нет RBAC
+### Mistake 2: No RBAC
 
-**Симптом:** Все пользователи имеют доступ ко всем инструментам.
+**Symptom:** All users have access to all tools.
 
-**Причина:** Нет проверки прав доступа.
+**Cause:** No access rights check.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
+// BAD
 func executeTool(toolCall openai.ToolCall) {
-    // Нет проверки доступа
+    // No access check
 }
 
-// ХОРОШО
+// GOOD
 if !canUseTool(userRole, toolCall.Function.Name) {
     return fmt.Errorf("access denied")
 }
 ```
 
-### Ошибка 3: Нет защиты от Prompt Injection
+### Mistake 3: No Prompt Injection Protection
 
-**Симптом:** Пользователь может инъектировать промпт через входные данные.
+**Symptom:** User can inject prompt via input data.
 
-**Причина:** Входные данные не санитизируются.
+**Cause:** Input data not sanitized.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
+// BAD
 messages = append(messages, openai.ChatCompletionMessage{
     Role: "user",
-    Content: userInput, // Не санитизировано
+    Content: userInput, // Not sanitized
 })
 
-// ХОРОШО
+// GOOD
 messages = append(messages, openai.ChatCompletionMessage{
     Role: "user",
     Content: sanitizeUserInput(userInput),
 })
 ```
 
-### Ошибка 4: Нет аудита
+### Mistake 4: No Audit
 
-**Симптом:** Невозможно понять, кто и когда выполнил критичную операцию.
+**Symptom:** Cannot understand who and when executed critical operation.
 
-**Причина:** Операции не логируются для аудита.
+**Cause:** Operations not logged for audit.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
+// BAD
 result := executeTool(toolCall)
-// Нет логирования
+// No logging
 
-// ХОРОШО
+// GOOD
 result := executeTool(toolCall)
 logAudit(AuditLog{
     ToolName: toolCall.Function.Name,
@@ -568,64 +568,63 @@ logAudit(AuditLog{
 })
 ```
 
-## Мини-упражнения
+## Mini-Exercises
 
-### Упражнение 1: Реализуйте risk scoring
+### Exercise 1: Implement Risk Scoring
 
-Создайте функцию оценки риска инструмента:
+Create function to assess tool risk:
 
 ```go
 func assessRisk(toolName string, description string) ToolRisk {
-    // Ваш код здесь
-    // Верните RiskLow, RiskMedium или RiskHigh
+    // Your code here
+    // Return RiskLow, RiskMedium or RiskHigh
 }
 ```
 
-**Ожидаемый результат:**
-- Инструменты с "delete", "remove" → RiskHigh
-- Инструменты с "restart", "update" → RiskMedium
-- Остальные → RiskLow
+**Expected result:**
+- Tools with "delete", "remove" → RiskHigh
+- Tools with "restart", "update" → RiskMedium
+- Others → RiskLow
 
-### Упражнение 2: Реализуйте RBAC
+### Exercise 2: Implement RBAC
 
-Создайте функцию проверки доступа:
+Create function to check access:
 
 ```go
 func canUseTool(userRole UserRole, toolName string) bool {
-    // Ваш код здесь
-    // Верните true, если пользователь имеет доступ к инструменту
+    // Your code here
+    // Return true if user has access to tool
 }
 ```
 
-**Ожидаемый результат:**
-- RoleViewer → только read_logs
+**Expected result:**
+- RoleViewer → only read_logs
 - RoleOperator → read_logs + restart_service
-- RoleAdmin → все инструменты
+- RoleAdmin → all tools
 
-## Критерии сдачи / Чек-лист
+## Completion Criteria / Checklist
 
-✅ **Сдано (готовность к прод):**
-- Реализован risk scoring для инструментов
-- Критичные действия требуют подтверждения
-- Реализован RBAC для контроля доступа
-- Входные данные санитизируются от prompt injection
-- Все операции логируются для аудита
-- Реализован dry-run режим для тестирования
+✅ **Completed (production-ready):**
+- Risk scoring implemented for tools
+- Critical actions require confirmation
+- RBAC implemented for access control
+- Input data sanitized from prompt injection
+- All operations logged for audit
+- Dry-run mode implemented for testing
 
-❌ **Не сдано:**
-- Нет оценки риска
-- Нет подтверждений для критичных действий
-- Нет RBAC
-- Нет защиты от prompt injection
-- Нет аудита
+❌ **Not completed:**
+- No risk assessment
+- No confirmations for critical actions
+- No RBAC
+- No prompt injection protection
+- No audit
 
-## Связь с другими главами
+## Connection with Other Chapters
 
-- **Human-in-the-Loop:** Базовые концепции подтверждений — [Глава 06: Безопасность и Human-in-the-Loop](../06-safety-and-hitl/README.md)
-- **Observability:** Аудит как часть observability — [Observability и Tracing](observability.md)
-- **Data Privacy:** Защита персональных данных — [Data и Privacy](data_privacy.md)
+- **Human-in-the-Loop:** Basic confirmation concepts — [Chapter 06: Safety and Human-in-the-Loop](../06-safety-and-hitl/README.md)
+- **Observability:** Audit as part of observability — [Observability and Tracing](observability.md)
+- **Data Privacy:** Personal data protection — [Data and Privacy](data_privacy.md)
 
 ---
 
-**Навигация:** [← Workflow и State Management](workflow_state.md) | [Оглавление главы 12](README.md) | [Prompt и Program Management →](prompt_program_mgmt.md)
-
+**Navigation:** [← Workflow and State Management](workflow_state.md) | [Chapter 12 Table of Contents](README.md) | [Prompt and Program Management →](prompt_program_mgmt.md)

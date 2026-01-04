@@ -1,38 +1,38 @@
-# Prompt и Program Management
+# Prompt and Program Management
 
-## Зачем это нужно?
+## Why This Chapter?
 
-Вы изменили промпт, и агент стал работать хуже. Но вы не можете понять, что именно изменилось или откатить изменения. Без управления промптами вы не можете:
-- Версионировать промпты
-- Отслеживать изменения и их влияние
-- Тестировать новые версии перед деплоем
-- Откатывать плохие изменения
+You changed prompt, and agent works worse. But you cannot understand what exactly changed or rollback changes. Without prompt management, you cannot:
+- Version prompts
+- Track changes and their impact
+- Test new versions before deployment
+- Rollback bad changes
 
-Prompt и Program Management — это контроль над поведением агента. Без него вы не можете безопасно изменять промпты в проде.
+Prompt and Program Management is control over agent behavior. Without it, you cannot safely change prompts in production.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Вы обновили системный промпт, чтобы улучшить качество ответов. Через день пользователи жалуются, что агент стал хуже работать.
+**Situation:** You updated system prompt to improve answer quality. After a day, users complain that agent works worse.
 
-**Проблема:** Нет версионирования промптов, нет evals для проверки изменений. Невозможно понять, что именно изменилось или откатить изменения.
+**Problem:** No prompt versioning, no evals for checking changes. Cannot understand what exactly changed or rollback changes.
 
-**Решение:** Версионирование промптов в Git, evals для проверки каждой версии, откат при ухудшении метрик. Теперь вы можете безопасно экспериментировать с промптами и откатывать плохие изменения.
+**Solution:** Prompt versioning in Git, evals for checking each version, rollback on metric degradation. Now you can safely experiment with prompts and rollback bad changes.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### Что такое версионирование промптов?
+### What Is Prompt Versioning?
 
-Версионирование промптов — это хранение всех версий промпта с метаданными (автор, дата, описание изменений). Это позволяет откатить изменения или сравнить версии.
+Prompt versioning is storing all prompt versions with metadata (author, date, change description). This allows rolling back changes or comparing versions.
 
-### Что такое промпт-регрессии?
+### What Are Prompt Regressions?
 
-Промпт-регрессии — это ухудшение качества агента после изменения промпта. Evals помогают обнаружить регрессии до деплоя.
+Prompt regressions are agent quality degradation after prompt change. Evals help detect regressions before deployment.
 
-## Как это работает (пошагово)
+## How It Works (Step-by-Step)
 
-### Шаг 1: Версионирование промптов
+### Step 1: Prompt Versioning
 
-Храните промпты в Git или БД с версиями:
+Store prompts in Git or DB with versions:
 
 ```go
 type PromptVersion struct {
@@ -45,22 +45,22 @@ type PromptVersion struct {
 }
 
 func getPromptVersion(id string, version string) (*PromptVersion, error) {
-    // Загружаем конкретную версию промпта
-    // Можно хранить в Git или БД
+    // Load specific prompt version
+    // Can store in Git or DB
     return nil, nil
 }
 ```
 
-### Шаг 2: Промпт-регрессии через evals
+### Step 2: Prompt Regressions via Evals
 
-Используйте evals для проверки каждой версии (см. [Главу 09](../09-evals-and-reliability/README.md)):
+Use evals to check each version (see [Chapter 09](../09-evals-and-reliability/README.md)):
 
 ```go
 func testPromptVersion(prompt PromptVersion) (float64, error) {
-    // Запускаем evals для этой версии промпта
+    // Run evals for this prompt version
     passRate := runEvals(prompt.Content)
     
-    // Сравниваем с предыдущей версией
+    // Compare with previous version
     prevVersion := getPreviousVersion(prompt.ID)
     if prevVersion != nil {
         prevPassRate := runEvals(prevVersion.Content)
@@ -73,9 +73,9 @@ func testPromptVersion(prompt PromptVersion) (float64, error) {
 }
 ```
 
-### Шаг 3: Feature flags
+### Step 3: Feature Flags
 
-Используйте feature flags для включения/выключения функций без деплоя:
+Use feature flags to enable/disable features without deployment:
 
 ```go
 type FeatureFlags struct {
@@ -91,11 +91,11 @@ func getSystemPrompt(flags FeatureFlags) string {
 }
 ```
 
-## Где это встраивать в нашем коде
+## Where to Integrate in Our Code
 
-### Точка интеграции: System Prompt
+### Integration Point: System Prompt
 
-В `labs/lab06-incident/SOLUTION.md` уже есть SOP в промпте. Версионируйте его:
+In `labs/lab06-incident/SOLUTION.md`, SOP already exists in prompt. Version it:
 
 ```go
 func getSystemPrompt() string {
@@ -109,37 +109,36 @@ func getSystemPrompt() string {
 }
 ```
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: Промпты не версионируются
+### Mistake 1: Prompts Not Versioned
 
-**Симптом:** После изменения промпта агент стал работать хуже, но вы не можете откатить изменения.
+**Symptom:** After prompt change, agent works worse, but you cannot rollback changes.
 
-**Решение:** Версионируйте промпты в Git или БД.
+**Solution:** Version prompts in Git or DB.
 
-### Ошибка 2: Нет evals для проверки изменений
+### Mistake 2: No Evals for Checking Changes
 
-**Симптом:** Изменения промпта деплоятся без проверки, регрессии обнаруживаются только в проде.
+**Symptom:** Prompt changes deployed without checking, regressions discovered only in production.
 
-**Решение:** Используйте evals для проверки каждой версии перед деплоем.
+**Solution:** Use evals to check each version before deployment.
 
-## Критерии сдачи / Чек-лист
+## Completion Criteria / Checklist
 
-✅ **Сдано:**
-- Промпты версионируются
-- Evals проверяют каждую версию
-- Откат при ухудшении метрик
+✅ **Completed:**
+- Prompts versioned
+- Evals check each version
+- Rollback on metric degradation
 
-❌ **Не сдано:**
-- Промпты не версионируются
-- Нет evals для проверки
+❌ **Not completed:**
+- Prompts not versioned
+- No evals for checking
 
-## Связь с другими главами
+## Connection with Other Chapters
 
-- **Evals:** Проверка качества промптов — [Глава 09: Evals и Надежность](../09-evals-and-reliability/README.md)
-- **Evals в CI/CD:** Автоматическая проверка — [Evals в CI/CD](evals_in_cicd.md)
+- **Evals:** Prompt quality checking — [Chapter 09: Evals and Reliability](../09-evals-and-reliability/README.md)
+- **Evals in CI/CD:** Automatic checking — [Evals in CI/CD](evals_in_cicd.md)
 
 ---
 
-**Навигация:** [← Безопасность и Governance](security_governance.md) | [Оглавление главы 12](README.md) | [Data и Privacy →](data_privacy.md)
-
+**Navigation:** [← Security and Governance](security_governance.md) | [Chapter 12 Table of Contents](README.md) | [Data and Privacy →](data_privacy.md)

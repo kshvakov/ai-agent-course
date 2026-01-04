@@ -1,55 +1,55 @@
-# Модель и декодинг
+# Model and Decoding
 
-## Зачем это нужно?
+## Why This Chapter?
 
-Агент работает, но иногда возвращает "ломаный" JSON в tool calls или ведёт себя непредсказуемо. Без правильного выбора модели и настройки декодинга вы не можете гарантировать качество и детерминизм.
+Agent works, but sometimes returns "broken" JSON in tool calls or behaves unpredictably. Without proper model selection and decoding configuration, you cannot guarantee quality and determinism.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Агент использует локальную модель для tool calling. Иногда модель возвращает невалидный JSON, и агент падает.
+**Situation:** Agent uses local model for tool calling. Sometimes model returns invalid JSON, and agent crashes.
 
-**Проблема:** Модель не подходит для tool calling, нет детерминизма (Temperature > 0), нет JSON mode.
+**Problem:** Model not suitable for tool calling, no determinism (Temperature > 0), no JSON mode.
 
-**Решение:** Capability benchmark перед разработкой, детерминизм (Temperature = 0), JSON mode для structured outputs, выбор модели под задачу.
+**Solution:** Capability benchmark before development, determinism (Temperature = 0), JSON mode for structured outputs, model selection for task.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### Что такое Capability Benchmark?
+### What Is Capability Benchmark?
 
-Capability Benchmark — это набор тестов для проверки модели перед разработкой. Проверяет: JSON generation, Instruction following, Function calling.
+Capability Benchmark is a test suite for checking model before development. Checks: JSON generation, Instruction following, Function calling.
 
-### Что такое детерминизм?
+### What Is Determinism?
 
-Детерминизм — это предсказуемость вывода. При Temperature = 0 модель всегда возвращает одинаковый результат для одинакового входа.
+Determinism is output predictability. At Temperature = 0, model always returns same result for same input.
 
-### Что такое JSON mode?
+### What Is JSON Mode?
 
-JSON mode — это режим, где модель гарантированно возвращает валидный JSON. Это снижает вероятность "ломаного" JSON в tool calls.
+JSON mode is a mode where model guaranteed returns valid JSON. This reduces probability of "broken" JSON in tool calls.
 
-## Как это работает (пошагово)
+## How It Works (Step-by-Step)
 
-### Шаг 1: Capability Benchmark
+### Step 1: Capability Benchmark
 
-Проверьте модель перед разработкой (см. `labs/lab00-capability-check/main.go`):
+Check model before development (see `labs/lab00-capability-check/main.go`):
 
 ```go
 func runCapabilityBenchmark(model string) (bool, error) {
-    // Проверяем JSON generation
+    // Check JSON generation
     jsonTest := testJSONGeneration(model)
     
-    // Проверяем Instruction following
+    // Check Instruction following
     instructionTest := testInstructionFollowing(model)
     
-    // Проверяем Function calling
+    // Check Function calling
     functionTest := testFunctionCalling(model)
     
     return jsonTest && instructionTest && functionTest, nil
 }
 ```
 
-### Шаг 2: Детерминизм
+### Step 2: Determinism
 
-Используйте Temperature = 0 для tool calling:
+Use Temperature = 0 for tool calling:
 
 ```go
 func createToolCallRequest(messages []openai.ChatCompletionMessage, tools []openai.Tool) openai.ChatCompletionRequest {
@@ -57,14 +57,14 @@ func createToolCallRequest(messages []openai.ChatCompletionMessage, tools []open
         Model:       "gpt-4",
         Messages:    messages,
         Tools:       tools,
-        Temperature: 0, // Детерминизм для tool calling
+        Temperature: 0, // Determinism for tool calling
     }
 }
 ```
 
-### Шаг 3: JSON Mode
+### Step 3: JSON Mode
 
-Используйте JSON mode для structured outputs:
+Use JSON mode for structured outputs:
 
 ```go
 func createStructuredRequest(messages []openai.ChatCompletionMessage) openai.ChatCompletionRequest {
@@ -79,87 +79,86 @@ func createStructuredRequest(messages []openai.ChatCompletionMessage) openai.Cha
 }
 ```
 
-### Шаг 4: Выбор модели под задачу
+### Step 4: Model Selection for Task
 
-Используйте более дешёвые модели для простых задач:
+Use cheaper models for simple tasks:
 
 ```go
 func selectModel(taskComplexity string) string {
     switch taskComplexity {
     case "simple":
-        return openai.GPT3Dot5Turbo // Дешевле и быстрее
+        return openai.GPT3Dot5Turbo // Cheaper and faster
     case "complex":
-        return openai.GPT4 // Лучше качество, но дороже
+        return openai.GPT4 // Better quality, but more expensive
     default:
         return openai.GPT3Dot5Turbo
     }
 }
 ```
 
-## Где это встраивать в нашем коде
+## Where to Integrate in Our Code
 
-### Точка интеграции 1: Capability Check
+### Integration Point 1: Capability Check
 
-В `labs/lab00-capability-check/main.go` уже есть benchmark. Используйте его перед разработкой.
+In `labs/lab00-capability-check/main.go`, benchmark already exists. Use it before development.
 
-### Точка интеграции 2: Tool Calling
+### Integration Point 2: Tool Calling
 
-В `labs/lab02-tools/main.go` установите Temperature = 0:
+In `labs/lab02-tools/main.go`, set Temperature = 0:
 
 ```go
 req := openai.ChatCompletionRequest{
     Model:       openai.GPT3Dot5Turbo,
     Messages:    messages,
     Tools:       tools,
-    Temperature: 0, // Детерминизм
+    Temperature: 0, // Determinism
 }
 ```
 
-### Точка интеграции 3: SOP и детерминизм
+### Integration Point 3: SOP and Determinism
 
-В `labs/lab06-incident/SOLUTION.md` уже используется Temperature = 0 для детерминизма.
+In `labs/lab06-incident/SOLUTION.md`, Temperature = 0 is already used for determinism.
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: Модель не проверена перед разработкой
+### Mistake 1: Model Not Checked Before Development
 
-**Симптом:** Модель не подходит для tool calling, возвращает невалидный JSON.
+**Symptom:** Model not suitable for tool calling, returns invalid JSON.
 
-**Решение:** Запустите capability benchmark перед разработкой.
+**Solution:** Run capability benchmark before development.
 
-### Ошибка 2: Temperature > 0 для tool calling
+### Mistake 2: Temperature > 0 for Tool Calling
 
-**Симптом:** Агент ведёт себя непредсказуемо, одинаковые запросы дают разные результаты.
+**Symptom:** Agent behaves unpredictably, same requests give different results.
 
-**Решение:** Используйте Temperature = 0 для tool calling.
+**Solution:** Use Temperature = 0 for tool calling.
 
-### Ошибка 3: Нет JSON mode
+### Mistake 3: No JSON Mode
 
-**Симптом:** Модель возвращает "ломаный" JSON в tool calls.
+**Symptom:** Model returns "broken" JSON in tool calls.
 
-**Решение:** Используйте JSON mode, если модель поддерживает.
+**Solution:** Use JSON mode if model supports it.
 
-## Критерии сдачи / Чек-лист
+## Completion Criteria / Checklist
 
-✅ **Сдано:**
-- Модель проверена через capability benchmark
-- Temperature = 0 для tool calling
-- JSON mode используется для structured outputs
-- Модель выбирается под задачу
+✅ **Completed:**
+- Model checked via capability benchmark
+- Temperature = 0 for tool calling
+- JSON mode used for structured outputs
+- Model selected for task
 
-❌ **Не сдано:**
-- Модель не проверена
-- Temperature > 0 для tool calling
-- Нет JSON mode
+❌ **Not completed:**
+- Model not checked
+- Temperature > 0 for tool calling
+- No JSON mode
 
-## Связь с другими главами
+## Connection with Other Chapters
 
-- **Capability Benchmark:** Проверка модели — [Lab 00: Capability Check](../../labs/lab00-capability-check/METHOD.md)
-- **Физика LLM:** Фундаментальные концепции — [Глава 01: Физика LLM](../01-llm-fundamentals/README.md)
-- **Function Calling:** Tool calling — [Глава 04: Инструменты и Function Calling](../04-tools-and-function-calling/README.md)
-- **Cost Engineering:** Выбор модели для оптимизации стоимости — [Cost & Latency Engineering](cost_latency.md)
+- **Capability Benchmark:** Model checking — [Lab 00: Capability Check](../../labs/lab00-capability-check/METHOD.md)
+- **LLM Physics:** Fundamental concepts — [Chapter 01: LLM Physics](../01-llm-fundamentals/README.md)
+- **Function Calling:** Tool calling — [Chapter 04: Tools and Function Calling](../04-tools-and-function-calling/README.md)
+- **Cost Engineering:** Model selection for cost optimization — [Cost & Latency Engineering](cost_latency.md)
 
 ---
 
-**Навигация:** [← Multi-Agent в продакшене](multi_agent_in_prod.md) | [Оглавление главы 12](README.md)
-
+**Navigation:** [← Multi-Agent in Production](multi_agent_in_prod.md) | [Chapter 12 Table of Contents](README.md)

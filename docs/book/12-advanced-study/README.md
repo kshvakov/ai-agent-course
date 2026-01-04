@@ -1,163 +1,163 @@
-# 12. Углублённое изучение: Прод-готовность агентов
+# 12. Advanced Study: Production-Ready Agents
 
-## Зачем это нужно?
+## Why This Chapter?
 
-Вы прошли базовый курс и создали рабочего агента. Но что дальше? Как перейти от "учебного агента" к "прод-агенту", который работает надёжно, безопасно и эффективно в реальной среде?
+You've completed the basic course and created a working agent. But what's next? How to transition from a "learning agent" to a "production agent" that works reliably, safely, and efficiently in a real environment?
 
-Эта глава — **практическое руководство по прод-готовности**. Здесь собраны темы, которые почти всегда появляются при создании прод-агентов, но не всегда очевидны на старте. Каждая тема содержит:
-- **Критерии "когда это нужно"** — чтобы понять, нужна ли вам эта тема прямо сейчас
-- **Пошаговые рецепты внедрения** — что именно делать и куда это встраивать в ваш код
-- **Типовые ошибки и решения** — чтобы не наступать на те же грабли
-- **Чек-листы готовности** — чтобы проверить, что всё работает
+This chapter is a **practical guide to production readiness**. Here are topics that almost always appear when creating production agents, but aren't always obvious at the start. Each topic contains:
+- **"When needed" criteria** — to understand if you need this topic right now
+- **Step-by-step implementation recipes** — what exactly to do and where to integrate it into your code
+- **Common mistakes and solutions** — to avoid stepping on the same rakes
+- **Readiness checklists** — to verify everything works
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Вы создали агента для DevOps, он работает локально. Вы запускаете его в продакшен, и через неделю:
-- Агент выполнил операцию, которая стоила $500 из-за большого количества токенов
-- Вы не можете понять, почему агент принял неправильное решение — нет логов
-- Агент завис на задаче и не отвечал 10 минут
-- Пользователь пожаловался, что агент не запросил подтверждение перед удалением данных
+**Situation:** You created a DevOps agent, it works locally. You launch it in production, and after a week:
+- Agent performed an operation that cost $500 due to large token usage
+- You can't understand why agent made wrong decision — no logs
+- Agent hung on a task and didn't respond for 10 minutes
+- User complained that agent didn't ask for confirmation before deleting data
 
-**Проблема:** Учебный агент работает, но не готов к продакшену. Нет observability, контроля стоимости, обработки ошибок, политик безопасности.
+**Problem:** Learning agent works, but isn't production-ready. No observability, cost control, error handling, security policies.
 
-**Решение:** Эта глава показывает, как внедрить все необходимые прод-блоки. Каждая тема — это полноценный документ с рецептами, привязанными к вашему коду из лабораторных работ.
+**Solution:** This chapter shows how to implement all necessary production blocks. Each topic is a complete document with recipes tied to your code from lab assignments.
 
-## Как пользоваться этой главой?
+## How to Use This Chapter?
 
-### Режим 1: Срочно в прод за 1 день (минимальный набор)
+### Mode 1: Urgent Production in 1 Day (Minimal Set)
 
-Если вам нужно запустить агента в прод **прямо сейчас**, начните с этих трёх тем:
+If you need to launch agent in production **right now**, start with these three topics:
 
-1. **[Observability и Tracing](observability.md)** — без этого вы слепы. Нужно сразу.
-2. **[Cost & Latency Engineering](cost_latency.md)** — критично для контроля бюджета.
-3. **[Безопасность и Governance](security_governance.md)** — обязательный прод-блок.
+1. **[Observability and Tracing](observability.md)** — without this you're blind. Needed immediately.
+2. **[Cost & Latency Engineering](cost_latency.md)** — critical for budget control.
+3. **[Security and Governance](security_governance.md)** — mandatory production block.
 
-Эти три темы дадут вам базовую прод-готовность: вы будете видеть, что происходит, контролировать стоимость и защищать систему.
+These three topics give you basic production readiness: you'll see what's happening, control costs, and protect the system.
 
-### Режим 2: Плановая доводка за 1–2 недели (расширенный набор)
+### Mode 2: Planned Refinement Over 1–2 Weeks (Extended Set)
 
-Если у вас есть время на плановую доработку, добавьте темы по мере роста:
+If you have time for planned refinement, add topics as you grow:
 
-**Неделя 1:**
-- [Workflow и State Management](workflow_state.md) — когда агенты выполняют долгие задачи
-- [Prompt и Program Management](prompt_program_mgmt.md) — когда промпты меняются часто
-- [Evals в CI/CD](evals_in_cicd.md) — автоматическая проверка качества
+**Week 1:**
+- [Workflow and State Management](workflow_state.md) — when agents perform long tasks
+- [Prompt and Program Management](prompt_program_mgmt.md) — when prompts change frequently
+- [Evals in CI/CD](evals_in_cicd.md) — automatic quality checks
 
-**Неделя 2:**
-- [Data и Privacy](data_privacy.md) — если работаете с персональными данными
-- [RAG в продакшене](rag_in_prod.md) — если используете RAG
-- [Multi-Agent в продакшене](multi_agent_in_prod.md) — если используете Multi-Agent системы
-- [Модель и декодинг](model_and_decoding.md) — выбор модели и настройка параметров
+**Week 2:**
+- [Data and Privacy](data_privacy.md) — if working with personal data
+- [RAG in Production](rag_in_prod.md) — if using RAG
+- [Multi-Agent in Production](multi_agent_in_prod.md) — if using Multi-Agent systems
+- [Model and Decoding](model_and_decoding.md) — model selection and parameter tuning
 
-## Темы для углублённого изучения
+## Topics for Advanced Study
 
-### Обязательные прод-блоки (нужны сразу)
+### Mandatory Production Blocks (Needed Immediately)
 
-#### [Observability и Tracing](observability.md)
-**Когда нужно:** Сразу, как только агент выходит в прод. Без observability вы не можете понять, что происходит с агентом.
+#### [Observability and Tracing](observability.md)
+**When needed:** Immediately, as soon as agent goes to production. Without observability, you can't understand what's happening with the agent.
 
-**Что внутри:** Структурированное логирование, трейсинг agent runs и tool calls, метрики (latency, token usage, error rate), кореляция логов через `run_id`.
+**What's inside:** Structured logging, tracing agent runs and tool calls, metrics (latency, token usage, error rate), log correlation via `run_id`.
 
-**Связь с кодом:** Привязка к `labs/lab04-autonomy/main.go` (agent loop) и `labs/lab02-tools/main.go` (tool execution).
+**Code connection:** Tied to `labs/lab04-autonomy/main.go` (agent loop) and `labs/lab02-tools/main.go` (tool execution).
 
 #### [Cost & Latency Engineering](cost_latency.md)
-**Когда нужно:** Когда агент используется активно или работает с большими контекстами. Критично для контроля бюджета и производительности.
+**When needed:** When agent is used actively or works with large contexts. Critical for budget and performance control.
 
-**Что внутри:** Бюджеты токенов, лимиты итераций, кэширование, fallback-модели, батчинг, таймауты.
+**What's inside:** Token budgets, iteration limits, caching, fallback models, batching, timeouts.
 
-**Связь с кодом:** Привязка к `labs/lab09-context-optimization/main.go` (подсчёт токенов) и `labs/lab04-autonomy/main.go` (ReAct loop).
+**Code connection:** Tied to `labs/lab09-context-optimization/main.go` (token counting) and `labs/lab04-autonomy/main.go` (ReAct loop).
 
-#### [Безопасность и Governance](security_governance.md)
-**Когда нужно:** Сразу, как только агент выходит в прод. Безопасность — это не опция, а обязательное требование.
+#### [Security and Governance](security_governance.md)
+**When needed:** Immediately, as soon as agent goes to production. Security is not an option, but a mandatory requirement.
 
-**Что внутри:** Threat modeling для tool-агентов, risk scoring, prompt injection защита, RBAC к инструментам, dry-run режимы, аудит.
+**What's inside:** Threat modeling for tool-agents, risk scoring, prompt injection protection, RBAC for tools, dry-run modes, audit.
 
-**Связь с кодом:** Привязка к `labs/lab05-human-interaction/main.go` (подтверждения) и `labs/lab06-incident/SOLUTION.md` (детерминизм через SOP).
+**Code connection:** Tied to `labs/lab05-human-interaction/main.go` (confirmations) and `labs/lab06-incident/SOLUTION.md` (determinism via SOP).
 
-### Темы по мере роста
+### Topics as You Grow
 
-#### [Workflow и State Management](workflow_state.md)
-**Когда нужно:** Когда агенты выполняют долгие задачи (минуты или часы), нужна идемпотентность или обработка ошибок с retry.
+#### [Workflow and State Management](workflow_state.md)
+**When needed:** When agents perform long tasks (minutes or hours), need idempotency or error handling with retry.
 
-**Что внутри:** Идемпотентность инструментов, retries с экспоненциальным backoff, дедлайны, очереди и асинхронность, persist state.
+**What's inside:** Tool idempotency, retries with exponential backoff, deadlines, queues and asynchrony, persist state.
 
-**Связь с кодом:** Привязка к `labs/lab04-autonomy/main.go` (agent loop) и `labs/lab06-incident/main.go` (долгие задачи).
+**Code connection:** Tied to `labs/lab04-autonomy/main.go` (agent loop) and `labs/lab06-incident/main.go` (long tasks).
 
-#### [Prompt и Program Management](prompt_program_mgmt.md)
-**Когда нужно:** Когда промпты меняются часто, есть несколько версий или нужен A/B тестинг.
+#### [Prompt and Program Management](prompt_program_mgmt.md)
+**When needed:** When prompts change frequently, there are multiple versions or need A/B testing.
 
-**Что внутри:** Версионирование промптов, промпт-регрессии через evals, конфиги и feature flags, A/B тестинг.
+**What's inside:** Prompt versioning, prompt regressions via evals, configs and feature flags, A/B testing.
 
-**Связь с кодом:** Привязка к `labs/lab06-incident/SOLUTION.md` (SOP в промптах) и `labs/lab09-context-optimization/main.go` (параметры модели).
+**Code connection:** Tied to `labs/lab06-incident/SOLUTION.md` (SOP in prompts) and `labs/lab09-context-optimization/main.go` (model parameters).
 
-#### [Evals в CI/CD](evals_in_cicd.md)
-**Когда нужно:** Когда промпты или код меняются часто и нужна автоматическая проверка качества.
+#### [Evals in CI/CD](evals_in_cicd.md)
+**When needed:** When prompts or code change frequently and need automatic quality checks.
 
-**Что внутри:** Quality gates в CI/CD, версионирование датасетов, обработка flaky-кейсов, тесты на безопасность.
+**What's inside:** Quality gates in CI/CD, dataset versioning, handling flaky cases, security tests.
 
-**Связь с кодом:** Привязка к [Главе 09: Evals и Надежность](../09-evals-and-reliability/README.md).
+**Code connection:** Tied to [Chapter 09: Evals and Reliability](../09-evals-and-reliability/README.md).
 
-### Специализированные темы
+### Specialized Topics
 
-#### [Data и Privacy](data_privacy.md)
-**Когда нужно:** Когда агент работает с персональными данными (PII) или секретами.
+#### [Data and Privacy](data_privacy.md)
+**When needed:** When agent works with personal data (PII) or secrets.
 
-**Что внутри:** Обнаружение и маскирование PII, защита секретов, redaction логов, хранение и TTL логов.
+**What's inside:** PII detection and masking, secret protection, log redaction, log storage and TTL.
 
-**Связь с кодом:** Привязка к `labs/lab05-human-interaction/main.go` (обработка пользовательского ввода).
+**Code connection:** Tied to `labs/lab05-human-interaction/main.go` (user input handling).
 
-#### [RAG в продакшене](rag_in_prod.md)
-**Когда нужно:** Если используете RAG (см. [Главу 07](../07-rag/README.md)) и нужна надёжность в проде.
+#### [RAG in Production](rag_in_prod.md)
+**When needed:** If using RAG (see [Chapter 07](../07-rag/README.md)) and need reliability in production.
 
-**Что внутри:** Версионирование документов, freshness (актуальность), реранкинг, grounding, отказоустойчивость retrieval.
+**What's inside:** Document versioning, freshness (currency), reranking, grounding, retrieval fault tolerance.
 
-**Связь с кодом:** Привязка к `labs/lab07-rag/main.go` (RAG реализация).
+**Code connection:** Tied to `labs/lab07-rag/main.go` (RAG implementation).
 
-#### [Multi-Agent в продакшене](multi_agent_in_prod.md)
-**Когда нужно:** Если инструментов много (20+) или задачи разнородные (DevOps + Security + Data). Multi-Agent системы помогают разделить ответственность и изолировать контексты.
+#### [Multi-Agent in Production](multi_agent_in_prod.md)
+**When needed:** If tools are many (20+) or tasks are heterogeneous (DevOps + Security + Data). Multi-Agent systems help divide responsibility and isolate contexts.
 
-**Что внутри:** Supervisor/Worker и изоляция контекста, маршрутизация задач, контуры безопасности, наблюдаемость цепочки.
+**What's inside:** Supervisor/Worker and context isolation, task routing, safety circuits, chain observability.
 
-**Связь с кодом:** Привязка к `labs/lab08-multi-agent/main.go` (Multi-Agent система).
+**Code connection:** Tied to `labs/lab08-multi-agent/main.go` (Multi-Agent system).
 
-#### [Модель и декодинг](model_and_decoding.md)
-**Когда нужно:** Сразу, на этапе выбора модели и настройки параметров. Неправильный выбор модели или параметров декодинга — частая причина проблем.
+#### [Model and Decoding](model_and_decoding.md)
+**When needed:** Immediately, at model selection and parameter tuning stage. Wrong model choice or decoding parameters — common cause of problems.
 
-**Что внутри:** Capability benchmark перед разработкой, детерминизм (Temperature = 0), structured outputs / JSON mode, выбор модели под задачу.
+**What's inside:** Capability benchmark before development, determinism (Temperature = 0), structured outputs / JSON mode, model selection for task.
 
-**Связь с кодом:** Привязка к `labs/lab00-capability-check/main.go` (benchmark) и `labs/lab06-incident/SOLUTION.md` (детерминизм).
+**Code connection:** Tied to `labs/lab00-capability-check/main.go` (benchmark) and `labs/lab06-incident/SOLUTION.md` (determinism).
 
-## Алгоритм приоритизации
+## Prioritization Algorithm
 
-Не пытайтесь изучить всё сразу. Используйте этот алгоритм:
+Don't try to study everything at once. Use this algorithm:
 
-1. **Начните с обязательных прод-блоков:**
-   - Observability (логирование, трейсинг) — нужно сразу, без этого вы слепы
-   - Cost & latency engineering — критично, если агент используется активно
-   - Безопасность и Governance — обязательный прод-блок
+1. **Start with mandatory production blocks:**
+   - Observability (logging, tracing) — needed immediately, without this you're blind
+   - Cost & latency engineering — critical if agent is used actively
+   - Security and Governance — mandatory production block
 
-2. **Добавьте темы по мере роста:**
-   - Workflow/state — когда агенты выполняют долгие задачи или нужна идемпотентность
-   - Политики доступа — когда несколько пользователей или разные уровни доступа
-   - Prompt/program management — когда промпты меняются часто или есть несколько версий
+2. **Add topics as you grow:**
+   - Workflow/state — when agents perform long tasks or need idempotency
+   - Access policies — when multiple users or different access levels
+   - Prompt/program management — when prompts change frequently or multiple versions
 
-3. **Специализированные темы:**
-   - RAG в проде — если используете RAG (см. [Главу 07](../07-rag/README.md))
-   - Data/privacy — если работаете с персональными данными
-   - Multi-Agent в проде — если используете Multi-Agent системы
+3. **Specialized topics:**
+   - RAG in production — if using RAG (see [Chapter 07](../07-rag/README.md))
+   - Data/privacy — if working with personal data
+   - Multi-Agent in production — if using Multi-Agent systems
 
 
-## Связь с другими главами
+## Connection with Other Chapters
 
-- **Безопасность:** Базовые концепции безопасности изучены в [Главе 06: Безопасность и Human-in-the-Loop](../06-safety-and-hitl/README.md)
-- **RAG:** Базовые концепции RAG изучены в [Главе 07: RAG и База Знаний](../07-rag/README.md)
-- **Multi-Agent:** Базовые концепции Multi-Agent изучены в [Главе 08: Multi-Agent Systems](../08-multi-agent/README.md)
-- **Evals:** Базовые концепции evals изучены в [Главе 09: Evals и Надежность](../09-evals-and-reliability/README.md)
-- **Best Practices:** Общие практики изучены в [Главе 11: Best Practices](../11-best-practices/README.md)
-- **Физика LLM:** Фундаментальные концепции изучены в [Главе 01: Физика LLM](../01-llm-fundamentals/README.md)
-- **Инструменты:** Function Calling изучен в [Главе 04: Инструменты и Function Calling](../04-tools-and-function-calling/README.md)
-- **Приложение:** Справочники, шаблоны и Capability Benchmark в [Приложении](../appendix/README.md)
+- **Safety:** Basic safety concepts studied in [Chapter 06: Safety and Human-in-the-Loop](../06-safety-and-hitl/README.md)
+- **RAG:** Basic RAG concepts studied in [Chapter 07: RAG and Knowledge Base](../07-rag/README.md)
+- **Multi-Agent:** Basic Multi-Agent concepts studied in [Chapter 08: Multi-Agent Systems](../08-multi-agent/README.md)
+- **Evals:** Basic eval concepts studied in [Chapter 09: Evals and Reliability](../09-evals-and-reliability/README.md)
+- **Best Practices:** General practices studied in [Chapter 11: Best Practices](../11-best-practices/README.md)
+- **LLM Physics:** Fundamental concepts studied in [Chapter 01: LLM Physics](../01-llm-fundamentals/README.md)
+- **Tools:** Function Calling studied in [Chapter 04: Tools and Function Calling](../04-tools-and-function-calling/README.md)
+- **Appendix:** References, templates and Capability Benchmark in [Appendix](../appendix/README.md)
 
 ---
 
-**Навигация:** [← Best Practices](../11-best-practices/README.md) | [Оглавление](../README.md) | [Приложение →](../appendix/README.md)
+**Navigation:** [← Best Practices](../11-best-practices/README.md) | [Table of Contents](../README.md) | [Appendix →](../appendix/README.md)

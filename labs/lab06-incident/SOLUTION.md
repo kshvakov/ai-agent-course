@@ -1,51 +1,51 @@
 # Lab 06 Solution: The Incident (Advanced Planning)
 
-## 📝 Глубокий анализ решения
+## 📝 Deep Solution Analysis
 
-### Chain-of-Thought в действии
+### Chain-of-Thought in Action
 
-Обратите внимание на System Prompt в решении:
+Note the System Prompt in the solution:
 `"Think step by step following this SOP: 1. Check HTTP... 2. Check Logs..."`
 
-**Зачем это нужно?**
+**Why is this needed?**
 
-Без этого промпта модель видит: `User: Fix it`.  
-Ее вероятностный механизм может выдать: `Call: restart_service`. Это самое "популярное" действие.
+Without this prompt, model sees: `User: Fix it`.  
+Its probabilistic mechanism may output: `Call: restart_service`. This is the most "popular" action.
 
-С этим промптом модель вынуждена сгенерировать текст:
-- "Step 1: I need to check HTTP status." → Это повышает вероятность вызова `check_http`
-- "HTTP is 502. Step 2: I need to check logs." → Это повышает вероятность вызова `read_logs`
+With this prompt, model is forced to generate text:
+- "Step 1: I need to check HTTP status." → This increases probability of calling `check_http`
+- "HTTP is 502. Step 2: I need to check logs." → This increases probability of calling `read_logs`
 
-Мы **направляем внимание** модели по нужному руслу.
+We **direct model's attention** along the needed path.
 
-### Таблица решений (Decision Table)
+### Decision Table
 
-Для инцидента "Payment Service 502" агент должен следовать этой таблице:
+For incident "Payment Service 502", agent must follow this table:
 
-| Симптом | Гипотеза | Проверка | Действие | Верификация |
-|---------|----------|----------|----------|-------------|
-| HTTP 502 | Сервис упал | `check_http()` → 502 | - | - |
-| HTTP 502 | Ошибка в логах | `read_logs()` → "Syntax error" | `rollback_deploy()` | `check_http()` → 200 |
-| HTTP 502 | Ошибка в логах | `read_logs()` → "Connection refused" | `restart_service()` | `check_http()` → 200 |
-| HTTP 502 | Временный сбой | `read_logs()` → "Transient error" | `restart_service()` | `check_http()` → 200 |
+| Symptom | Hypothesis | Check | Action | Verification |
+|---------|------------|-------|--------|--------------|
+| HTTP 502 | Service down | `check_http()` → 502 | - | - |
+| HTTP 502 | Error in logs | `read_logs()` → "Syntax error" | `rollback_deploy()` | `check_http()` → 200 |
+| HTTP 502 | Error in logs | `read_logs()` → "Connection refused" | `restart_service()` | `check_http()` → 200 |
+| HTTP 502 | Transient failure | `read_logs()` → "Transient error" | `restart_service()` | `check_http()` → 200 |
 
-**Важно:** Агент не должен действовать без проверки логов!
+**Important:** Agent must not act without checking logs!
 
-### Что делать, если модель "тупит" (локальная)?
+### What to Do if Model "Stalls" (Local)?
 
-1. **Force Thinking:** В промпте напишите: *"Before calling any tool, output a thought starting with 'THOUGHT:' describing what you want to do."*
+1. **Force Thinking:** In prompt write: *"Before calling any tool, output a thought starting with 'THOUGHT:' describing what you want to do."*
 
-2. **Reduce Scope:** Уберите лишние инструменты. Если у вас 10 инструментов, модель может запутаться.
+2. **Reduce Scope:** Remove extra tools. If you have 10 tools, model may get confused.
 
-3. **Few-Shot:** Добавьте в историю диалога пример идеального решения инцидента:
+3. **Few-Shot:** Add to dialogue history an example of ideal incident solution:
    ```json
    User: "Service down"
    Assistant: "THOUGHT: Checking status first."
    Tool: check_http...
    ```
-   Это самый мощный способ заставить модель работать правильно (In-Context Learning).
+   This is the most powerful way to make model work correctly (In-Context Learning).
 
-### 🔍 Полный код решения
+### 🔍 Complete Solution Code
 
 ```go
 package main
@@ -58,7 +58,7 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// --- Environment Mock (Состояние системы) ---
+// --- Environment Mock (System State) ---
 var serviceState = map[string]string{
 	"status":  "failed", // failed -> running
 	"config":  "bad",    // bad -> good
@@ -150,7 +150,7 @@ ALWAYS Think step by step. Output your thought process before calling a tool.`
 			Model:       openai.GPT4,
 			Messages:    messages,
 			Tools:       tools,
-			Temperature: 0, // Детерминированное поведение
+			Temperature: 0, // Deterministic behavior
 		}
 
 		resp, err := client.CreateChatCompletion(ctx, req)
@@ -166,7 +166,7 @@ ALWAYS Think step by step. Output your thought process before calling a tool.`
 			break
 		}
 
-		fmt.Printf("\n🧠 Thought: %s\n", msg.Content) // Печатаем Chain of Thought
+		fmt.Printf("\n🧠 Thought: %s\n", msg.Content) // Print Chain of Thought
 
 		for _, toolCall := range msg.ToolCalls {
 			fmt.Printf("🔧 Call: %s\n", toolCall.Function.Name)
@@ -195,7 +195,7 @@ ALWAYS Think step by step. Output your thought process before calling a tool.`
 }
 ```
 
-### Ожидаемый вывод
+### Expected Output
 
 ```
 🚨 ALERT: Payment Service is DOWN (502).
@@ -220,14 +220,14 @@ ALWAYS Think step by step. Output your thought process before calling a tool.`
 🤖 Agent: The service has been fixed. I rolled back to version v1.9 due to a config syntax error. The service is now returning 200 OK.
 ```
 
-### Диагностика проблем
+### Problem Diagnosis
 
-Если агент не следует SOP:
+If agent doesn't follow SOP:
 
-1. **Проверьте модель:** Запустите Lab 00. Если Function Calling провален, модель не подходит.
-2. **Усильте промпт:** Добавьте "CRITICAL:" перед важными инструкциями.
-3. **Добавьте Few-Shot:** Покажите модели пример правильного поведения.
+1. **Check model:** Run Lab 00. If Function Calling failed, model is not suitable.
+2. **Strengthen prompt:** Add "CRITICAL:" before important instructions.
+3. **Add Few-Shot:** Show model an example of correct behavior.
 
 ---
 
-**Следующий шаг:** Изучите [Lab 07: RAG](../lab07-rag/README.md) для работы с документацией.
+**Next step:** Study [Lab 07: RAG](../lab07-rag/README.md) for working with documentation.

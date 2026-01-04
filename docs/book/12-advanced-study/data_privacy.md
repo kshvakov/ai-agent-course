@@ -1,42 +1,42 @@
-# Data и Privacy
+# Data and Privacy
 
-## Зачем это нужно?
+## Why This Chapter?
 
-Агент работает с персональными данными пользователей (email, телефон, адрес). Эти данные попадают в логи и отправляются в LLM API. Без защиты данных вы нарушаете GDPR и рискуете утечкой данных.
+Agent works with users' personal data (email, phone, address). This data gets into logs and sent to LLM API. Without data protection, you violate GDPR and risk data leaks.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Агент обрабатывает запрос пользователя: "Мой email john@example.com, телефон +7-999-123-4567. Создай тикет".
+**Situation:** Agent processes user request: "My email john@example.com, phone +7-999-123-4567. Create ticket".
 
-**Проблема:** PII попадает в логи и отправляется в LLM API без маскирования. При утечке логов персональные данные попадают в чужие руки.
+**Problem:** PII gets into logs and sent to LLM API without masking. If logs leak, personal data falls into wrong hands.
 
-**Решение:** Обнаружение и маскирование PII перед логированием и отправкой в LLM, защита секретов, redaction логов, TTL для хранения.
+**Solution:** PII detection and masking before logging and sending to LLM, secret protection, log redaction, TTL for storage.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### Что такое PII?
+### What Is PII?
 
-PII (Personally Identifiable Information) — это данные, которые позволяют идентифицировать человека: email, телефон, адрес, паспорт.
+PII (Personally Identifiable Information) is data that allows identifying a person: email, phone, address, passport.
 
-### Что такое redaction?
+### What Is Redaction?
 
-Redaction — это удаление чувствительных данных из логов перед сохранением.
+Redaction is removal of sensitive data from logs before saving.
 
-## Как это работает (пошагово)
+## How It Works (Step-by-Step)
 
-### Шаг 1: Обнаружение и маскирование PII
+### Step 1: PII Detection and Masking
 
-Маскируйте PII перед отправкой в LLM:
+Mask PII before sending to LLM:
 
 ```go
 import "regexp"
 
 func sanitizePII(text string) string {
-    // Маскируем email
+    // Mask email
     emailRegex := regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`)
     text = emailRegex.ReplaceAllString(text, "[EMAIL_REDACTED]")
     
-    // Маскируем телефон
+    // Mask phone
     phoneRegex := regexp.MustCompile(`\b\d{3}-\d{3}-\d{4}\b`)
     text = phoneRegex.ReplaceAllString(text, "[PHONE_REDACTED]")
     
@@ -44,13 +44,13 @@ func sanitizePII(text string) string {
 }
 ```
 
-### Шаг 2: Защита секретов
+### Step 2: Secret Protection
 
-Никогда не логируйте секреты:
+Never log secrets:
 
 ```go
 func sanitizeSecrets(text string) string {
-    // Удаляем паттерны типа "password: ..."
+    // Remove patterns like "password: ..."
     secretRegex := regexp.MustCompile(`(?i)(password|api_key|token|secret)\s*[:=]\s*[\w-]+`)
     text = secretRegex.ReplaceAllString(text, "[SECRET_REDACTED]")
     
@@ -58,9 +58,9 @@ func sanitizeSecrets(text string) string {
 }
 ```
 
-### Шаг 3: Redaction логов
+### Step 3: Log Redaction
 
-Удаляйте чувствительные данные из логов:
+Remove sensitive data from logs:
 
 ```go
 func logWithRedaction(runID string, data map[string]interface{}) {
@@ -78,11 +78,11 @@ func logWithRedaction(runID string, data map[string]interface{}) {
 }
 ```
 
-## Где это встраивать в нашем коде
+## Where to Integrate in Our Code
 
-### Точка интеграции: User Input
+### Integration Point: User Input
 
-В `labs/lab05-human-interaction/main.go` санитизируйте входные данные:
+In `labs/lab05-human-interaction/main.go`, sanitize input data:
 
 ```go
 userInput := sanitizePII(sanitizeSecrets(rawInput))
@@ -92,37 +92,36 @@ messages = append(messages, openai.ChatCompletionMessage{
 })
 ```
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: PII попадает в логи
+### Mistake 1: PII Gets into Logs
 
-**Симптом:** Email и телефоны пользователей видны в логах.
+**Symptom:** User emails and phones are visible in logs.
 
-**Решение:** Маскируйте PII перед логированием.
+**Solution:** Mask PII before logging.
 
-### Ошибка 2: Секреты логируются
+### Mistake 2: Secrets Are Logged
 
-**Симптом:** API ключи и пароли попадают в логи.
+**Symptom:** API keys and passwords get into logs.
 
-**Решение:** Удаляйте секреты из логов через redaction.
+**Solution:** Remove secrets from logs via redaction.
 
-## Критерии сдачи / Чек-лист
+## Completion Criteria / Checklist
 
-✅ **Сдано:**
-- PII маскируется перед отправкой в LLM
-- Секреты не логируются
-- Логи проходят redaction
+✅ **Completed:**
+- PII masked before sending to LLM
+- Secrets not logged
+- Logs go through redaction
 
-❌ **Не сдано:**
-- PII не маскируется
-- Секреты логируются
+❌ **Not completed:**
+- PII not masked
+- Secrets logged
 
-## Связь с другими главами
+## Connection with Other Chapters
 
-- **Безопасность:** Защита данных — [Безопасность и Governance](security_governance.md)
-- **Observability:** Безопасное логирование — [Observability и Tracing](observability.md)
+- **Security:** Data protection — [Security and Governance](security_governance.md)
+- **Observability:** Safe logging — [Observability and Tracing](observability.md)
 
 ---
 
-**Навигация:** [← Prompt и Program Management](prompt_program_mgmt.md) | [Оглавление главы 12](README.md) | [RAG в продакшене →](rag_in_prod.md)
-
+**Navigation:** [← Prompt and Program Management](prompt_program_mgmt.md) | [Chapter 12 Table of Contents](README.md) | [RAG in Production →](rag_in_prod.md)

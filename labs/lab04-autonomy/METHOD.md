@@ -1,60 +1,60 @@
-# Методическое пособие: Lab 04 — The Agent Loop (Autonomy)
+# Study Guide: Lab 04 — The Agent Loop (Autonomy)
 
-## Зачем это нужно?
+## Why This Lab?
 
-В этой лабораторной работе вы реализуете паттерн **ReAct (Reason + Act)** — сердце автономного агента. Агент научится самостоятельно принимать решения, выполнять действия и анализировать результаты в цикле, без вмешательства человека.
+In this laboratory assignment, you'll implement the **ReAct (Reason + Act)** pattern — the heart of an autonomous agent. The agent will learn to independently make decisions, execute actions, and analyze results in a loop, without human intervention.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Пользователь пишет: "У меня кончилось место на сервере. Разберись."
+**Situation:** User writes: "I'm out of space on the server. Fix it."
 
-**Без автономного цикла:**
-- Агент: "Я проверю использование диска" → вызывает `check_disk` → получает "95%"
-- Агент: [Останавливается, ждет следующей команды пользователя]
+**Without autonomous loop:**
+- Agent: "I'll check disk usage" → calls `check_disk` → gets "95%"
+- Agent: [Stops, waits for next user command]
 
-**С автономным циклом:**
-- Агент: "Я проверю использование диска" → вызывает `check_disk` → получает "95%"
-- Агент: "Диск переполнен. Очищу логи" → вызывает `clean_logs` → получает "Освобождено 20GB"
-- Агент: "Проверю снова" → вызывает `check_disk` → получает "40%"
-- Агент: "Готово! Освободил 20GB."
+**With autonomous loop:**
+- Agent: "I'll check disk usage" → calls `check_disk` → gets "95%"
+- Agent: "Disk is full. I'll clean logs" → calls `clean_logs` → gets "Freed 20GB"
+- Agent: "I'll check again" → calls `check_disk` → gets "40%"
+- Agent: "Done! Freed 20GB."
 
-**Разница:** Агент сам решает, что делать дальше, основываясь на результатах предыдущих действий.
+**Difference:** Agent decides what to do next based on results of previous actions.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### ReAct Loop (Цикл Автономности)
+### ReAct Loop (Autonomy Cycle)
 
-Автономный агент работает в цикле:
+An autonomous agent works in a loop:
 
 ```
-While (Задача не решена):
-  1. Отправить историю в LLM
-  2. Получить ответ
-  3. ЕСЛИ это текст → Показать пользователю и ждать нового ввода
-  4. ЕСЛИ это вызов инструмента →
-       a. Выполнить инструмент
-       b. Добавить результат в историю
-       c. GOTO 1 (ничего не спрашивая у пользователя!)
+While (Task not solved):
+  1. Send history to LLM
+  2. Get response
+  3. IF it's text → Show to user and wait for new input
+  4. IF it's a tool call →
+       a. Execute tool
+       b. Add result to history
+       c. GOTO 1 (without asking user!)
 ```
 
-**Ключевой момент:** Пункт 4.c дает "магию" — агент сам смотрит на результат и решает, что делать дальше.
+**Key point:** Point 4.c provides the "magic" — the agent itself looks at the result and decides what to do next.
 
-### Замыкание круга
+### Closing the Loop
 
-После выполнения инструмента мы **не спрашиваем пользователя**, что делать дальше. Мы отправляем результат обратно в LLM. Модель видит результат своих действий и решает, что делать дальше.
+After executing a tool, we **don't ask the user** what to do next. We send the result back to the LLM. The model sees the result of its actions and decides what to do next.
 
-**Пример диалога внутри памяти:**
+**Example dialogue in memory:**
 
-1. **User:** "Кончилось место."
+1. **User:** "Out of space."
 2. **Assistant (ToolCall):** `check_disk()`
 3. **Tool (Result):** "95% usage."
-4. **Assistant (ToolCall):** `clean_logs()` ← Агент сам решил это сделать!
+4. **Assistant (ToolCall):** `clean_logs()` ← Agent decided to do this itself!
 5. **Tool (Result):** "Freed 20GB."
-6. **Assistant (Text):** "Я почистил логи, теперь места достаточно."
+6. **Assistant (Text):** "I cleaned logs, now there's enough space."
 
-## Алгоритм выполнения
+## Execution Algorithm
 
-### Шаг 1: Определение инструментов
+### Step 1: Tool Definition
 
 ```go
 tools := []openai.Tool{
@@ -75,7 +75,7 @@ tools := []openai.Tool{
 }
 ```
 
-### Шаг 2: Начальная история
+### Step 2: Initial History
 
 ```go
 messages := []openai.ChatCompletionMessage{
@@ -85,16 +85,16 @@ messages := []openai.ChatCompletionMessage{
     },
     {
         Role:    openai.ChatMessageRoleUser,
-        Content: "У меня кончилось место. Разберись.",
+        Content: "I'm out of space. Fix it.",
     },
 }
 ```
 
-### Шаг 3: Цикл агента
+### Step 3: Agent Loop
 
 ```go
 for i := 0; i < maxIterations; i++ {
-    // 1. Отправляем запрос
+    // 1. Send request
     resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
         Model:    openai.GPT3Dot5Turbo,
         Messages: messages,
@@ -102,81 +102,81 @@ for i := 0; i < maxIterations; i++ {
     })
     
     msg := resp.Choices[0].Message
-    messages = append(messages, msg)  // Сохраняем ответ
+    messages = append(messages, msg)  // Save response
     
-    // 2. Проверяем тип ответа
+    // 2. Check response type
     if len(msg.ToolCalls) == 0 {
-        // Это финальный текстовый ответ
+        // This is final text response
         fmt.Println("Agent:", msg.Content)
         break
     }
     
-    // 3. Выполняем инструменты
+    // 3. Execute tools
     for _, toolCall := range msg.ToolCalls {
         result := executeTool(toolCall.Function.Name, toolCall.Function.Arguments)
         
-        // 4. Добавляем результат в историю
+        // 4. Add result to history
         messages = append(messages, openai.ChatCompletionMessage{
             Role:       openai.ChatMessageRoleTool,
             Content:    result,
             ToolCallID: toolCall.ID,
         })
     }
-    // Цикл продолжается автоматически!
+    // Loop continues automatically!
 }
 ```
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: Зацикливание
+### Mistake 1: Infinite Loop
 
-**Симптом:** Агент повторяет одно и то же действие бесконечно.
+**Symptom:** Agent repeats the same action infinitely.
 
-**Пример:**
+**Example:**
 ```
 Action: check_disk()
 Result: "95%"
-Action: check_disk()  // Снова!
+Action: check_disk()  // Again!
 Result: "95%"
-Action: check_disk()  // И снова!
+Action: check_disk()  // And again!
 ```
 
-**Решение:**
-1. Добавьте лимит итераций
-2. Детектируйте повторяющиеся действия
-3. Улучшите промпт: "Если действие не помогло, попробуй другой подход"
+**Solution:**
+1. Add iteration limit
+2. Detect repeating actions
+3. Improve prompt: "If action didn't help, try a different approach"
 
-### Ошибка 2: Результат инструмента не добавляется в историю
+### Mistake 2: Tool Result Not Added to History
 
-**Симптом:** Агент не видит результат инструмента и продолжает выполнять то же действие.
+**Symptom:** Agent doesn't see tool result and continues executing the same action.
 
-**Причина:** Вы забыли добавить результат в `messages`.
+**Cause:** You forgot to add result to `messages`.
 
-**Решение:**
+**Solution:**
 ```go
-// ОБЯЗАТЕЛЬНО добавляйте результат!
+// MUST add result!
 messages = append(messages, openai.ChatCompletionMessage{
     Role:       openai.ChatMessageRoleTool,
     Content:    result,
-    ToolCallID: toolCall.ID,  // Важно для связи!
+    ToolCallID: toolCall.ID,  // Important for linking!
 })
 ```
 
-### Ошибка 3: Агент не останавливается
+### Mistake 3: Agent Doesn't Stop
 
-**Симптом:** Агент продолжает вызывать инструменты, даже когда задача решена.
+**Symptom:** Agent continues calling tools even when task is solved.
 
-**Решение:**
+**Solution:**
 ```go
-// Добавьте в System Prompt:
-"Если задача решена, ответь текстом пользователю. Не вызывай инструменты без необходимости."
+// Add to System Prompt:
+"If task is solved, respond with text to user. Don't call tools unnecessarily."
 ```
 
-## Мини-упражнения
+## Mini-Exercises
 
-### Упражнение 1: Добавьте детекцию зацикливания
+### Exercise 1: Add Loop Detection
 
-Реализуйте проверку, что последние 3 действия одинаковые:
+Implement a check that the last 3 actions are the same:
 
 ```go
 func isStuck(history []ChatCompletionMessage) bool {
@@ -188,29 +188,28 @@ func isStuck(history []ChatCompletionMessage) bool {
 }
 ```
 
-### Упражнение 2: Добавьте логирование
+### Exercise 2: Add Logging
 
-Логируйте каждую итерацию цикла:
+Log each loop iteration:
 
 ```go
 fmt.Printf("[Iteration %d] Agent decided: %s\n", i, action)
 fmt.Printf("[Iteration %d] Tool result: %s\n", i, result)
 ```
 
-## Критерии сдачи
+## Completion Criteria
 
-✅ **Сдано:**
-- Агент выполняет цикл автономно
-- Результаты инструментов добавляются в историю
-- Агент останавливается, когда задача решена
-- Есть защита от зацикливания
+✅ **Completed:**
+- Agent executes loop autonomously
+- Tool results are added to history
+- Agent stops when task is solved
+- Has protection against infinite loops
 
-❌ **Не сдано:**
-- Агент не продолжает цикл после выполнения инструмента
-- Результаты инструментов не видны агенту
-- Агент зацикливается
+❌ **Not completed:**
+- Agent doesn't continue loop after tool execution
+- Tool results are not visible to agent
+- Agent loops infinitely
 
 ---
 
-**Следующий шаг:** После успешного прохождения Lab 04 переходите к [Lab 05: Human-in-the-Loop](../lab05-human-interaction/README.md)
-
+**Next step:** After successfully completing Lab 04, proceed to [Lab 05: Human-in-the-Loop](../lab05-human-interaction/README.md)

@@ -1,12 +1,12 @@
-# Lab 01 Solution: Основы работы с LLM
+# Lab 01 Solution: LLM Basics
 
-## 🎯 Цель
-В этой лабораторной работе мы научились основам взаимодействия с LLM: отправке запросов, получению ответов и, самое главное, **управлению контекстом**. Без сохранения контекста (истории сообщений) невозможно построить диалог.
+## 🎯 Goal
+In this lab, we learned the basics of interacting with LLM: sending requests, receiving answers, and most importantly, **context management**. Without saving context (message history), it's impossible to build a dialogue.
 
-## 📝 Разбор решения
+## 📝 Solution Breakdown
 
-### 1. Инициализация Клиента (Local & Cloud)
-Мы добавили проверку `OPENAI_BASE_URL`. Это позволяет переключаться между облаком (OpenAI) и локальным сервером (LM Studio, Ollama, vLLM) без переписывания кода.
+### 1. Client Initialization (Local & Cloud)
+We added `OPENAI_BASE_URL` check. This allows switching between cloud (OpenAI) and local server (LM Studio, Ollama, vLLM) without rewriting code.
 
 ```go
 config := openai.DefaultConfig(token)
@@ -16,10 +16,10 @@ if baseURL != "" {
 client := openai.NewClientWithConfig(config)
 ```
 
-### 2. Управление Памятью (Context Loop)
-LLM "не помнит" предыдущие сообщения. Мы должны сами хранить историю и отправлять её каждый раз целиком.
+### 2. Memory Management (Context Loop)
+LLM "doesn't remember" previous messages. We must store history ourselves and send it entirely each time.
 
-### 🔍 Полный код решения
+### 🔍 Complete Solution Code
 
 ```go
 package main
@@ -35,7 +35,7 @@ import (
 )
 
 func main() {
-	// Конфигурация клиента
+	// Client configuration
 	token := os.Getenv("OPENAI_API_KEY")
 	baseURL := os.Getenv("OPENAI_BASE_URL")
 
@@ -52,11 +52,11 @@ func main() {
 
 	client := openai.NewClientWithConfig(config)
 
-	// Инициализация памяти
+	// Initialize memory
 	messages := []openai.ChatCompletionMessage{
 		{
 			Role:    openai.ChatMessageRoleSystem,
-			Content: "Ты опытный Linux администратор. Отвечай кратко и по делу.",
+			Content: "You are an experienced Linux administrator. Answer briefly and to the point.",
 		},
 	}
 
@@ -83,7 +83,7 @@ func main() {
 		})
 
 		req := openai.ChatCompletionRequest{
-			Model:    openai.GPT3Dot5Turbo, // Или "local-model", имя часто игнорируется локальными серверами
+			Model:    openai.GPT3Dot5Turbo, // Or "local-model", name often ignored by local servers
 			Messages: messages,
 		}
 

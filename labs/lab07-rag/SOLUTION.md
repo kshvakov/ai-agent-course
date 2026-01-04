@@ -1,14 +1,14 @@
 # Lab 07 Solution: RAG & Knowledge Base
 
-## 📝 Разбор решения
+## 📝 Solution Breakdown
 
-### Ключевые моменты
+### Key Points
 
-1. **System Prompt должен быть строгим:** Агент должен понимать, что поиск в базе знаний обязателен перед действиями
-2. **Результат поиска должен быть в контексте:** Добавляйте результат поиска в историю с role: "tool"
-3. **Агент должен следовать найденным инструкциям:** После поиска агент должен использовать найденную информацию
+1. **System Prompt must be strict:** Agent must understand that searching knowledge base is mandatory before actions
+2. **Search result must be in context:** Add search result to history with role: "tool"
+3. **Agent must follow found instructions:** After search, agent must use found information
 
-### 🔍 Полный код решения
+### 🔍 Complete Solution Code
 
 ```go
 package main
@@ -23,7 +23,7 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// База знаний
+// Knowledge base
 var knowledgeBase = map[string]string{
 	"restart_policy.txt": "POLICY #12: Before restarting any server, you MUST run 'backup_db'. Failure to do so is a violation.",
 	"backup_guide.txt":   "To run backup, use tool 'run_backup'. It takes no arguments.",
@@ -115,7 +115,7 @@ If you don't know the procedure, search first. Always follow the policies you fi
 
 	messages := []openai.ChatCompletionMessage{
 		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
-		{Role: openai.ChatMessageRoleUser, Content: "Перезагрузи сервер Phoenix согласно регламенту"},
+		{Role: openai.ChatMessageRoleUser, Content: "Restart Phoenix server according to protocol"},
 	}
 
 	fmt.Println("🏁 Starting Agent with RAG...\n")
@@ -175,13 +175,13 @@ If you don't know the procedure, search first. Always follow the policies you fi
 }
 ```
 
-### Ожидаемое поведение
+### Expected Behavior
 
-1. Агент получает задачу: "Перезагрузи сервер Phoenix согласно регламенту"
-2. Агент вызывает `search_knowledge_base("phoenix restart")` или `search_knowledge_base("phoenix")`
-3. Находит документ с протоколом перезагрузки
-4. Следует инструкциям: делает backup, затем перезагружает сервер
+1. Agent receives task: "Restart Phoenix server according to protocol"
+2. Agent calls `search_knowledge_base("phoenix restart")` or `search_knowledge_base("phoenix")`
+3. Finds document with restart protocol
+4. Follows instructions: does backup, then restarts server
 
 ---
 
-**Подробнее:** См. [Главу 07: RAG и База Знаний](../../docs/book/07-rag/README.md) для расширенного описания RAG.
+**More details:** See [Chapter 07: RAG and Knowledge Base](../../docs/book/07-rag/README.md) for extended description of RAG.

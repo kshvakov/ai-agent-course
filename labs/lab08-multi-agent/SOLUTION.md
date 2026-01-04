@@ -1,14 +1,14 @@
 # Lab 08 Solution: Multi-Agent Systems
 
-## 📝 Разбор решения
+## 📝 Solution Breakdown
 
-### Ключевые моменты
+### Key Points
 
-1. **Изоляция контекста:** Каждый Worker создает свой собственный контекст диалога
-2. **Инструменты Supervisor-а = вызовы Workers:** Supervisor не имеет прямых инструментов для работы с инфраструктурой
-3. **Возврат результатов:** Ответы Workers должны быть добавлены в историю Supervisor-а с role: "tool"
+1. **Context isolation:** Each Worker creates its own dialogue context
+2. **Supervisor tools = Worker calls:** Supervisor doesn't have direct tools for infrastructure work
+3. **Return results:** Worker answers must be added to Supervisor's history with role: "tool"
 
-### 🔍 Полный код решения
+### 🔍 Complete Solution Code
 
 ```go
 package main
@@ -22,13 +22,13 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// Mock Tools для Network Specialist
+// Mock Tools for Network Specialist
 func ping(host string) string {
 	fmt.Printf("   [NETWORK] Pinging %s...\n", host)
 	return fmt.Sprintf("Host %s is reachable. Latency: 5ms", host)
 }
 
-// Mock Tools для DB Specialist
+// Mock Tools for DB Specialist
 func runSQL(query string) string {
 	fmt.Printf("   [DATABASE] Executing: %s\n", query)
 	if query == "SELECT version()" {
@@ -37,11 +37,11 @@ func runSQL(query string) string {
 	return "Query executed successfully."
 }
 
-// Функция запуска Worker-а
+// Function to run Worker agent
 func runWorkerAgent(role, systemPrompt, question string, tools []openai.Tool, client *openai.Client) string {
 	ctx := context.Background()
 	
-	// Создаем НОВЫЙ контекст для работника (изоляция!)
+	// Create NEW context for worker (isolation!)
 	messages := []openai.ChatCompletionMessage{
 		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
 		{Role: openai.ChatMessageRoleUser, Content: question},
@@ -49,7 +49,7 @@ func runWorkerAgent(role, systemPrompt, question string, tools []openai.Tool, cl
 
 	fmt.Printf("   [%s] Starting work on: %s\n", role, question)
 
-	// Простой цикл для работника (1-2 шага обычно)
+	// Simple loop for worker (usually 1-2 steps)
 	for i := 0; i < 5; i++ {
 		req := openai.ChatCompletionRequest{
 			Model:    openai.GPT3Dot5Turbo,
@@ -68,10 +68,10 @@ func runWorkerAgent(role, systemPrompt, question string, tools []openai.Tool, cl
 
 		if len(msg.ToolCalls) == 0 {
 			fmt.Printf("   [%s] Completed: %s\n", role, msg.Content)
-			return msg.Content // Возвращаем финальный ответ работника
+			return msg.Content // Return worker's final answer
 		}
 
-		// Выполняем инструменты работника
+		// Execute worker tools
 		for _, toolCall := range msg.ToolCalls {
 			var result string
 			if toolCall.Function.Name == "ping" {
@@ -110,7 +110,7 @@ func main() {
 	
 	ctx := context.Background()
 
-	// Инструменты для Workers
+	// Tools for Workers
 	netTools := []openai.Tool{
 		{
 			Type: openai.ToolTypeFunction,
@@ -145,7 +145,7 @@ func main() {
 		},
 	}
 
-	// Инструменты для Supervisor (вызов специалистов)
+	// Tools for Supervisor (calling specialists)
 	supervisorTools := []openai.Tool{
 		{
 			Type: openai.ToolTypeFunction,
@@ -185,12 +185,12 @@ Collect results and provide a final answer to the user.`
 
 	messages := []openai.ChatCompletionMessage{
 		{Role: openai.ChatMessageRoleSystem, Content: supervisorPrompt},
-		{Role: openai.ChatMessageRoleUser, Content: "Проверь, доступен ли сервер БД db-host.example.com, и если да — узнай версию PostgreSQL"},
+		{Role: openai.ChatMessageRoleUser, Content: "Check if DB server db-host.example.com is available, and if yes — find out PostgreSQL version"},
 	}
 
 	fmt.Println("🏁 Starting Multi-Agent System...\n")
 
-	// Цикл Supervisor-а
+	// Supervisor loop
 	for i := 0; i < 10; i++ {
 		req := openai.ChatCompletionRequest{
 			Model:    openai.GPT3Dot5Turbo,
@@ -239,7 +239,7 @@ Collect results and provide a final answer to the user.`
 				)
 			}
 
-			// Возвращаем ответ Worker-а Supervisor-у
+			// Return Worker's answer to Supervisor
 			messages = append(messages, openai.ChatCompletionMessage{
 				Role:       openai.ChatMessageRoleTool,
 				Content:    workerResponse,
@@ -250,13 +250,13 @@ Collect results and provide a final answer to the user.`
 }
 ```
 
-### Ожидаемое поведение
+### Expected Behavior
 
-1. Supervisor получает задачу: "Проверь доступность БД и версию"
-2. Supervisor делегирует Network Specialist → проверяет доступность
-3. Supervisor делегирует DB Specialist → узнает версию
-4. Supervisor собирает результаты и отвечает пользователю
+1. Supervisor receives task: "Check DB availability and version"
+2. Supervisor delegates to Network Specialist → checks availability
+3. Supervisor delegates to DB Specialist → finds out version
+4. Supervisor collects results and answers user
 
 ---
 
-**Подробнее:** См. [Главу 08: Multi-Agent Systems](../../docs/book/08-multi-agent/README.md) для расширенного описания Multi-Agent систем.
+**More details:** See [Chapter 08: Multi-Agent Systems](../../docs/book/08-multi-agent/README.md) for extended description of Multi-Agent systems.

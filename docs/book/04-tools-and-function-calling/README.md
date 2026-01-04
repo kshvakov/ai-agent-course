@@ -1,38 +1,38 @@
-# 04. Инструменты и Function Calling — "руки" агента
+# 04. Tools and Function Calling — Agent's "Hands"
 
-## Зачем это нужно?
+## Why This Chapter?
 
-Инструменты превращают LLM из болтуна в работника. Без инструментов агент может только отвечать текстом, но не может взаимодействовать с реальным миром.
+Tools turn an LLM from a talker into a worker. Without tools, an agent can only respond with text, but cannot interact with the real world.
 
-Function Calling — это механизм, который позволяет модели вызывать реальные функции Go, выполнять команды, читать данные и выполнять действия.
+Function Calling is a mechanism that allows the model to call real Go functions, execute commands, read data, and perform actions.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Вы создали чат-бота для DevOps. Пользователь пишет: "Проверь статус сервера web-01"
+**Situation:** You've created a DevOps chatbot. User writes: "Check status of server web-01"
 
-**Проблема:** Бот не может реально проверить сервер. Он только говорит: "Я проверю статус сервера web-01 для вас..." (текст)
+**Problem:** Bot cannot actually check the server. It only says: "I'll check the status of server web-01 for you..." (text)
 
-**Решение:** Function Calling позволяет модели вызывать реальные функции Go. Модель генерирует структурированный JSON с именем функции и аргументами, ваш код выполняет функцию и возвращает результат обратно в модель.
+**Solution:** Function Calling allows the model to call real Go functions. The model generates structured JSON with function name and arguments, your code executes the function and returns the result back to the model.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### Как работает Function Calling?
+### How Does Function Calling Work?
 
-1. **Вы описываете функцию** в формате JSON Schema
-2. **LLM видит описание** и решает: "Мне нужно вызвать эту функцию"
-3. **LLM генерирует JSON** с именем функции и аргументами
-4. **Ваш код парсит JSON** и выполняет реальную функцию
-5. **Результат возвращается** в LLM для дальнейшей обработки
+1. **You describe the function** in JSON Schema format
+2. **LLM sees the description** and decides: "I need to call this function"
+3. **LLM generates JSON** with function name and arguments
+4. **Your code parses JSON** and executes the real function
+5. **Result is returned** to LLM for further processing
 
-## Function Calling — механизм работы
+## Function Calling — How It Works
 
-**Function Calling** — это механизм, при котором LLM возвращает не текст, а структурированный JSON с именем функции и аргументами.
+**Function Calling** is a mechanism where LLM returns not text, but structured JSON with function name and arguments.
 
-### Полный цикл: от определения до выполнения
+### Full Cycle: From Definition to Execution
 
-Давайте разберем **полный цикл** на примере инструмента `ping`:
+Let's break down the **full cycle** using the `ping` tool example:
 
-#### Шаг 1: Определение инструмента (Tool Schema)
+#### Step 1: Tool Definition (Tool Schema)
 
 ```go
 tools := []openai.Tool{
@@ -56,20 +56,20 @@ tools := []openai.Tool{
 }
 ```
 
-**Что происходит:** Мы описываем инструмент в формате JSON Schema. Это описание отправляется в модель вместе с запросом.
+**What happens:** We describe the tool in JSON Schema format. This description is sent to the model along with the request.
 
-#### Шаг 2: Запрос к модели
+#### Step 2: Request to Model
 
 ```go
 messages := []openai.ChatCompletionMessage{
     {Role: "system", Content: "You are a network admin. Use tools to check connectivity."},
-    {Role: "user", Content: "Проверь доступность google.com"},
+    {Role: "user", Content: "Check availability of google.com"},
 }
 
 req := openai.ChatCompletionRequest{
     Model:    openai.GPT3Dot5Turbo,
     Messages: messages,
-    Tools:    tools,  // Модель видит описание инструментов!
+    Tools:    tools,  // Model sees tool descriptions!
     Temperature: 0,
 }
 
@@ -77,17 +77,17 @@ resp, _ := client.CreateChatCompletion(ctx, req)
 msg := resp.Choices[0].Message
 ```
 
-**Что происходит:** Модель видит:
-- System prompt (роль и инструкции)
-- User input (запрос пользователя)
-- **Tools schema** (описание доступных инструментов)
+**What happens:** Model sees:
+- System prompt (role and instructions)
+- User input (user request)
+- **Tools schema** (description of available tools)
 
-#### Шаг 3: Ответ модели (Tool Call)
+#### Step 3: Model Response (Tool Call)
 
-Модель **не возвращает текст** "Я проверю ping". Она возвращает **структурированный tool call**:
+Model **doesn't return text** "I'll check ping". It returns **structured tool call**:
 
 ```go
-// msg.ToolCalls содержит:
+// msg.ToolCalls contains:
 []openai.ToolCall{
     {
         ID: "call_abc123",
@@ -100,11 +100,11 @@ msg := resp.Choices[0].Message
 }
 ```
 
-**Что происходит:** Модель **сгенерировала tool_call** для инструмента `ping` и JSON с аргументами. Это **не магия** — модель видела `Description: "Ping a host to check connectivity"` и связала это с запросом пользователя.
+**What happens:** Model **generated tool_call** for `ping` tool and JSON with arguments. This is **not magic** — the model saw `Description: "Ping a host to check connectivity"` and linked it with the user's request.
 
-**Как модель выбирает между несколькими инструментами?**
+**How does the model choose between multiple tools?**
 
-Давайте расширим пример, добавив несколько инструментов:
+Let's expand the example by adding several tools:
 
 ```go
 tools := []openai.Tool{
@@ -128,52 +128,52 @@ tools := []openai.Tool{
     },
 }
 
-userInput := "Проверь доступность google.com"
+userInput := "Check availability of google.com"
 ```
 
-**Процесс выбора:**
+**Selection process:**
 
-1. Модель видит **все три инструмента** и их `Description`:
+1. Model sees **all three tools** and their `Description`:
    - `ping`: "check network connectivity... Use this when user asks about network reachability"
    - `check_http`: "Check HTTP status... Use this when user asks about website availability"
    - `traceroute`: "Trace network path... Use this when user asks about routing"
 
-2. Модель сопоставляет запрос "Проверь доступность google.com" с описаниями:
-   - ✅ `ping` — описание содержит "connectivity" и "reachability" → **выбирает этот**
-   - ❌ `check_http` — про HTTP статус, не про сетевую доступность
-   - ❌ `traceroute` — про маршрутизацию, не про проверку доступности
+2. Model matches request "Check availability of google.com" with descriptions:
+   - ✅ `ping` — description contains "connectivity" and "reachability" → **chooses this**
+   - ❌ `check_http` — about HTTP status, not network availability
+   - ❌ `traceroute` — about routing, not availability check
 
-3. Модель возвращает tool call для `ping`:
+3. Model returns tool call for `ping`:
    ```json
    {"name": "ping", "arguments": "{\"host\": \"google.com\"}"}
    ```
 
-**Пример с другим запросом:**
+**Example with different request:**
 
 ```go
-userInput := "Проверь, отвечает ли сайт google.com"
+userInput := "Check if site google.com responds"
 
-// Модель видит те же 3 инструмента
-// Сопоставляет:
-// - ping: про сетевую доступность → не совсем то
-// - check_http: "Use this when user asks about website availability" → ✅ ВЫБИРАЕТ ЭТОТ
-// - traceroute: про маршрутизацию → не подходит
+// Model sees the same 3 tools
+// Matches:
+// - ping: about network availability → not quite it
+// - check_http: "Use this when user asks about website availability" → ✅ CHOOSES THIS
+// - traceroute: about routing → doesn't fit
 
-// Модель возвращает:
+// Model returns:
 // {"name": "check_http", "arguments": "{\"url\": \"https://google.com\"}"}
 ```
 
-**Ключевой момент:** Модель выбирает инструмент на основе **семантического соответствия** между запросом пользователя и `Description`. Чем точнее и конкретнее `Description`, тем лучше модель выбирает нужный инструмент.
+**Key point:** Model chooses tool based on **semantic matching** between user request and `Description`. The more accurate and specific `Description`, the better the model chooses the right tool.
 
-#### Шаг 4: Валидация (Runtime)
+#### Step 4: Validation (Runtime)
 
 ```go
-// Проверяем, что инструмент существует
+// Check that tool exists
 if msg.ToolCalls[0].Function.Name != "ping" {
     return fmt.Errorf("unknown tool: %s", msg.ToolCalls[0].Function.Name)
 }
 
-// Валидируем JSON аргументов
+// Validate JSON arguments
 var args struct {
     Host string `json:"host"`
 }
@@ -181,15 +181,15 @@ if err := json.Unmarshal([]byte(msg.ToolCalls[0].Function.Arguments), &args); er
     return fmt.Errorf("invalid JSON: %v", err)
 }
 
-// Проверяем обязательные поля
+// Check required fields
 if args.Host == "" {
     return fmt.Errorf("host is required")
 }
 ```
 
-**Что происходит:** Runtime валидирует вызов перед выполнением. Это **критично** для безопасности.
+**What happens:** Runtime validates the call before execution. This is **critical** for security.
 
-#### Шаг 5: Выполнение инструмента
+#### Step 5: Tool Execution
 
 ```go
 func executePing(host string) string {
@@ -204,86 +204,86 @@ func executePing(host string) string {
 result := executePing(args.Host)  // "PING google.com: 64 bytes from ..."
 ```
 
-**Что происходит:** Runtime выполняет **реальную функцию** (в данном случае системную команду `ping`).
+**What happens:** Runtime executes **real function** (in this case system command `ping`).
 
-#### Шаг 6: Возврат результата в модель
+#### Step 6: Return Result to Model
 
 ```go
-// Добавляем результат в историю как сообщение с ролью "tool"
+// Add result to history as message with role "tool"
 messages = append(messages, openai.ChatCompletionMessage{
     Role:       openai.ChatMessageRoleTool,
     Content:    result,  // "PING google.com: 64 bytes from ..."
-    ToolCallID: msg.ToolCalls[0].ID,  // Связываем с вызовом
+    ToolCallID: msg.ToolCalls[0].ID,  // Link with call
 })
 
-// Отправляем обновленную историю в модель снова
+// Send updated history to model again
 resp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
     Model:    openai.GPT3Dot5Turbo,
-    Messages: messages,  // Теперь включает результат инструмента!
+    Messages: messages,  // Now includes tool result!
     Tools:    tools,
 })
 ```
 
-**Что происходит:** Модель видит результат выполнения инструмента и может:
-- Сформулировать финальный ответ пользователю
-- Вызвать другой инструмент, если нужно
-- Задать уточняющий вопрос
+**What happens:** Model sees tool execution result and can:
+- Formulate final answer to user
+- Call another tool if needed
+- Ask clarifying question
 
-#### Шаг 7: Финальный ответ
+#### Step 7: Final Answer
 
 ```go
 finalMsg := resp2.Choices[0].Message
 if len(finalMsg.ToolCalls) == 0 {
-    // Это финальный текстовый ответ
-    fmt.Println(finalMsg.Content)  // "google.com доступен, время отклика 10ms"
+    // This is final text answer
+    fmt.Println(finalMsg.Content)  // "google.com is available, response time 10ms"
 }
 ```
 
-**Что происходит:** Модель видела результат `ping` и сформулировала понятный ответ для пользователя.
+**What happens:** Model saw `ping` result and formulated a clear answer for the user.
 
-## Сквозной протокол: полный запрос и два хода
+## End-to-End Protocol: Full Request and Two Moves
 
-Теперь разберем **полный протокол** с точки зрения разработчика агента: где что хранится, как собирается запрос, и как runtime обрабатывает ответы.
+Now let's break down the **full protocol** from the agent developer's perspective: where things are stored, how the request is assembled, and how runtime processes responses.
 
-### Где что хранится в коде агента?
+### Where Is What Stored in Agent Code?
 
 ```mermaid
 graph TB
-    A["System Prompt (в коде/конфиге)"] --> D[ChatCompletionRequest]
-    B["Tools Registry (в коде runtime)"] --> D
-    C["User Input (от пользователя)"] --> D
+    A["System Prompt (in code/config)"] --> D[ChatCompletionRequest]
+    B["Tools Registry (in runtime code)"] --> D
+    C["User Input (from user)"] --> D
     D --> E[LLM API]
-    E --> F{Ответ}
-    F -->|tool_calls| G[Runtime валидирует]
-    G --> H[Runtime выполняет]
-    H --> I[Добавляет tool result]
+    E --> F{Response}
+    F -->|tool_calls| G[Runtime validates]
+    G --> H[Runtime executes]
+    H --> I[Adds tool result]
     I --> D
-    F -->|content| J[Финальный ответ]
+    F -->|content| J[Final answer]
 ```
 
-**Схема хранения:**
+**Storage scheme:**
 
-1. **System Prompt** — хранится в коде агента (константа или конфиг):
-   - Инструкции (Role, Goal, Constraints)
-   - Few-shot примеры (если используются)
-   - SOP (алгоритм действий)
+1. **System Prompt** — stored in agent code (constant or config):
+   - Instructions (Role, Goal, Constraints)
+   - Few-shot examples (if used)
+   - SOP (action algorithm)
 
-2. **Tools Schema** — хранится в **registry runtime** (не в промпте!):
-   - Определения инструментов (JSON Schema)
-   - Функции-обработчики инструментов
-   - Валидация и выполнение
+2. **Tools Schema** — stored in **runtime registry** (not in prompt!):
+   - Tool definitions (JSON Schema)
+   - Tool handler functions
+   - Validation and execution
 
-3. **User Input** — приходит от пользователя:
-   - Текущий запрос
-   - История диалога (хранится в `messages[]`)
+3. **User Input** — comes from user:
+   - Current request
+   - Dialogue history (stored in `messages[]`)
 
-4. **Tool Results** — генерируются runtime'ом:
-   - После выполнения инструмента
-   - Добавляются в `messages[]` с `Role = "tool"`
+4. **Tool Results** — generated by runtime:
+   - After tool execution
+   - Added to `messages[]` with `Role = "tool"`
 
-### Полный протокол: JSON запросы и ответы (2 хода)
+### Full Protocol: JSON Requests and Responses (2 Moves)
 
-**Ход 1: Request с несколькими инструментами**
+**Move 1: Request with Multiple Tools**
 
 ```json
 {
@@ -291,11 +291,11 @@ graph TB
   "messages": [
     {
       "role": "system",
-      "content": "Ты DevOps инженер. Используй инструменты для проверки сервисов.\n\nПримеры использования:\nUser: \"Проверь статус nginx\"\nAssistant: возвращает tool_call check_status(\"nginx\")\n\nUser: \"Перезапусти сервер\"\nAssistant: возвращает tool_call restart_service(\"web-01\")"
+      "content": "You are a DevOps engineer. Use tools to check services.\n\nUsage examples:\nUser: \"Check nginx status\"\nAssistant: returns tool_call check_status(\"nginx\")\n\nUser: \"Restart server\"\nAssistant: returns tool_call restart_service(\"web-01\")"
     },
     {
       "role": "user",
-      "content": "Проверь статус nginx"
+      "content": "Check nginx status"
     }
   ],
   "tools": [
@@ -338,10 +338,10 @@ graph TB
 }
 ```
 
-**Где что находится:**
-- **System Prompt** (инструкции + few-shot примеры) → `messages[0].content`
+**Where things are:**
+- **System Prompt** (instructions + few-shot examples) → `messages[0].content`
 - **User Input** → `messages[1].content`
-- **Tools Schema** (2 инструмента с полными JSON Schema) → отдельное поле `tools[]`
+- **Tools Schema** (2 tools with full JSON Schema) → separate field `tools[]`
 
 **Response #1 (tool call):**
 
@@ -367,13 +367,13 @@ graph TB
 }
 ```
 
-**Runtime обрабатывает tool call:**
-1. Валидирует: `tool_calls[0].function.name` существует в registry
-2. Парсит: `json.Unmarshal(tool_calls[0].function.arguments)` → `{"service": "nginx"}`
-3. Выполняет: `check_status("nginx")` → результат: `"Service nginx is ONLINE"`
-4. Добавляет tool result в `messages[]`
+**Runtime processes tool call:**
+1. Validates: `tool_calls[0].function.name` exists in registry
+2. Parses: `json.Unmarshal(tool_calls[0].function.arguments)` → `{"service": "nginx"}`
+3. Executes: `check_status("nginx")` → result: `"Service nginx is ONLINE"`
+4. Adds tool result to `messages[]`
 
-**Ход 2: Request с tool result**
+**Move 2: Request with Tool Result**
 
 ```json
 {
@@ -381,11 +381,11 @@ graph TB
   "messages": [
     {
       "role": "system",
-      "content": "Ты DevOps инженер. Используй инструменты для проверки сервисов.\n\nПримеры использования:\nUser: \"Проверь статус nginx\"\nAssistant: возвращает tool_call check_status(\"nginx\")\n\nUser: \"Перезапусти сервер\"\nAssistant: возвращает tool_call restart_service(\"web-01\")"
+      "content": "You are a DevOps engineer. Use tools to check services.\n\nUsage examples:\nUser: \"Check nginx status\"\nAssistant: returns tool_call check_status(\"nginx\")\n\nUser: \"Restart server\"\nAssistant: returns tool_call restart_service(\"web-01\")"
     },
     {
       "role": "user",
-      "content": "Проверь статус nginx"
+      "content": "Check nginx status"
     },
     {
       "role": "assistant",
@@ -446,14 +446,14 @@ graph TB
 }
 ```
 
-**Где что находится:**
-- **System Prompt** → `messages[0].content` (тот же)
-- **User Input** → `messages[1].content` (тот же)
-- **Tool Call** → `messages[2]` (добавлен runtime'ом после первого ответа)
-- **Tool Result** → `messages[3].content` (добавлен runtime'ом после выполнения)
-- **Tools Schema** → поле `tools[]` (тот же)
+**Where things are:**
+- **System Prompt** → `messages[0].content` (same)
+- **User Input** → `messages[1].content` (same)
+- **Tool Call** → `messages[2]` (added by runtime after first response)
+- **Tool Result** → `messages[3].content` (added by runtime after execution)
+- **Tools Schema** → field `tools[]` (same)
 
-**Response #2 (финальный ответ):**
+**Response #2 (final answer):**
 
 ```json
 {
@@ -461,28 +461,28 @@ graph TB
   "choices": [{
     "message": {
       "role": "assistant",
-      "content": "nginx работает нормально, сервис ONLINE",
+      "content": "nginx is working normally, service ONLINE",
       "tool_calls": null
     }
   }]
 }
 ```
 
-### Эволюция messages[] массива (JSON)
+### Evolution of messages[] Array (JSON)
 
-**До первого запроса:**
+**Before first request:**
 ```json
 [
-  {"role": "system", "content": "Ты DevOps инженер..."},
-  {"role": "user", "content": "Проверь статус nginx"}
+  {"role": "system", "content": "You are a DevOps engineer..."},
+  {"role": "user", "content": "Check nginx status"}
 ]
 ```
 
-**После первого запроса (runtime добавляет tool call):**
+**After first request (runtime adds tool call):**
 ```json
 [
-  {"role": "system", "content": "Ты DevOps инженер..."},
-  {"role": "user", "content": "Проверь статус nginx"},
+  {"role": "system", "content": "You are a DevOps engineer..."},
+  {"role": "user", "content": "Check nginx status"},
   {
     "role": "assistant",
     "content": null,
@@ -498,11 +498,11 @@ graph TB
 ]
 ```
 
-**После выполнения инструмента (runtime добавляет tool result):**
+**After tool execution (runtime adds tool result):**
 ```json
 [
-  {"role": "system", "content": "Ты DevOps инженер..."},
-  {"role": "user", "content": "Проверь статус nginx"},
+  {"role": "system", "content": "You are a DevOps engineer..."},
+  {"role": "user", "content": "Check nginx status"},
   {
     "role": "assistant",
     "content": null,
@@ -523,54 +523,54 @@ graph TB
 ]
 ```
 
-**После второго запроса (модель видит tool result и формулирует ответ):**
-- Модель видит весь контекст (system + user + tool call + tool result)
-- Генерирует финальный ответ: `"nginx работает нормально, сервис ONLINE"`
+**After second request (model sees tool result and formulates answer):**
+- Model sees full context (system + user + tool call + tool result)
+- Generates final answer: `"nginx is working normally, service ONLINE"`
 
-**Примечание:** Для реализации на Go см. примеры в [Lab 02: Tools](../../labs/lab02-tools/README.md) и [Lab 04: Autonomy](../../labs/lab04-autonomy/README.md)
+**Note:** For Go implementation, see examples in [Lab 02: Tools](../../labs/lab02-tools/README.md) and [Lab 04: Autonomy](../../labs/lab04-autonomy/README.md)
 
-### Ключевые моменты для разработчика
+### Key Points for Developers
 
-1. **System Prompt и Tools Schema — разные вещи:**
-   - System Prompt — текст в `Messages[0].Content` (может содержать few-shot примеры)
-   - Tools Schema — отдельное поле `Tools` в запросе (JSON Schema)
+1. **System Prompt and Tools Schema — Different Things:**
+   - System Prompt — text in `Messages[0].Content` (may contain few-shot examples)
+   - Tools Schema — separate field `Tools` in request (JSON Schema)
 
-2. **Few-shot примеры — внутри System Prompt:**
-   - Это текст, показывающий модели формат ответа или выбор инструментов
-   - Отличается от Tools Schema (которая описывает структуру инструментов)
+2. **Few-shot Examples — Inside System Prompt:**
+   - This is text showing the model response format or tool selection
+   - Different from Tools Schema (which describes tool structure)
 
-3. **Runtime управляет циклом:**
-   - Валидирует `tool_calls`
-   - Выполняет инструменты
-   - Добавляет результаты в `messages`
-   - Отправляет следующий запрос
+3. **Runtime Manages Loop:**
+   - Validates `tool_calls`
+   - Executes tools
+   - Adds results to `messages`
+   - Sends next request
 
-4. **Tools не "внутри промпта":**
-   - В API они передаются отдельным полем `Tools`
-   - Модель видит их вместе с промптом, но это разные части запроса
+4. **Tools Not "Inside Prompt":**
+   - In API they're passed as separate field `Tools`
+   - Model sees them together with prompt, but these are different parts of request
 
-См. как писать инструкции и примеры: **[Глава 02: Промптинг](../02-prompt-engineering/README.md)**
+See how to write instructions and examples: **[Chapter 02: Prompting](../02-prompt-engineering/README.md)**
 
-Практика: **[Lab 02: Tools](../../labs/lab02-tools/README.md)**, **[Lab 04: Autonomy](../../labs/lab04-autonomy/README.md)**
+Practice: **[Lab 02: Tools](../../labs/lab02-tools/README.md)**, **[Lab 04: Autonomy](../../labs/lab04-autonomy/README.md)**
 
-### Почему это не магия?
+### Why Is This Not Magic?
 
-**Ключевые моменты:**
+**Key points:**
 
-1. **Модель видит описание ВСЕХ инструментов** — она не "знает" про инструменты из коробки, она видит их `Description` в JSON Schema. Модель выбирает нужный инструмент, сопоставляя запрос пользователя с описаниями.
+1. **Model sees description of ALL tools** — it doesn't "know" about tools out of the box, it sees their `Description` in JSON Schema. Model chooses the right tool by matching user request with descriptions.
 
-2. **Механизм выбора основан на семантике** — модель ищет соответствие между:
-   - Запросом пользователя ("Проверь доступность")
-   - Описанием инструмента ("Use this when user asks about network reachability")
-   - Контекстом предыдущих результатов (если есть)
+2. **Selection mechanism is based on semantics** — model looks for match between:
+   - User request ("Check availability")
+   - Tool description ("Use this when user asks about network reachability")
+   - Context of previous results (if any)
 
-3. **Модель возвращает структурированный JSON** — это не текст "я вызову ping", а конкретный tool call с именем инструмента и аргументами
+3. **Model returns structured JSON** — this is not text "I'll call ping", but a specific tool call with tool name and arguments
 
-4. **Runtime делает всю работу** — парсинг, валидация, выполнение, возврат результата
+4. **Runtime does all the work** — parsing, validation, execution, returning result
 
-5. **Модель видит результат** — она получает результат как новое сообщение в истории и продолжает работу
+5. **Model sees result** — it receives result as new message in history and continues work
 
-**Пример выбора между похожими инструментами:**
+**Example of choosing between similar tools:**
 
 ```go
 tools := []openai.Tool{
@@ -588,16 +588,16 @@ tools := []openai.Tool{
     },
 }
 
-// Запрос 1: "Проверь статус nginx"
-// Модель выбирает: check_service_status (nginx - это systemd service)
+// Request 1: "Check nginx status"
+// Model chooses: check_service_status (nginx is a systemd service)
 
-// Запрос 2: "Проверь, отвечает ли сайт example.com"
-// Модель выбирает: check_http_status (сайт - это HTTP сервис)
+// Request 2: "Check if site example.com responds"
+// Model chooses: check_http_status (site is an HTTP service)
 ```
 
-**Важно:** Если описания инструментов слишком похожи или неясны, модель может выбрать неправильный инструмент. Поэтому `Description` должен быть **конкретным и различимым**.
+**Important:** If tool descriptions are too similar or unclear, model may choose wrong tool. Therefore `Description` should be **specific and distinguishable**.
 
-**Пример определения инструмента:**
+**Tool definition example:**
 
 ```go
 tools := []openai.Tool{
@@ -621,28 +621,28 @@ tools := []openai.Tool{
 }
 ```
 
-**Важно:** `Description` — это самое важное поле! LLM ориентируется именно по нему, решая, какой инструмент вызвать.
+**Important:** `Description` is the most important field! LLM relies on it when deciding which tool to call.
 
-## Примеры инструментов в разных доменах
+## Tool Examples in Different Domains
 
 ### DevOps
 
 ```go
-// Проверка статуса сервиса
+// Service status check
 {
     Name: "check_service_status",
     Description: "Check if a systemd service is running",
     Parameters: {"service_name": "string"}
 }
 
-// Перезапуск сервиса
+// Service restart
 {
     Name: "restart_service",
     Description: "Restart a systemd service. WARNING: This will cause downtime.",
     Parameters: {"service_name": "string"}
 }
 
-// Чтение логов
+// Log reading
 {
     Name: "read_logs",
     Description: "Read the last N lines of service logs",
@@ -653,21 +653,21 @@ tools := []openai.Tool{
 ### Support
 
 ```go
-// Получение тикета
+// Get ticket
 {
     Name: "get_ticket",
     Description: "Get ticket details by ID",
     Parameters: {"ticket_id": "string"}
 }
 
-// Поиск в базе знаний
+// Knowledge base search
 {
     Name: "search_kb",
     Description: "Search knowledge base for solutions",
     Parameters: {"query": "string"}
 }
 
-// Черновик ответа
+// Draft reply
 {
     Name: "draft_reply",
     Description: "Draft a reply to the ticket",
@@ -678,21 +678,21 @@ tools := []openai.Tool{
 ### Data Analytics
 
 ```go
-// SQL запрос (read-only!)
+// SQL query (read-only!)
 {
     Name: "sql_select",
     Description: "Execute a SELECT query on the database. ONLY SELECT queries allowed.",
     Parameters: {"query": "string"}
 }
 
-// Описание таблицы
+// Table description
 {
     Name: "describe_table",
     Description: "Get table schema and column information",
     Parameters: {"table_name": "string"}
 }
 
-// Проверка качества данных
+// Data quality check
 {
     Name: "check_data_quality",
     Description: "Check for nulls, duplicates, outliers in a table",
@@ -703,21 +703,21 @@ tools := []openai.Tool{
 ### Security
 
 ```go
-// Запрос к SIEM
+// SIEM query
 {
     Name: "query_siem",
     Description: "Query security information and event management system",
     Parameters: {"query": "string", "time_range": "string"}
 }
 
-// Изоляция хоста (требует подтверждения!)
+// Host isolation (requires confirmation!)
 {
     Name: "isolate_host",
     Description: "CRITICAL: Isolate a host from the network. Requires confirmation.",
     Parameters: {"host": "string"}
 }
 
-// Проверка IP репутации
+// IP reputation check
 {
     Name: "check_ip_reputation",
     Description: "Check if an IP address is known malicious",
@@ -725,37 +725,37 @@ tools := []openai.Tool{
 }
 ```
 
-## Обработка ошибок инструментов
+## Tool Error Handling
 
-Если инструмент вернул ошибку, агент должен это увидеть и обработать.
+If a tool returns an error, the agent should see it and handle it.
 
-**Пример:**
+**Example:**
 
 ```go
-// Агент вызывает ping("nonexistent-host")
+// Agent calls ping("nonexistent-host")
 result := ping("nonexistent-host")
 // result = "Error: Name or service not known"
 
-// Добавляем ошибку в историю
+// Add error to history
 messages = append(messages, ChatCompletionMessage{
     Role:    "tool",
-    Content: result,  // Модель увидит ошибку!
+    Content: result,  // Model will see error!
     ToolCallID: call.ID,
 })
 
-// Модель получит ошибку и может:
-// 1. Попробовать другой хост
-// 2. Сообщить пользователю о проблеме
-// 3. Эскалировать проблему
+// Model will receive error and can:
+// 1. Try another host
+// 2. Report problem to user
+// 3. Escalate problem
 ```
 
-**Важно:** Ошибка — это тоже результат! Не скрывайте ошибки от модели.
+**Important:** Error is also a result! Don't hide errors from the model.
 
-## Валидация вызова инструментов
+## Tool Call Validation
 
-Перед выполнением инструмента нужно валидировать аргументы.
+Before executing a tool, arguments need to be validated.
 
-**Пример валидации:**
+**Validation example:**
 
 ```go
 func executeTool(name string, args json.RawMessage) (string, error) {
@@ -768,12 +768,12 @@ func executeTool(name string, args json.RawMessage) (string, error) {
             return "", fmt.Errorf("invalid args: %v", err)
         }
         
-        // Валидация
+        // Validation
         if params.ServiceName == "" {
             return "", fmt.Errorf("service_name is required")
         }
         
-        // Проверка безопасности
+        // Security check
         if params.ServiceName == "critical-db" {
             return "", fmt.Errorf("Cannot restart critical service without confirmation")
         }
@@ -784,55 +784,55 @@ func executeTool(name string, args json.RawMessage) (string, error) {
 }
 ```
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: Модель не генерирует tool_call
+### Mistake 1: Model Doesn't Generate tool_call
 
-**Симптом:** Агент получает от модели текстовый ответ вместо `tool_calls`. Модель отвечает текстом вместо вызова инструмента.
+**Symptom:** Agent receives text response from model instead of `tool_calls`. Model responds with text instead of calling tool.
 
-**Причина:** 
-- Модель не обучена на function calling
-- Плохое описание инструмента (`Description` неясное)
-- `Temperature > 0` (слишком случайно)
+**Cause:** 
+- Model not trained on function calling
+- Poor tool description (`Description` unclear)
+- `Temperature > 0` (too random)
 
-**Решение:**
+**Solution:**
 ```go
-// ХОРОШО: Используйте модель с поддержкой tools
-// Проверьте через Lab 00: Capability Check
+// GOOD: Use model with tools support
+// Check via Lab 00: Capability Check
 
-// ХОРОШО: Улучшите Description
+// GOOD: Improve Description
 Description: "Check the status of a server by hostname. Use this when user asks about server status or availability."
 
-// ХОРОШО: Temperature = 0
-Temperature: 0,  // Детерминированное поведение
+// GOOD: Temperature = 0
+Temperature: 0,  // Deterministic behavior
 ```
 
-### Ошибка 2: Сломанный JSON в аргументах
+### Mistake 2: Broken JSON in Arguments
 
-**Симптом:** `json.Unmarshal` возвращает ошибку. JSON в аргументах некорректен.
+**Symptom:** `json.Unmarshal` returns error. JSON in arguments is incorrect.
 
-**Причина:** Модель генерирует некорректный JSON (пропущены скобки, неправильный формат).
+**Cause:** Model generates incorrect JSON (missing brackets, wrong format).
 
-**Решение:**
+**Solution:**
 ```go
-// ХОРОШО: Валидация JSON перед парсингом
+// GOOD: Validate JSON before parsing
 if !json.Valid([]byte(call.Function.Arguments)) {
     return "Error: Invalid JSON", nil
 }
 
-// ХОРОШО: Temperature = 0 для детерминированного JSON
+// GOOD: Temperature = 0 for deterministic JSON
 Temperature: 0,
 ```
 
-### Ошибка 3: Галлюцинации инструментов
+### Mistake 3: Tool Hallucinations
 
-**Симптом:** Агент вызывает несуществующий инструмент. Модель генерирует tool_call с именем, которого нет в списке.
+**Symptom:** Agent calls non-existent tool. Model generates tool_call with name that doesn't exist in the list.
 
-**Причина:** Модель не видит четкий список доступных инструментов или список слишком большой.
+**Cause:** Model doesn't see clear list of available tools or list is too large.
 
-**Решение:**
+**Solution:**
 ```go
-// ХОРОШО: Валидация имени инструмента перед выполнением
+// GOOD: Validate tool name before execution
 allowedFunctions := map[string]bool{
     "get_server_status": true,
     "ping":              true,
@@ -842,26 +842,26 @@ if !allowedFunctions[call.Function.Name] {
 }
 ```
 
-### Ошибка 4: Плохое описание инструмента
+### Mistake 4: Poor Tool Description
 
-**Симптом:** Модель выбирает неправильный инструмент или не выбирает его вообще.
+**Symptom:** Model chooses wrong tool or doesn't choose it at all.
 
-**Причина:** `Description` слишком общее или не содержит ключевых слов из запроса пользователя.
+**Cause:** `Description` too general or doesn't contain keywords from user request.
 
-**Решение:**
+**Solution:**
 ```text
-// ПЛОХО
+// BAD
 Description: "Ping a host"
 
-// ХОРОШО
+// GOOD
 Description: "Ping a host to check network connectivity. Use this when user asks about network reachability or connectivity."
 ```
 
-## Мини-упражнения
+## Mini-Exercises
 
-### Упражнение 1: Создайте инструмент
+### Exercise 1: Create a Tool
 
-Создайте инструмент `check_disk_usage`, который проверяет использование диска:
+Create a `check_disk_usage` tool that checks disk usage:
 
 ```go
 tools := []openai.Tool{
@@ -869,66 +869,65 @@ tools := []openai.Tool{
         Type: openai.ToolTypeFunction,
         Function: &openai.FunctionDefinition{
             Name:        "check_disk_usage",
-            Description: "...",  // Ваш код здесь
+            Description: "...",  // Your code here
             Parameters:  json.RawMessage(`{
-                // Ваш код здесь
+                // Your code here
             }`),
         },
     },
 }
 ```
 
-**Ожидаемый результат:**
-- `Description` содержит ключевые слова: "disk", "usage", "space"
-- JSON Schema корректна
-- Обязательные поля указаны в `required`
+**Expected result:**
+- `Description` contains keywords: "disk", "usage", "space"
+- JSON Schema is correct
+- Required fields specified in `required`
 
-### Упражнение 2: Валидация аргументов
+### Exercise 2: Argument Validation
 
-Реализуйте функцию валидации аргументов для инструмента:
+Implement argument validation function for a tool:
 
 ```go
 func validateToolCall(call openai.ToolCall) error {
-    // Проверьте имя инструмента
-    // Проверьте валидность JSON
-    // Проверьте обязательные поля
+    // Check tool name
+    // Check JSON validity
+    // Check required fields
 }
 ```
 
-**Ожидаемый результат:**
-- Функция возвращает ошибку, если имя инструмента неизвестно
-- Функция возвращает ошибку, если JSON некорректен
-- Функция возвращает ошибку, если отсутствуют обязательные поля
+**Expected result:**
+- Function returns error if tool name unknown
+- Function returns error if JSON incorrect
+- Function returns error if required fields missing
 
-## Критерии сдачи / Чек-лист
+## Completion Criteria / Checklist
 
-✅ **Сдано:**
-- `Description` конкретное и понятное (содержит ключевые слова)
-- JSON Schema корректна
-- Обязательные поля указаны в `required`
-- Валидация аргументов реализована
-- Ошибки обрабатываются и возвращаются агенту
-- Критические инструменты требуют подтверждения
-- Модель успешно генерирует tool_call
+✅ **Completed:**
+- `Description` specific and clear (contains keywords)
+- JSON Schema correct
+- Required fields specified in `required`
+- Argument validation implemented
+- Errors handled and returned to agent
+- Critical tools require confirmation
+- Model successfully generates tool_call
 
-❌ **Не сдано:**
-- Модель не генерирует tool_call (плохое описание или неподходящая модель)
-- JSON в аргументах сломан (нет валидации)
-- Модель вызывает несуществующий инструмент (нет валидации имени)
-- `Description` слишком общее (модель не может выбрать правильный инструмент)
+❌ **Not completed:**
+- Model doesn't generate tool_call (poor description or unsuitable model)
+- JSON in arguments broken (no validation)
+- Model calls non-existent tool (no name validation)
+- `Description` too general (model can't choose right tool)
 
-## Связь с другими главами
+## Connection with Other Chapters
 
-- **Физика LLM:** Почему модель выбирает tool call вместо текста, см. [Главу 01: Физика LLM](../01-llm-fundamentals/README.md)
-- **Промптинг:** Как описать инструменты так, чтобы модель их правильно использовала, см. [Главу 02: Промптинг](../02-prompt-engineering/README.md)
-- **Цикл:** Как результаты инструментов возвращаются в модель, см. [Главу 05: Автономность](../05-autonomy-and-loops/README.md)
+- **LLM Physics:** Why model chooses tool call instead of text, see [Chapter 01: LLM Physics](../01-llm-fundamentals/README.md)
+- **Prompting:** How to describe tools so model uses them correctly, see [Chapter 02: Prompting](../02-prompt-engineering/README.md)
+- **Loop:** How tool results are returned to model, see [Chapter 05: Autonomy](../05-autonomy-and-loops/README.md)
 
-## Что дальше?
+## What's Next?
 
-После изучения инструментов переходите к:
-- **[05. Автономность и Циклы](../05-autonomy-and-loops/README.md)** — как агент работает в цикле
+After studying tools, proceed to:
+- **[05. Autonomy and Loops](../05-autonomy-and-loops/README.md)** — how the agent works in a loop
 
 ---
 
-**Навигация:** [← Анатомия Агента](../03-agent-architecture/README.md) | [Оглавление](../README.md) | [Автономность →](../05-autonomy-and-loops/README.md)
-
+**Navigation:** [← Agent Anatomy](../03-agent-architecture/README.md) | [Table of Contents](../README.md) | [Autonomy →](../05-autonomy-and-loops/README.md)

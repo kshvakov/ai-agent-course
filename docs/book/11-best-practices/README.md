@@ -1,69 +1,69 @@
-# 11. Best Practices и Области Применения
+# 11. Best Practices and Application Areas
 
-## Зачем это нужно?
+## Why This Chapter?
 
-В этой главе мы рассмотрим лучшие практики создания и поддержки агентов, а также области применения, где агенты могут быть наиболее эффективны.
+In this chapter, we'll examine best practices for creating and maintaining agents, as well as application areas where agents can be most effective.
 
-Знание теории и примеров — это хорошо, но без понимания best practices вы можете совершить типичные ошибки и создать неэффективного или небезопасного агента.
+Knowing theory and examples is good, but without understanding best practices, you may make typical mistakes and create an ineffective or unsafe agent.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Вы создали агента для DevOps и запустили его в продакшен. Через неделю агент удалил production базу данных без подтверждения.
+**Situation:** You created a DevOps agent and launched it in production. After a week, the agent deleted production database without confirmation.
 
-**Проблема:** Вы не реализовали валидацию входных данных и проверку безопасности. Агент выполнил опасное действие без подтверждения.
+**Problem:** You didn't implement input validation and security checks. Agent performed dangerous action without confirmation.
 
-**Решение:** Следование best practices (валидация, safety checks, evals) предотвращает такие проблемы. Эта глава научит вас создавать безопасных и эффективных агентов.
+**Solution:** Following best practices (validation, safety checks, evals) prevents such problems. This chapter teaches you to create safe and effective agents.
 
-## Best Practices: Создание агентов
+## Best Practices: Creating Agents
 
-### 1. Начинайте с простого
+### 1. Start Simple
 
-**❌ Плохо:** Сразу пытаться создать сложного агента со множеством инструментов и многошаговым планированием.
+**❌ Bad:** Immediately trying to create a complex agent with many tools and multi-step planning.
 
-**✅ Хорошо:** Начните с простого агента с 2-3 инструментами, затем постепенно добавляйте функциональность.
+**✅ Good:** Start with a simple agent with 2-3 tools, then gradually add functionality.
 
-**Пример эволюции:**
+**Evolution example:**
 
 ```go
-// Этап 1: Простой агент (1 инструмент)
+// Stage 1: Simple agent (1 tool)
 tools := []openai.Tool{
     {Function: &openai.FunctionDefinition{Name: "check_status", ...}},
 }
 
-// Этап 2: Добавляем инструменты
+// Stage 2: Add tools
 tools = append(tools, 
     {Function: &openai.FunctionDefinition{Name: "read_logs", ...}},
     {Function: &openai.FunctionDefinition{Name: "restart_service", ...}},
 )
 
-// Этап 3: Добавляем сложную логику (SOP, планирование)
+// Stage 3: Add complex logic (SOP, planning)
 systemPrompt = addSOP(systemPrompt, incidentSOP)
 ```
 
-### 2. Чётко определяйте границы ответственности
+### 2. Clearly Define Responsibility Boundaries
 
-**Проблема:** Агент пытается делать всё подряд и путается.
+**Problem:** Agent tries to do everything and gets confused.
 
-**Решение:** Чётко определите, что агент ДОЛЖЕН делать, а что НЕ ДОЛЖЕН.
+**Solution:** Clearly define what agent MUST do and what it MUST NOT do.
 
 ```text
-Ты DevOps инженер.
+You are a DevOps engineer.
 
-Твоя ЗОНА ОТВЕТСТВЕННОСТИ:
-- Проверка статуса сервисов
-- Чтение логов
-- Перезапуск сервисов (с подтверждением)
-- Базовая диагностика проблем
+YOUR RESPONSIBILITY ZONE:
+- Check service status
+- Read logs
+- Restart services (with confirmation)
+- Basic problem diagnosis
 
-Ты НЕ ДОЛЖЕН:
-- Изменять конфигурацию без подтверждения
-- Удалять данные
-- Выполнять операции на production без явного разрешения
+YOU MUST NOT:
+- Change configuration without confirmation
+- Delete data
+- Perform operations on production without explicit permission
 ```
 
-### 3. Используйте детальные описания инструментов
+### 3. Use Detailed Tool Descriptions
 
-**❌ Плохо:**
+**❌ Bad:**
 ```go
 {
     Name: "check",
@@ -71,7 +71,7 @@ systemPrompt = addSOP(systemPrompt, incidentSOP)
 }
 ```
 
-**✅ Хорошо:**
+**✅ Good:**
 ```go
 {
     Name: "check_service_status",
@@ -79,34 +79,34 @@ systemPrompt = addSOP(systemPrompt, incidentSOP)
 }
 ```
 
-**Почему важно:** Модель выбирает инструменты на основе `Description`. Чем точнее описание, тем лучше выбор.
+**Why important:** Model chooses tools based on `Description`. More accurate description = better choice.
 
-### 4. Всегда валидируйте входные данные
+### 4. Always Validate Input Data
 
-**Критично для безопасности:**
+**Critical for security:**
 
 ```go
 func executeTool(name string, args json.RawMessage) (string, error) {
-    // 1. Проверяем, что инструмент существует
+    // 1. Check if tool exists
     if !isValidTool(name) {
         return "", fmt.Errorf("unknown tool: %s", name)
     }
     
-    // 2. Парсим и валидируем аргументы
+    // 2. Parse and validate arguments
     var params ToolParams
     if err := json.Unmarshal(args, &params); err != nil {
         return "", fmt.Errorf("invalid JSON: %v", err)
     }
     
-    // 3. Проверяем обязательные поля
+    // 3. Check required fields
     if params.ServiceName == "" {
         return "", fmt.Errorf("service_name is required")
     }
     
-    // 4. Санитизация входных данных
+    // 4. Input sanitization
     params.ServiceName = sanitize(params.ServiceName)
     
-    // 5. Проверка безопасности
+    // 5. Security check
     if isCriticalService(params.ServiceName) && !hasConfirmation() {
         return "", fmt.Errorf("requires confirmation")
     }
@@ -115,11 +115,11 @@ func executeTool(name string, args json.RawMessage) (string, error) {
 }
 ```
 
-### 5. Реализуйте защиту от зацикливания
+### 5. Implement Loop Protection
 
-**Проблема:** Агент может повторять одно и то же действие бесконечно.
+**Problem:** Agent may repeat the same action infinitely.
 
-**Решение:**
+**Solution:**
 
 ```go
 const maxIterations = 10
@@ -129,7 +129,7 @@ func runAgent(ctx context.Context, userInput string) {
     seenActions := make(map[string]int)
     
     for i := 0; i < maxIterations; i++ {
-        // Проверка на повторяющиеся действия
+        // Check for repeating actions
         if i > 2 {
             lastAction := getLastAction(messages)
             seenActions[lastAction]++
@@ -139,14 +139,14 @@ func runAgent(ctx context.Context, userInput string) {
         }
         
         resp, _ := client.CreateChatCompletion(...)
-        // ... остальной код
+        // ... rest of code
     }
 }
 ```
 
-### 6. Логируйте всё
+### 6. Log Everything
 
-**Важно для отладки и аудита:**
+**Important for debugging and audit:**
 
 ```go
 type AgentLog struct {
@@ -160,23 +160,23 @@ type AgentLog struct {
 }
 
 func logAgentRun(log AgentLog) {
-    // Логируем в файл, БД, или систему мониторинга
+    // Log to file, DB, or monitoring system
     logger.Info("Agent run", "log", log)
 }
 ```
 
-### 7. Используйте evals с самого начала
+### 7. Use Evals from the Start
 
-**Не откладывайте тестирование:**
+**Don't postpone testing:**
 
 ```go
-// Создайте базовый набор evals сразу
+// Create basic eval suite immediately
 tests := []EvalTest{
     {Name: "Basic tool call", Input: "...", Expected: "..."},
     {Name: "Safety check", Input: "...", Expected: "..."},
 }
 
-// Запускайте после каждого изменения
+// Run after every change
 func afterPromptChange() {
     metrics := runEvals(tests)
     if metrics.PassRate < 0.9 {
@@ -185,13 +185,13 @@ func afterPromptChange() {
 }
 ```
 
-## Best Practices: Поддержка агентов
+## Best Practices: Maintaining Agents
 
-### 1. Версионируйте промпты
+### 1. Version Prompts
 
-**Проблема:** После изменения промпта агент стал работать хуже, но вы не знаете, что именно изменилось.
+**Problem:** After prompt change, agent works worse, but you don't know what exactly changed.
 
-**Решение:**
+**Solution:**
 
 ```go
 type PromptVersion struct {
@@ -202,22 +202,22 @@ type PromptVersion struct {
     Notes     string
 }
 
-// Храните версии промптов
+// Store prompt versions
 promptVersions := []PromptVersion{
     {Version: "1.0", Prompt: systemPromptV1, CreatedAt: ..., Notes: "Initial version"},
     {Version: "1.1", Prompt: systemPromptV2, CreatedAt: ..., Notes: "Added SOP for incidents"},
 }
 
-// Можете откатиться к предыдущей версии
+// Can rollback to previous version
 func rollbackPrompt(version string) {
     prompt := findPromptVersion(version)
     systemPrompt = prompt.Prompt
 }
 ```
 
-### 2. Мониторинг метрик
+### 2. Monitor Metrics
 
-**Отслеживайте ключевые метрики:**
+**Track key metrics:**
 
 ```go
 type AgentMetrics struct {
@@ -230,7 +230,7 @@ type AgentMetrics struct {
 }
 
 func collectMetrics() AgentMetrics {
-    // Собирайте метрики из логов
+    // Collect metrics from logs
     return AgentMetrics{
         RequestsPerDay: countRequests(today),
         AvgLatency: calculateAvgLatency(),
@@ -239,44 +239,44 @@ func collectMetrics() AgentMetrics {
 }
 ```
 
-**Алерты:**
-- Pass Rate упал ниже 80%
-- Latency вырос более чем на 50%
-- Ошибки участились
-- Агент зацикливается чаще обычного
+**Alerts:**
+- Pass Rate dropped below 80%
+- Latency increased more than 50%
+- Errors increased
+- Agent loops more than usual
 
-### 3. Регулярно обновляйте evals
+### 3. Regularly Update Evals
 
-**Добавляйте новые тесты по мере обнаружения проблем:**
+**Add new tests as problems are discovered:**
 
 ```go
-// Обнаружили проблему: агент не запрашивает подтверждение для критических действий
+// Discovered problem: agent doesn't ask confirmation for critical actions
 newTest := EvalTest{
     Name:     "Critical action requires confirmation",
-    Input:    "Удали production базу",
+    Input:    "Delete production database",
     Expected: "ask_confirmation",
 }
 
 tests = append(tests, newTest)
 ```
 
-### 4. Документируйте решения
+### 4. Document Solutions
 
-**Ведите документацию:**
+**Maintain documentation:**
 
 ```markdown
-## Известные проблемы
+## Known Issues
 
-### Проблема: Агент не запрашивает подтверждение
-**Дата:** 2024-01-15
-**Симптомы:** Агент выполняет критичные действия без подтверждения
-**Решение:** Добавлен explicit confirmation check в System Prompt
-**Статус:** Исправлено в версии 1.2
+### Issue: Agent doesn't ask for confirmation
+**Date:** 2024-01-15
+**Symptoms:** Agent performs critical actions without confirmation
+**Solution:** Added explicit confirmation check in System Prompt
+**Status:** Fixed in version 1.2
 ```
 
-### 5. A/B тестирование промптов
+### 5. A/B Testing Prompts
 
-**Сравнивайте разные версии:**
+**Compare different versions:**
 
 ```go
 func abTestPrompt(promptA, promptB string, tests []EvalTest) {
@@ -288,7 +288,7 @@ func abTestPrompt(promptA, promptB string, tests []EvalTest) {
     fmt.Printf("Prompt B: Pass Rate %.1f%%, Avg Latency %v\n", 
         metricsB.PassRate, metricsB.AvgLatency)
     
-    // Выбираем лучший вариант
+    // Choose best option
     if metricsB.PassRate > metricsA.PassRate {
         return promptB
     }
@@ -296,172 +296,172 @@ func abTestPrompt(promptA, promptB string, tests []EvalTest) {
 }
 ```
 
-## Области применения агентов
+## Agent Application Areas
 
-### Где агенты наиболее эффективны
+### Where Agents Are Most Effective
 
-#### 1. DevOps и Infrastructure
+#### 1. DevOps and Infrastructure
 
-**Что агенты делают хорошо:**
-- ✅ Мониторинг и диагностика (проверка статуса, чтение логов)
-- ✅ Автоматизация рутинных задач (перезапуск сервисов, очистка логов)
-- ✅ Инцидент-менеджмент (триаж, сбор информации, применение фиксов)
-- ✅ Управление конфигурациями (проверка, применение изменений с подтверждением)
+**What agents do well:**
+- ✅ Monitoring and diagnosis (status checks, log reading)
+- ✅ Automating routine tasks (service restarts, log cleanup)
+- ✅ Incident management (triage, information gathering, applying fixes)
+- ✅ Configuration management (checking, applying changes with confirmation)
 
-**Примеры задач:**
-- "Проверь статус всех сервисов"
-- "Найди причину падения сервиса X"
-- "Очисти логи старше 7 дней"
-- "Примени конфигурацию к серверу Y"
+**Example tasks:**
+- "Check status of all services"
+- "Find cause of service X failure"
+- "Clean logs older than 7 days"
+- "Apply configuration to server Y"
 
-**Ограничения:**
-- ❌ Сложные архитектурные решения (требуют экспертизы человека)
-- ❌ Изменения в production без явного подтверждения
-- ❌ Критичные операции (удаление данных, изменение сетевой конфигурации)
+**Limitations:**
+- ❌ Complex architectural decisions (require human expertise)
+- ❌ Production changes without explicit confirmation
+- ❌ Critical operations (data deletion, network configuration changes)
 
 #### 2. Customer Support
 
-**Что агенты делают хорошо:**
-- ✅ Обработка типовых запросов (FAQ, база знаний)
-- ✅ Сбор информации о проблеме (версия ПО, ОС, браузер)
-- ✅ Эскалация сложных случаев
-- ✅ Генерация ответов на основе базы знаний
+**What agents do well:**
+- ✅ Processing typical requests (FAQ, knowledge base)
+- ✅ Gathering problem information (software version, OS, browser)
+- ✅ Escalating complex cases
+- ✅ Generating answers based on knowledge base
 
-**Примеры задач:**
-- "Пользователь не может войти в систему"
-- "Найди решение проблемы с оплатой"
-- "Собери информацию о тикете #12345"
+**Example tasks:**
+- "User cannot log in"
+- "Find solution for payment issue"
+- "Gather information about ticket #12345"
 
-**Ограничения:**
-- ❌ Эмоциональная поддержка (требует эмпатии человека)
-- ❌ Сложные технические проблемы (требуют экспертизы)
-- ❌ Юридические вопросы
+**Limitations:**
+- ❌ Emotional support (requires human empathy)
+- ❌ Complex technical problems (require expertise)
+- ❌ Legal questions
 
 #### 3. Data Analytics
 
-**Что агенты делают хорошо:**
-- ✅ Формулирование SQL-запросов на основе естественного языка
-- ✅ Проверка качества данных
-- ✅ Генерация отчётов
-- ✅ Анализ трендов
+**What agents do well:**
+- ✅ Formulating SQL queries from natural language
+- ✅ Checking data quality
+- ✅ Generating reports
+- ✅ Analyzing trends
 
-**Примеры задач:**
-- "Покажи продажи за последний месяц по регионам"
-- "Проверь качество данных в таблице sales"
-- "Почему упали продажи в регионе X?"
+**Example tasks:**
+- "Show sales for last month by region"
+- "Check data quality in sales table"
+- "Why did sales drop in region X?"
 
-**Ограничения:**
-- ❌ Изменение данных (только read-only операции)
-- ❌ Сложный статистический анализ (требует экспертизы)
-- ❌ Интерпретация результатов (требует контекста бизнеса)
+**Limitations:**
+- ❌ Data modification (only read-only operations)
+- ❌ Complex statistical analysis (requires expertise)
+- ❌ Interpreting results (requires business context)
 
 #### 4. Security (SOC)
 
-**Что агенты делают хорошо:**
-- ✅ Триаж алертов безопасности
-- ✅ Сбор доказательств (логи, метрики, трафик)
-- ✅ Анализ паттернов атак
-- ✅ Генерация отчётов об инцидентах
+**What agents do well:**
+- ✅ Triage security alerts
+- ✅ Gathering evidence (logs, metrics, traffic)
+- ✅ Analyzing attack patterns
+- ✅ Generating incident reports
 
-**Примеры задач:**
-- "Триажируй алерт о подозрительной активности"
-- "Собери доказательства для инцидента #123"
-- "Проверь репутацию IP-адреса"
+**Example tasks:**
+- "Triage alert about suspicious activity"
+- "Gather evidence for incident #123"
+- "Check IP address reputation"
 
-**Ограничения:**
-- ❌ Критичные действия (изоляция хостов) требуют подтверждения
-- ❌ Сложные расследования (требуют экспертизы)
-- ❌ Принятие решений о блокировке (требует контекста)
+**Limitations:**
+- ❌ Critical actions (host isolation) require confirmation
+- ❌ Complex investigations (require expertise)
+- ❌ Blocking decisions (require context)
 
 #### 5. Product Operations
 
-**Что агенты делают хорошо:**
-- ✅ Подготовка планов релизов
-- ✅ Проверка зависимостей
-- ✅ Генерация документации
-- ✅ Координация задач
+**What agents do well:**
+- ✅ Preparing release plans
+- ✅ Checking dependencies
+- ✅ Generating documentation
+- ✅ Coordinating tasks
 
-**Примеры задач:**
-- "Подготовь план релиза фичи X"
-- "Проверь зависимости для релиза Y"
-- "Создай release notes для версии 2.0"
+**Example tasks:**
+- "Prepare release plan for feature X"
+- "Check dependencies for release Y"
+- "Create release notes for version 2.0"
 
-**Ограничения:**
-- ❌ Принятие стратегических решений (требует бизнес-контекста)
-- ❌ Управление командой (требует человеческого взаимодействия)
+**Limitations:**
+- ❌ Strategic decisions (require business context)
+- ❌ Team management (requires human interaction)
 
-### Когда НЕ стоит использовать агентов
+### When NOT to Use Agents
 
-#### 1. Критичные операции без подтверждения
+#### 1. Critical Operations Without Confirmation
 
-**❌ Плохо:**
+**❌ Bad:**
 ```go
-// Агент сам удаляет production базу без подтверждения
-agent.Execute("Удали базу данных prod")
+// Agent deletes production database without confirmation
+agent.Execute("Delete prod database")
 ```
 
-**✅ Хорошо:**
+**✅ Good:**
 ```go
-// Агент запрашивает подтверждение
-agent.Execute("Удали базу данных prod")
-// → "Вы уверены? Это действие необратимо. Введите 'yes' для подтверждения."
+// Agent requests confirmation
+agent.Execute("Delete prod database")
+// → "Are you sure? This action is irreversible. Enter 'yes' to confirm."
 ```
 
-#### 2. Задачи, требующие творчества
+#### 2. Tasks Requiring Creativity
 
-**Агенты плохо справляются с:**
-- Дизайном интерфейсов
-- Написанием маркетинговых текстов (требует креативности и понимания аудитории)
-- Архитектурными решениями (требует глубокой экспертизы)
+**Agents struggle with:**
+- Interface design
+- Writing marketing copy (requires creativity and audience understanding)
+- Architectural decisions (require deep expertise)
 
-#### 3. Задачи с высокой неопределённостью
+#### 3. Tasks with High Uncertainty
 
-**Агенты работают лучше, когда:**
-- Есть чёткие критерии успеха
-- Есть SOP или алгоритм действий
-- Доступны инструменты для получения информации
+**Agents work better when:**
+- There are clear success criteria
+- There is SOP or action algorithm
+- Tools are available to get information
 
-**Агенты работают хуже, когда:**
-- Нет чётких критериев успеха
-- Требуется интуиция и опыт
-- Нет доступа к нужной информации
+**Agents work worse when:**
+- No clear success criteria
+- Intuition and experience required
+- No access to needed information
 
-#### 4. Задачи, требующие эмпатии
+#### 4. Tasks Requiring Empathy
 
-**Агенты не могут:**
-- Понимать эмоции пользователей
-- Предоставлять эмоциональную поддержку
-- Принимать решения на основе человеческих отношений
+**Agents cannot:**
+- Understand user emotions
+- Provide emotional support
+- Make decisions based on human relationships
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: Нет валидации входных данных
+### Mistake 1: No Input Validation
 
-**Симптом:** Агент выполняет опасные действия с некорректными данными или без проверки безопасности.
+**Symptom:** Agent performs dangerous actions with incorrect data or without security checks.
 
-**Причина:** Runtime не валидирует входные данные перед выполнением инструментов.
+**Cause:** Runtime doesn't validate input data before executing tools.
 
-**Решение:**
+**Solution:**
 ```go
-// ХОРОШО: Всегда валидируйте входные данные
+// GOOD: Always validate input data
 func executeTool(name string, args json.RawMessage) (string, error) {
-    // 1. Проверка существования инструмента
-    // 2. Парсинг и валидация JSON
-    // 3. Проверка обязательных полей
-    // 4. Санитизация данных
-    // 5. Проверка безопасности
+    // 1. Check tool existence
+    // 2. Parse and validate JSON
+    // 3. Check required fields
+    // 4. Sanitize data
+    // 5. Security check
 }
 ```
 
-### Ошибка 2: Нет защиты от зацикливания
+### Mistake 2: No Loop Protection
 
-**Симптом:** Агент повторяет одно и то же действие бесконечно.
+**Symptom:** Agent repeats the same action infinitely.
 
-**Причина:** Нет лимита итераций и детекции повторяющихся действий.
+**Cause:** No iteration limit and detection of repeating actions.
 
-**Решение:**
+**Solution:**
 ```go
-// ХОРОШО: Защита от зацикливания
+// GOOD: Loop protection
 const maxIterations = 10
 seenActions := make(map[string]int)
 
@@ -473,15 +473,15 @@ for i := 0; i < maxIterations; i++ {
 }
 ```
 
-### Ошибка 3: Нет логирования
+### Mistake 3: No Logging
 
-**Симптом:** При проблеме вы не можете понять, что произошло и почему.
+**Symptom:** When there's a problem, you can't understand what happened and why.
 
-**Причина:** Действия агента не логируются.
+**Cause:** Agent actions are not logged.
 
-**Решение:**
+**Solution:**
 ```go
-// ХОРОШО: Логируйте все действия
+// GOOD: Log all actions
 type AgentLog struct {
     Timestamp   time.Time
     UserInput   string
@@ -495,39 +495,38 @@ type AgentLog struct {
 logAgentRun(log)
 ```
 
-## Критерии сдачи / Чек-лист
+## Completion Criteria / Checklist
 
-✅ **Сдано (готовность к продакшену):**
-- Системный промпт чётко определяет границы ответственности
-- Все инструменты имеют детальные описания
-- Реализована валидация входных данных
-- Реализована защита от зацикливания
-- Критичные операции требуют подтверждения
-- Реализовано логирование всех действий
-- Настроен мониторинг метрик (Pass Rate, Latency, Errors)
-- Создан базовый набор evals
-- Проведено A/B тестирование промпта
-- Документированы известные ограничения
+✅ **Completed (production-ready):**
+- System prompt clearly defines responsibility boundaries
+- All tools have detailed descriptions
+- Input validation implemented
+- Loop protection implemented
+- Critical operations require confirmation
+- All actions logged
+- Metrics monitoring configured (Pass Rate, Latency, Errors)
+- Basic eval suite created
+- A/B testing of prompt conducted
+- Known limitations documented
 
-❌ **Не сдано:**
-- Нет валидации входных данных
-- Нет защиты от зацикливания
-- Нет логирования действий
-- Нет мониторинга метрик
-- Нет evals для проверки качества
+❌ **Not completed:**
+- No input validation
+- No loop protection
+- No action logging
+- No metrics monitoring
+- No evals for quality checks
 
-## Связь с другими главами
+## Connection with Other Chapters
 
-- **Безопасность:** Как реализовать safety checks, см. [Главу 06: Безопасность](../06-safety-and-hitl/README.md)
-- **Evals:** Как тестировать агентов, см. [Главу 09: Evals](../09-evals-and-reliability/README.md)
+- **Safety:** How to implement safety checks, see [Chapter 06: Safety](../06-safety-and-hitl/README.md)
+- **Evals:** How to test agents, see [Chapter 09: Evals](../09-evals-and-reliability/README.md)
 
-## Что дальше?
+## What's Next?
 
-После изучения best practices переходите к:
-- **[12. Углублённое изучение](../12-advanced-study/README.md)** — роадмап для перехода от учебного агента к прод-агенту
-- **[Приложение: Справочники](../appendix/README.md)** — глоссарий, чек-листы, шаблоны
+After studying best practices, proceed to:
+- **[12. Advanced Study](../12-advanced-study/README.md)** — roadmap for transitioning from learning agent to production agent
+- **[Appendix: References](../appendix/README.md)** — glossary, checklists, templates
 
 ---
 
-**Навигация:** [← Кейсы](../10-case-studies/README.md) | [Оглавление](../README.md) | [Углублённое изучение →](../12-advanced-study/README.md)
-
+**Navigation:** [← Case Studies](../10-case-studies/README.md) | [Table of Contents](../README.md) | [Advanced Study →](../12-advanced-study/README.md)

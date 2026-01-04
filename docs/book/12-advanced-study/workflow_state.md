@@ -1,45 +1,45 @@
-# Workflow и State Management
+# Workflow and State Management
 
-## Зачем это нужно?
+## Why This Chapter?
 
-Агент выполняет долгую задачу (например, развёртывание приложения), и сервер перезагружается. Задача теряется, пользователь ждёт, но ничего не происходит. Без управления состоянием и workflow вы не можете:
-- Продолжить выполнение после сбоя
-- Гарантировать идемпотентность (повторный вызов не создаёт дубликатов)
-- Обрабатывать ошибки с retry
-- Устанавливать дедлайны для долгих задач
+Agent performs long task (e.g., application deployment), and server reboots. Task is lost, user waits, but nothing happens. Without state management and workflow, you cannot:
+- Continue execution after failure
+- Guarantee idempotency (repeated call doesn't create duplicates)
+- Handle errors with retry
+- Set deadlines for long tasks
 
-Workflow и State Management — это надёжность для долгоживущих агентов. Без него агент не может работать с задачами, которые занимают минуты или часы.
+Workflow and State Management is reliability for long-lived agents. Without it, agent cannot work with tasks that take minutes or hours.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Агент развёртывает приложение. Процесс занимает 10 минут. На 8-й минуте сервер перезагружается.
+**Situation:** Agent deploys application. Process takes 10 minutes. At 8th minute, server reboots.
 
-**Проблема:** Задача теряется. Пользователь не знает, что произошло. При повторном запуске агент начинает с начала, создавая дубликаты.
+**Problem:** Task is lost. User doesn't know what happened. On restart, agent starts from beginning, creating duplicates.
 
-**Решение:** Сохранение состояния в БД, идемпотентность операций, retry с backoff, дедлайны. Теперь агент может продолжить выполнение с места остановки, а повторные вызовы не создают дубликатов.
+**Solution:** State persistence in DB, operation idempotency, retry with backoff, deadlines. Now agent can continue execution from stopping point, and repeated calls don't create duplicates.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### Что такое Workflow?
+### What Is Workflow?
 
-Workflow — это последовательность шагов для выполнения задачи. Каждый шаг имеет состояние (pending, running, completed, failed) и может быть повторён при ошибке.
+Workflow is sequence of steps for task execution. Each step has state (pending, running, completed, failed) and can be retried on error.
 
-### Что такое State Management?
+### What Is State Management?
 
-State Management — это сохранение состояния агента между перезапусками. Это позволяет:
-- Продолжить выполнение после сбоя
-- Отслеживать прогресс задачи
-- Гарантировать идемпотентность
+State Management is saving agent state between restarts. This allows:
+- Continue execution after failure
+- Track task progress
+- Guarantee idempotency
 
-### Что такое идемпотентность?
+### What Is Idempotency?
 
-Идемпотентность — это свойство операции: повторный вызов даёт тот же результат, что и первый. Например, "создать файл" не идемпотентно (создаст дубликат), а "создать файл, если его нет" — идемпотентно.
+Idempotency is operation property: repeated call gives same result as first. For example, "create file" is not idempotent (creates duplicate), but "create file if it doesn't exist" is idempotent.
 
-## Как это работает (пошагово)
+## How It Works (Step-by-Step)
 
-### Шаг 1: Структура задачи с состоянием
+### Step 1: Task Structure with State
 
-Создайте структуру для хранения состояния задачи:
+Create structure for storing task state:
 
 ```go
 type TaskState string
@@ -62,29 +62,29 @@ type Task struct {
 }
 ```
 
-### Шаг 2: Идемпотентность операций
+### Step 2: Operation Idempotency
 
-Проверяйте, не выполнялась ли задача уже:
+Check if task already executed:
 
 ```go
 func executeTask(id string) error {
-    // Загружаем задачу из БД
+    // Load task from DB
     task, exists := getTask(id)
     if !exists {
         return fmt.Errorf("task not found: %s", id)
     }
     
-    // Проверяем идемпотентность
+    // Check idempotency
     if task.State == TaskCompleted {
-        return nil // Уже выполнено, ничего не делаем
+        return nil // Already executed, do nothing
     }
     
-    // Устанавливаем состояние "running"
+    // Set state to "running"
     task.State = TaskRunning
     task.UpdatedAt = time.Now()
     saveTask(task)
     
-    // Выполняем задачу...
+    // Execute task...
     result, err := doWork(task.UserInput)
     
     if err != nil {
@@ -102,9 +102,9 @@ func executeTask(id string) error {
 }
 ```
 
-### Шаг 3: Retry с экспоненциальным backoff
+### Step 3: Retry with Exponential Backoff
 
-Повторяйте вызов при ошибке с увеличивающейся задержкой:
+Retry call on error with increasing delay:
 
 ```go
 func executeWithRetry(fn func() error, maxRetries int) error {
@@ -118,7 +118,7 @@ func executeWithRetry(fn func() error, maxRetries int) error {
         
         lastErr = err
         
-        // Не делаем backoff после последней попытки
+        // Don't backoff after last attempt
         if i < maxRetries-1 {
             backoff := time.Duration(1<<i) * time.Second // 1s, 2s, 4s, 8s...
             time.Sleep(backoff)
@@ -129,37 +129,37 @@ func executeWithRetry(fn func() error, maxRetries int) error {
 }
 ```
 
-### Шаг 4: Дедлайны
+### Step 4: Deadlines
 
-Установите timeout для всего agent run и для каждого шага:
+Set timeout for entire agent run and each step:
 
 ```go
 func runAgentWithDeadline(ctx context.Context, client *openai.Client, userInput string) (string, error) {
-    // Дедлайн для всего agent run (5 минут)
+    // Deadline for entire agent run (5 minutes)
     ctx, cancel := context.WithDeadline(ctx, time.Now().Add(5*time.Minute))
     defer cancel()
     
     // ... agent loop ...
     
     for i := 0; i < maxIterations; i++ {
-        // Проверяем дедлайн перед каждой итерацией
+        // Check deadline before each iteration
         select {
         case <-ctx.Done():
             return "", fmt.Errorf("deadline exceeded")
         default:
         }
         
-        // ... выполнение ...
+        // ... execution ...
     }
 }
 ```
 
-### Шаг 5: Сохранение состояния
+### Step 5: State Persistence
 
-Сохраняйте состояние задачи в БД (или файл для простоты):
+Save task state to DB (or file for simplicity):
 
 ```go
-// Простая реализация с файлом
+// Simple implementation with file
 var tasks = make(map[string]*Task)
 var tasksMutex sync.RWMutex
 
@@ -170,7 +170,7 @@ func saveTask(task *Task) {
     task.UpdatedAt = time.Now()
     tasks[task.ID] = task
     
-    // Сохраняем в файл (для простоты)
+    // Save to file (for simplicity)
     data, _ := json.Marshal(tasks)
     os.WriteFile("tasks.json", data, 0644)
 }
@@ -184,14 +184,14 @@ func getTask(id string) (*Task, bool) {
 }
 ```
 
-## Где это встраивать в нашем коде
+## Where to Integrate in Our Code
 
-### Точка интеграции 1: Agent Loop
+### Integration Point 1: Agent Loop
 
-В `labs/lab04-autonomy/main.go` добавьте сохранение состояния:
+In `labs/lab04-autonomy/main.go`, add state persistence:
 
 ```go
-// В начале agent run:
+// At start of agent run:
 taskID := generateTaskID()
 task := &Task{
     ID:        taskID,
@@ -201,19 +201,19 @@ task := &Task{
 }
 saveTask(task)
 
-// В цикле сохраняем прогресс:
+// In loop save progress:
 task.State = TaskRunning
 saveTask(task)
 
-// После завершения:
+// After completion:
 task.State = TaskCompleted
 task.Result = finalAnswer
 saveTask(task)
 ```
 
-### Точка интеграции 2: Tool Execution
+### Integration Point 2: Tool Execution
 
-В `labs/lab02-tools/main.go` добавьте retry для инструментов:
+In `labs/lab02-tools/main.go`, add retry for tools:
 
 ```go
 func executeToolWithRetry(toolCall openai.ToolCall) (string, error) {
@@ -227,9 +227,9 @@ func executeToolWithRetry(toolCall openai.ToolCall) (string, error) {
 }
 ```
 
-## Мини-пример кода
+## Mini Code Example
 
-Полный пример с workflow и state management на базе `labs/lab04-autonomy/main.go`:
+Complete example with workflow and state management based on `labs/lab04-autonomy/main.go`:
 
 ```go
 package main
@@ -330,9 +330,9 @@ func main() {
     ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(5*time.Minute))
     defer cancel()
 
-    userInput := "У меня кончилось место. Разберись."
+    userInput := "I'm out of disk space. Fix it."
 
-    // Создаём задачу
+    // Create task
     taskID := generateTaskID()
     task := &Task{
         ID:        taskID,
@@ -367,7 +367,7 @@ func main() {
     fmt.Printf("Starting Agent Loop (task_id: %s)...\n", taskID)
 
     for i := 0; i < 5; i++ {
-        // Проверяем дедлайн
+        // Check deadline
         select {
         case <-ctx.Done():
             task.State = TaskFailed
@@ -436,141 +436,140 @@ func main() {
 }
 ```
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: Нет идемпотентности
+### Mistake 1: No Idempotency
 
-**Симптом:** Повторный вызов создаёт дубликаты (например, создаёт два файла вместо одного).
+**Symptom:** Repeated call creates duplicates (e.g., creates two files instead of one).
 
-**Причина:** Операции не проверяют, не выполнялись ли они уже.
+**Cause:** Operations don't check if they already executed.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
+// BAD
 func createFile(filename string) error {
     os.WriteFile(filename, []byte("data"), 0644)
     return nil
 }
 
-// ХОРОШО
+// GOOD
 func createFileIfNotExists(filename string) error {
     if _, err := os.Stat(filename); err == nil {
-        return nil // Уже существует
+        return nil // Already exists
     }
     return os.WriteFile(filename, []byte("data"), 0644)
 }
 ```
 
-### Ошибка 2: Нет retry при ошибках
+### Mistake 2: No Retry on Errors
 
-**Симптом:** Агент падает при первой же временной ошибке (network error, timeout).
+**Symptom:** Agent crashes on first transient error (network error, timeout).
 
-**Причина:** Нет повторных попыток при ошибках.
+**Cause:** No retries on errors.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
+// BAD
 result, err := executeTool(toolCall)
 if err != nil {
-    return "", err // Сразу возвращаем ошибку
+    return "", err // Immediately return error
 }
 
-// ХОРОШО
+// GOOD
 err := executeWithRetry(func() error {
     result, err := executeTool(toolCall)
     return err
 }, 3)
 ```
 
-### Ошибка 3: Нет дедлайнов
+### Mistake 3: No Deadlines
 
-**Симптом:** Агент зависает навсегда, пользователь ждёт.
+**Symptom:** Agent hangs forever, user waits.
 
-**Причина:** Нет timeout для операций.
+**Cause:** No timeout for operations.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
+// BAD
 resp, _ := client.CreateChatCompletion(ctx, req)
-// Может зависнуть навсегда
+// May hang forever
 
-// ХОРОШО
+// GOOD
 ctx, cancel := context.WithDeadline(ctx, time.Now().Add(5*time.Minute))
 defer cancel()
 resp, err := client.CreateChatCompletion(ctx, req)
 ```
 
-### Ошибка 4: Состояние не сохраняется
+### Mistake 4: State Not Persisted
 
-**Симптом:** После перезапуска агент начинает с начала, теряя прогресс.
+**Symptom:** After restart, agent starts from beginning, losing progress.
 
-**Причина:** Состояние хранится только в памяти.
+**Cause:** State stored only in memory.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
-var taskState = "running" // Только в памяти
+// BAD
+var taskState = "running" // Only in memory
 
-// ХОРОШО
+// GOOD
 task.State = TaskRunning
-saveTask(task) // Сохраняем в БД/файл
+saveTask(task) // Save to DB/file
 ```
 
-## Мини-упражнения
+## Mini-Exercises
 
-### Упражнение 1: Реализуйте retry с backoff
+### Exercise 1: Implement Retry with Backoff
 
-Реализуйте функцию выполнения с retry:
+Implement function execution with retry:
 
 ```go
 func executeWithRetry(fn func() error, maxRetries int) error {
-    // Ваш код здесь
-    // Повторяйте вызов с экспоненциальным backoff
+    // Your code here
+    // Retry call with exponential backoff
 }
 ```
 
-**Ожидаемый результат:**
-- Функция повторяет вызов при ошибке
-- Используется экспоненциальный backoff (1s, 2s, 4s...)
-- Функция возвращает ошибку после исчерпания retries
+**Expected result:**
+- Function retries call on error
+- Uses exponential backoff (1s, 2s, 4s...)
+- Function returns error after retries exhausted
 
-### Упражнение 2: Реализуйте идемпотентность
+### Exercise 2: Implement Idempotency
 
-Создайте функцию, которая проверяет, не выполнялась ли задача уже:
+Create function that checks if task already executed:
 
 ```go
 func executeTaskIfNotDone(taskID string) error {
-    // Ваш код здесь
-    // Проверяйте состояние задачи перед выполнением
+    // Your code here
+    // Check task state before execution
 }
 ```
 
-**Ожидаемый результат:**
-- Если задача уже выполнена, функция возвращает nil без выполнения
-- Если задача не выполнена, функция выполняет её и сохраняет состояние
+**Expected result:**
+- If task already completed, function returns nil without execution
+- If task not completed, function executes it and saves state
 
-## Критерии сдачи / Чек-лист
+## Completion Criteria / Checklist
 
-✅ **Сдано (готовность к прод):**
-- Реализована идемпотентность операций (повторный вызов не создаёт дубликатов)
-- Реализованы retries с экспоненциальным backoff
-- Установлены дедлайны для agent run и отдельных операций
-- Состояние задачи сохраняется между перезапусками
-- Можно продолжить выполнение задачи после сбоя
+✅ **Completed (production-ready):**
+- Operation idempotency implemented (repeated call doesn't create duplicates)
+- Retries with exponential backoff implemented
+- Deadlines set for agent run and individual operations
+- Task state persisted between restarts
+- Can continue task execution after failure
 
-❌ **Не сдано:**
-- Нет идемпотентности
-- Нет retry при ошибках
-- Нет дедлайнов
-- Состояние не сохраняется
+❌ **Not completed:**
+- No idempotency
+- No retry on errors
+- No deadlines
+- State not persisted
 
-## Связь с другими главами
+## Connection with Other Chapters
 
-- **Agent Loop:** Базовый цикл агента — [Глава 05: Автономность и Циклы](../05-autonomy-and-loops/README.md)
-- **Observability:** Логирование состояния задач — [Observability и Tracing](observability.md)
-- **Cost Engineering:** Контроль стоимости долгих задач — [Cost & Latency Engineering](cost_latency.md)
+- **Agent Loop:** Basic agent loop — [Chapter 05: Autonomy and Loops](../05-autonomy-and-loops/README.md)
+- **Observability:** Logging task state — [Observability and Tracing](observability.md)
+- **Cost Engineering:** Cost control for long tasks — [Cost & Latency Engineering](cost_latency.md)
 
 ---
 
-**Навигация:** [← Cost & Latency Engineering](cost_latency.md) | [Оглавление главы 12](README.md) | [Безопасность и Governance →](security_governance.md)
-
+**Navigation:** [← Cost & Latency Engineering](cost_latency.md) | [Chapter 12 Table of Contents](README.md) | [Security and Governance →](security_governance.md)

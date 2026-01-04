@@ -1,241 +1,240 @@
-# Приложение: Справочники
+# Appendix: Reference Guides
 
-## Зачем это нужно?
+## Why This Chapter?
 
-Этот раздел содержит справочную информацию: глоссарий терминов, чек-листы, шаблоны SOP и таблицы решений. Используйте его как справочник при работе над проектами.
+This section contains reference information: glossary of terms, checklists, SOP templates, and decision tables. Use it as a reference when working on projects.
 
-## Глоссарий
+## Glossary
 
-**Agent (Агент)** — система, использующая LLM для восприятия, принятия решений и выполнения действий.
+**Agent** — system using LLM for perception, decision-making, and action execution.
 
-**Chain-of-Thought (CoT)** — техника промптинга, заставляющая модель генерировать промежуточные рассуждения.
+**Chain-of-Thought (CoT)** — prompting technique forcing model to generate intermediate reasoning.
 
-**Context Window (Контекстное окно)** — максимальное количество токенов, которые модель может обработать за один запрос.
+**Context Window** — maximum number of tokens model can process in one request.
 
-**Eval (Evaluation)** — тест для проверки качества работы агента.
+**Eval (Evaluation)** — test for checking agent quality.
 
-**Few-Shot Learning** — техника промптинга с примерами в контексте.
+**Few-Shot Learning** — prompting technique with examples in context.
 
-**Function Calling** — механизм вызова инструментов LLM через структурированный JSON.
+**Function Calling** — mechanism for LLM to call tools via structured JSON.
 
-**Grounding (Заземление)** — привязка агента к реальным данным через Tools/RAG, чтобы избежать галлюцинаций.
+**Grounding** — binding agent to real data via Tools/RAG to avoid hallucinations.
 
-**Human-in-the-Loop (HITL)** — механизм подтверждения критических действий человеком.
+**Human-in-the-Loop (HITL)** — mechanism for human confirmation of critical actions.
 
-**In-Context Learning (ICL)** — способность модели обучаться на примерах внутри промпта.
+**In-Context Learning (ICL)** — model's ability to learn from examples within prompt.
 
-**Multi-Agent System (MAS)** — система из нескольких агентов, работающих вместе.
+**Multi-Agent System (MAS)** — system of multiple agents working together.
 
-**Prompt Injection** — атака на агента через манипуляцию входными данными.
+**Prompt Injection** — attack on agent via input data manipulation.
 
-**RAG (Retrieval Augmented Generation)** — техника дополнения контекста агента релевантными документами из базы знаний.
+**RAG (Retrieval Augmented Generation)** — technique for augmenting agent context with relevant documents from knowledge base.
 
-**ReAct (Reason + Act)** — архитектура агента: Thought → Action → Observation → Loop.
+**ReAct (Reason + Act)** — agent architecture: Thought → Action → Observation → Loop.
 
-**Reflexion** — техника самокоррекции агента через анализ ошибок.
+**Reflexion** — agent self-correction technique through error analysis.
 
-**SOP (Standard Operating Procedure)** — алгоритм действий, закодированный в промпте.
+**SOP (Standard Operating Procedure)** — action algorithm encoded in prompt.
 
-**Temperature** — параметр энтропии распределения вероятностей токенов.
+**Temperature** — entropy parameter of token probability distribution.
 
-**Token** — единица текста, обрабатываемая моделью (~0.75 слова).
+**Token** — text unit processed by model (~0.75 words).
 
-**Tool (Инструмент)** — функция, которую может вызвать агент для взаимодействия с внешним миром.
+**Tool** — function that agent can call to interact with external world.
 
-**Zero-Shot Learning** — техника промптинга без примеров.
+**Zero-Shot Learning** — prompting technique without examples.
 
-## Чек-листы
+## Checklists
 
-### Чек-лист: Настройка модели для агента
+### Checklist: Model Setup for Agent
 
-- [ ] Модель поддерживает Function Calling (проверено через Lab 00)
-- [ ] `Temperature = 0` установлена
-- [ ] Контекстное окно достаточно большое (минимум 4k токенов)
-- [ ] System Prompt запрещает галлюцинации
-- [ ] История диалога управляется (обрезается при переполнении)
+- [ ] Model supports Function Calling (checked via Lab 00)
+- [ ] `Temperature = 0` set
+- [ ] Context window large enough (minimum 4k tokens)
+- [ ] System Prompt prohibits hallucinations
+- [ ] Dialogue history managed (truncated on overflow)
 
-### Чек-лист: Создание System Prompt
+### Checklist: Creating System Prompt
 
-- [ ] Роль (Persona) четко определена
-- [ ] Цель (Goal) конкретна и измерима
-- [ ] Ограничения (Constraints) явно указаны
-- [ ] Формат ответа (Format) описан
-- [ ] SOP (если применимо) детально расписан
-- [ ] CoT включен для сложных задач
-- [ ] Few-Shot примеры добавлены (если нужно)
+- [ ] Role (Persona) clearly defined
+- [ ] Goal concrete and measurable
+- [ ] Constraints explicitly stated
+- [ ] Response format (Format) described
+- [ ] SOP (if applicable) detailed
+- [ ] CoT enabled for complex tasks
+- [ ] Few-Shot examples added (if needed)
 
 ## Capability Benchmark (Characterization)
 
-Перед тем как строить агентов, необходимо **научно подтвердить**, что выбранная модель обладает необходимыми способностями. В инженерии это называется **Characterization** (характеризация).
+Before building agents, you must **scientifically confirm** that selected model has necessary capabilities. In engineering, this is called **Characterization**.
 
-### Зачем это нужно?
+### Why This Chapter?
 
-Мы не верим этикеткам ("Super-Pro-Max Model"). Мы верим тестам.
+We don't trust labels ("Super-Pro-Max Model"). We trust tests.
 
-**Проблема без проверки:** Вы скачали модель "Llama-3-8B-Instruct" и начали строить агента. Через час работы обнаружили, что модель не вызывает инструменты, а только пишет текст. Вы потратили время на отладку кода, хотя проблема была в модели.
+**Problem without check:** You downloaded model "Llama-3-8B-Instruct" and started building agent. After an hour of work, discovered that model doesn't call tools, only writes text. You spent time debugging code, though problem was in model.
 
-**Решение:** Запустите capability benchmark **перед** началом работы. Это сэкономит часы.
+**Solution:** Run capability benchmark **before** starting work. This saves hours.
 
-### Что мы проверяем?
+### What Do We Check?
 
-#### 1. Basic Sanity (Базовая работоспособность)
-- Модель отвечает на запросы
-- Нет критических ошибок API
-- Базовая связность ответов
+#### 1. Basic Sanity
+- Model responds to requests
+- No critical API errors
+- Basic answer coherence
 
-#### 2. Instruction Following (Следование инструкциям)
-- Модель может жестко придерживаться ограничений
-- Важно для агентов: они должны возвращать строго определенные форматы
-- **Тест:** "Напиши стих, но не используй букву 'а'"
-- **Зачем:** Агент должен возвращать строго определенные форматы, а не "размышления"
+#### 2. Instruction Following
+- Model can strictly adhere to constraints
+- Important for agents: they must return strictly defined formats
+- **Test:** "Write a poem, but don't use letter 'a'"
+- **Why:** Agent must return strictly defined formats, not "reflections"
 
-#### 3. JSON Generation (Генерация JSON)
-- Модель может генерировать валидный синтаксис
-- Все взаимодействие с инструментами строится на JSON
-- Если модель забывает закрыть скобку `}`, агент падает
-- **Тест:** "Верни JSON с полями name и age"
+#### 3. JSON Generation
+- Model can generate valid syntax
+- All tool interaction built on JSON
+- If model forgets closing brace `}`, agent crashes
+- **Test:** "Return JSON with fields name and age"
 
-#### 4. Function Calling (Использование инструментов)
-- Специфический навык модели распознавать определение функций и формировать специальный токен вызова
-- Без этого невозможны инструменты (см. [Главу 04: Инструменты](../04-tools-and-function-calling/README.md))
-- **Зачем:** Это основа для Lab 02 и всех последующих лаб
+#### 4. Function Calling (Tool Usage)
+- Specific model skill to recognize function definitions and form special call token
+- Without this, tools are impossible (see [Chapter 04: Tools](../04-tools-and-function-calling/README.md))
+- **Why:** This is foundation for Lab 02 and all subsequent labs
 
-### Почему не все модели умеют Tools?
+### Why Don't All Models Know Tools?
 
-LLM (Large Language Model) — это вероятностный генератор текста. Она не "знает" про функции из коробки.
+LLM (Large Language Model) is a probabilistic text generator. It doesn't "know" about functions out of the box.
 
-Механизм **Function Calling** — это результат специальной тренировки (Fine-Tuning). Разработчики модели добавляют в обучающую выборку тысячи примеров вида:
+**Function Calling** mechanism is result of special training (Fine-Tuning). Model developers add thousands of examples to training data like:
 
 ```
 User: "Check weather"
 Assistant: <special_token>call_tool{"name": "weather"}<end_token>
 ```
 
-Если вы скачали "голую" Llama 3 (Base model), она не видела этих примеров. Она просто продолжит диалог текстом.
+If you downloaded "bare" Llama 3 (Base model), it hasn't seen these examples. It will simply continue dialogue with text.
 
-**Как проверить:** Запустите Lab 00 перед началом работы с инструментами.
+**How to check:** Run Lab 00 before starting work with tools.
 
-### Почему `Temperature = 0` критично для агентов?
+### Why Is `Temperature = 0` Critical for Agents?
 
-Температура регулирует "случайность" выбора следующего токена:
-- **High Temp (0.8+):** Модель выбирает менее вероятные слова. Хорошо для стихов, творческих задач.
-- **Low Temp (0):** Модель всегда выбирает самое вероятное слово (ArgMax). Максимальная детерминированность.
+Temperature regulates "randomness" of next token selection:
+- **High Temp (0.8+):** Model chooses less probable words. Good for poetry, creative tasks.
+- **Low Temp (0):** Model always chooses most probable word (ArgMax). Maximum determinism.
 
-Для агентов, которые должны выдавать строгий JSON или вызов функции, нужна максимальная детерминированность. Любая "творческая" ошибка в JSON сломает парсер.
+For agents that must output strict JSON or function calls, maximum determinism is needed. Any "creative" error in JSON will break parser.
 
-**Правило:** Для всех агентов устанавливайте `Temperature = 0`.
+**Rule:** For all agents, set `Temperature = 0`.
 
-### Как интерпретировать результаты?
+### How to Interpret Results?
 
-#### ✅ Все тесты прошли
-Модель готова для курса. Можно продолжать работу.
+#### ✅ All Tests Passed
+Model ready for course. Can continue work.
 
-#### ⚠️ 3 из 4 тестов прошли
-Можно продолжать, но с осторожностью. Возможны проблемы в краевых случаях.
+#### ⚠️ 3 out of 4 Tests Passed
+Can continue, but with caution. Problems possible in edge cases.
 
-#### ❌ Function Calling провален
-**Критично:** Модель не подходит для Lab 02-08. Нужна другая модель.
+#### ❌ Function Calling Failed
+**Critical:** Model not suitable for Lab 02-08. Need different model.
 
-**Что делать:**
-1. Скачайте модель с поддержкой tools:
+**What to do:**
+1. Download model with tool support:
    - `Hermes-2-Pro-Llama-3-8B`
    - `Mistral-7B-Instruct-v0.2`
-   - `Llama-3-8B-Instruct` (некоторые версии)
+   - `Llama-3-8B-Instruct` (some versions)
    - `Gorilla OpenFunctions`
-2. Перезапустите тесты
+2. Restart tests
 
-#### ❌ JSON Generation провален
-Модель генерирует сломанный JSON (пропущенные скобки, кавычки).
+#### ❌ JSON Generation Failed
+Model generates broken JSON (missing braces, quotes).
 
-**Что делать:**
-1. Попробуйте другую модель
-2. Или используйте `Temperature = 0` (но это не всегда помогает)
+**What to do:**
+1. Try different model
+2. Or use `Temperature = 0` (but this doesn't always help)
 
-### Связь с Evals
+### Connection with Evals
 
-Capability Benchmark — это примитивный **Eval** (Evaluation). В промышленных системах (LangSmith, PromptFoo) таких тестов сотни.
+Capability Benchmark is a primitive **Eval** (Evaluation). In industrial systems (LangSmith, PromptFoo), there are hundreds of such tests.
 
-**Развитие темы:** См. [Главу 09: Evals и Надежность](../09-evals-and-reliability/README.md) для понимания, как строить комплексные evals для проверки качества работы агента.
+**Topic development:** See [Chapter 09: Evals and Reliability](../09-evals-and-reliability/README.md) for understanding how to build complex evals for checking agent quality.
 
-### Практика
+### Practice
 
-Для выполнения capability benchmark см. [Lab 00: Model Capability Benchmark](../../../labs/lab00-capability-check/README.md).
+For performing capability benchmark, see [Lab 00: Model Capability Benchmark](../../../labs/lab00-capability-check/README.md).
 
-## Шаблоны SOP
+## SOP Templates
 
-### SOP для инцидента (DevOps)
+### SOP for Incident (DevOps)
 
 ```
-SOP для падения сервиса:
-1. Check Status: Проверь HTTP код ответа
-2. Check Logs: Если 500/502 — читай последние 20 строк логов
-3. Analyze: Найди ключевые слова:
+SOP for service failure:
+1. Check Status: Check HTTP response code
+2. Check Logs: If 500/502 — read last 20 log lines
+3. Analyze: Find keywords:
    - "Syntax error" → Rollback
    - "Connection refused" → Check Database
    - "Out of memory" → Restart
-4. Action: Примени фикс согласно анализу
-5. Verify: Проверь HTTP статус снова
+4. Action: Apply fix according to analysis
+5. Verify: Check HTTP status again
 ```
 
-### SOP для обработки тикета (Support)
+### SOP for Ticket Processing (Support)
 
 ```
-SOP для обработки тикета:
-1. Read: Прочитай тикет полностью
-2. Context: Собери контекст (версия, ОС, браузер)
-3. Search: Поищи в базе знаний похожие случаи
+SOP for ticket processing:
+1. Read: Read ticket completely
+2. Context: Gather context (version, OS, browser)
+3. Search: Search knowledge base for similar cases
 4. Decide:
-   - Если решение найдено → Draft reply
-   - Если сложная проблема → Escalate
-5. Respond: Отправь ответ пользователю
+   - If solution found → Draft reply
+   - If complex problem → Escalate
+5. Respond: Send answer to user
 ```
 
-## Таблицы решений
+## Decision Tables
 
-### Таблица решений для инцидента
+### Decision Table for Incident
 
-| Симптом | Гипотеза | Проверка | Действие | Верификация |
-|---------|----------|----------|----------|-------------|
-| HTTP 502 | Сервис упал | `check_http()` → 502 | - | - |
-| HTTP 502 | Ошибка в логах | `read_logs()` → "Syntax error" | `rollback_deploy()` | `check_http()` → 200 |
-| HTTP 502 | Ошибка в логах | `read_logs()` → "Connection refused" | `restart_service()` | `check_http()` → 200 |
+| Symptom | Hypothesis | Check | Action | Verification |
+|---------|------------|-------|--------|--------------|
+| HTTP 502 | Service down | `check_http()` → 502 | - | - |
+| HTTP 502 | Error in logs | `read_logs()` → "Syntax error" | `rollback_deploy()` | `check_http()` → 200 |
+| HTTP 502 | Error in logs | `read_logs()` → "Connection refused" | `restart_service()` | `check_http()` → 200 |
 
-## Мини-упражнения
+## Mini-Exercises
 
-### Упражнение 1: Создайте свой SOP
+### Exercise 1: Create Your SOP
 
-Создайте SOP для вашего домена по образцу из раздела "Шаблоны SOP":
+Create SOP for your domain following template from "SOP Templates" section:
 
 ```text
-SOP для [ваша задача]:
-1. [Шаг 1]
-2. [Шаг 2]
-3. [Шаг 3]
+SOP for [your task]:
+1. [Step 1]
+2. [Step 2]
+3. [Step 3]
 ```
 
-**Ожидаемый результат:**
-- SOP четко описывает процесс действий
-- Шаги последовательны и логичны
-- Включены проверки и верификация
+**Expected result:**
+- SOP clearly describes action process
+- Steps sequential and logical
+- Checks and verification included
 
-### Упражнение 2: Создайте таблицу решений
+### Exercise 2: Create Decision Table
 
-Создайте таблицу решений для вашей задачи по образцу из раздела "Таблицы решений":
+Create decision table for your task following template from "Decision Tables" section:
 
-| Симптом | Гипотеза | Проверка | Действие | Верификация |
-|---------|----------|----------|----------|-------------|
+| Symptom | Hypothesis | Check | Action | Verification |
+|---------|------------|-------|--------|--------------|
 | ...     | ...      | ...      | ...      | ...         |
 
-**Ожидаемый результат:**
-- Таблица покрывает основные сценарии
-- Для каждого симптома есть гипотеза, проверка, действие и верификация
+**Expected result:**
+- Table covers main scenarios
+- For each symptom, there is hypothesis, check, action, and verification
 
-## Связь с другими главами
+## Connection with Other Chapters
 
-- **Промптинг:** Как использовать SOP в промптах, см. [Главу 02: Промптинг](../02-prompt-engineering/README.md)
-- **Кейсы:** Примеры использования SOP в реальных агентах, см. [Главу 10: Кейсы](../10-case-studies/README.md)
+- **Prompting:** How to use SOP in prompts, see [Chapter 02: Prompt Engineering](../02-prompt-engineering/README.md)
+- **Case Studies:** Examples of SOP usage in real agents, see [Chapter 10: Case Studies](../10-case-studies/README.md)
 
 ---
 
-**Навигация:** [← Углублённое изучение](../12-advanced-study/README.md) | [Оглавление](../README.md)
-
+**Navigation:** [← Advanced Study](../12-advanced-study/README.md) | [Table of Contents](../README.md)

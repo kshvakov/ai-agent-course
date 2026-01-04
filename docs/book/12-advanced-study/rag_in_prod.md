@@ -1,32 +1,32 @@
-# RAG в продакшене
+# RAG in Production
 
-## Зачем это нужно?
+## Why This Chapter?
 
-RAG система работает, но документы устарели, поиск возвращает нерелевантные результаты, агент галлюцинирует. Без прод-готовности RAG вы не можете гарантировать качество ответов.
+RAG system works, but documents are outdated, search returns irrelevant results, agent hallucinates. Without production-ready RAG, you cannot guarantee answer quality.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** RAG система использует документацию API. Документация обновляется каждый день, но RAG использует старую версию.
+**Situation:** RAG system uses API documentation. Documentation updates daily, but RAG uses old version.
 
-**Проблема:** Агент даёт устаревшие ответы, ссылаясь на старую документацию. Нет версионирования документов, нет проверки актуальности.
+**Problem:** Agent gives outdated answers, referencing old documentation. No document versioning, no currency check.
 
-**Решение:** Версионирование документов, отслеживание freshness, grounding (требование ссылок на документы), fallback при ошибках retrieval.
+**Solution:** Document versioning, freshness tracking, grounding (requiring document references), fallback on retrieval errors.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### Что такое Freshness?
+### What Is Freshness?
 
-Freshness — это актуальность документа. Документ считается устаревшим, если он старше определённого возраста (например, 30 дней).
+Freshness is document currency. Document is considered outdated if older than certain age (e.g., 30 days).
 
-### Что такое Grounding?
+### What Is Grounding?
 
-Grounding — это требование, чтобы агент ссылался на найденные документы в ответе. Это снижает галлюцинации.
+Grounding is requirement that agent references found documents in answer. This reduces hallucinations.
 
-## Как это работает (пошагово)
+## How It Works (Step-by-Step)
 
-### Шаг 1: Версионирование документов
+### Step 1: Document Versioning
 
-Версионируйте документы в базе знаний:
+Version documents in knowledge base:
 
 ```go
 type DocumentVersion struct {
@@ -37,14 +37,14 @@ type DocumentVersion struct {
 }
 
 func getDocumentVersion(id string, version string) (*DocumentVersion, error) {
-    // Загружаем конкретную версию документа
+    // Load specific document version
     return nil, nil
 }
 ```
 
-### Шаг 2: Freshness проверка
+### Step 2: Freshness Check
 
-Проверяйте актуальность документов:
+Check document currency:
 
 ```go
 func checkFreshness(doc DocumentVersion, maxAge time.Duration) bool {
@@ -53,13 +53,13 @@ func checkFreshness(doc DocumentVersion, maxAge time.Duration) bool {
 }
 ```
 
-### Шаг 3: Grounding
+### Step 3: Grounding
 
-Требуйте ссылки на документы в ответе:
+Require document references in answer:
 
 ```go
 func validateGrounding(answer string, documents []DocumentVersion) bool {
-    // Проверяем, что ответ содержит ссылки на документы
+    // Check that answer contains document references
     for _, doc := range documents {
         if strings.Contains(answer, doc.ID) {
             return true
@@ -69,17 +69,17 @@ func validateGrounding(answer string, documents []DocumentVersion) bool {
 }
 ```
 
-## Где это встраивать в нашем коде
+## Where to Integrate in Our Code
 
-### Точка интеграции: RAG Retrieval
+### Integration Point: RAG Retrieval
 
-В `labs/lab07-rag/main.go` добавьте проверку freshness и grounding:
+In `labs/lab07-rag/main.go`, add freshness and grounding checks:
 
 ```go
 func retrieveDocuments(query string) ([]DocumentVersion, error) {
     docs := searchDocuments(query)
     
-    // Фильтруем устаревшие документы
+    // Filter outdated documents
     freshDocs := []DocumentVersion{}
     for _, doc := range docs {
         if checkFreshness(doc, 30*24*time.Hour) {
@@ -91,36 +91,35 @@ func retrieveDocuments(query string) ([]DocumentVersion, error) {
 }
 ```
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: Документы не версионируются
+### Mistake 1: Documents Not Versioned
 
-**Симптом:** Невозможно понять, какая версия документа использовалась в ответе.
+**Symptom:** Cannot understand which document version was used in answer.
 
-**Решение:** Версионируйте документы и отслеживайте версию в ответах.
+**Solution:** Version documents and track version in answers.
 
-### Ошибка 2: Нет проверки актуальности
+### Mistake 2: No Currency Check
 
-**Симптом:** Агент использует устаревшие документы.
+**Symptom:** Agent uses outdated documents.
 
-**Решение:** Проверяйте freshness документов перед использованием.
+**Solution:** Check document freshness before use.
 
-## Критерии сдачи / Чек-лист
+## Completion Criteria / Checklist
 
-✅ **Сдано:**
-- Документы версионируются
-- Проверяется актуальность документов
-- Требуется grounding в ответах
+✅ **Completed:**
+- Documents versioned
+- Document currency checked
+- Grounding required in answers
 
-❌ **Не сдано:**
-- Документы не версионируются
-- Нет проверки актуальности
+❌ **Not completed:**
+- Documents not versioned
+- No currency check
 
-## Связь с другими главами
+## Connection with Other Chapters
 
-- **RAG:** Базовые концепции RAG — [Глава 07: RAG и База Знаний](../07-rag/README.md)
+- **RAG:** Basic RAG concepts — [Chapter 07: RAG and Knowledge Base](../07-rag/README.md)
 
 ---
 
-**Навигация:** [← Data и Privacy](data_privacy.md) | [Оглавление главы 12](README.md) | [Evals в CI/CD →](evals_in_cicd.md)
-
+**Navigation:** [← Data and Privacy](data_privacy.md) | [Chapter 12 Table of Contents](README.md) | [Evals in CI/CD →](evals_in_cicd.md)

@@ -1,32 +1,32 @@
-# Multi-Agent в продакшене
+# Multi-Agent in Production
 
-## Зачем это нужно?
+## Why This Chapter?
 
-Multi-Agent система работает, но вы не можете понять, где произошла ошибка в цепочке Supervisor → Worker → Tool. Без прод-готовности Multi-Agent вы не можете отлаживать сложные системы.
+Multi-Agent system works, but you cannot understand where error occurred in chain Supervisor → Worker → Tool. Without production-ready Multi-Agent, you cannot debug complex systems.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Supervisor направил задачу Network Admin Worker, но задача не выполнилась. Вы не можете понять, где произошла ошибка.
+**Situation:** Supervisor routed task to Network Admin Worker, but task didn't complete. You cannot understand where error occurred.
 
-**Проблема:** Нет трейсинга через цепочку агентов, нет изоляции контекста, нет кореляции логов.
+**Problem:** No tracing through agent chain, no context isolation, no log correlation.
 
-**Решение:** Трейсинг через цепочку агентов, изоляция контекста, кореляция логов через `run_id`, контуры безопасности для каждого Worker.
+**Solution:** Tracing through agent chain, context isolation, log correlation via `run_id`, safety circuits for each Worker.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### Что такое изоляция контекста?
+### What Is Context Isolation?
 
-Изоляция контекста — это отдельный контекст для каждого Worker. Supervisor имеет свой контекст, каждый Worker — свой. Это предотвращает "переполнение" контекста.
+Context isolation is separate context for each Worker. Supervisor has its context, each Worker has its own. This prevents context "overflow".
 
-### Что такое трейсинг цепочки?
+### What Is Chain Tracing?
 
-Трейсинг цепочки — это отслеживание полного пути запроса через Supervisor → Worker → Tool. Каждый шаг имеет свой span в трейсе.
+Chain tracing is tracking full request path through Supervisor → Worker → Tool. Each step has its span in trace.
 
-## Как это работает (пошагово)
+## How It Works (Step-by-Step)
 
-### Шаг 1: Трейсинг через цепочку
+### Step 1: Chain Tracing
 
-Трассируйте цепочку Supervisor → Worker → Tool:
+Trace chain Supervisor → Worker → Tool:
 
 ```go
 func (s *Supervisor) ExecuteTaskWithTracing(ctx context.Context, task string) (string, error) {
@@ -43,7 +43,7 @@ func (s *Supervisor) ExecuteTaskWithTracing(ctx context.Context, task string) (s
         attribute.String("worker.name", worker.name),
     )
     
-    // Worker выполняет с трейсингом
+    // Worker executes with tracing
     result, err := worker.ExecuteWithTracing(ctx, task)
     if err != nil {
         span.RecordError(err)
@@ -54,44 +54,44 @@ func (s *Supervisor) ExecuteTaskWithTracing(ctx context.Context, task string) (s
 }
 ```
 
-### Шаг 2: Изоляция контекста
+### Step 2: Context Isolation
 
-Каждый Worker имеет свой изолированный контекст:
+Each Worker has its isolated context:
 
 ```go
 type Worker struct {
     name         string
     systemPrompt string
     tools        []openai.Tool
-    // Изолированный контекст для этого Worker
+    // Isolated context for this Worker
 }
 
 func (w *Worker) Execute(task string) (string, error) {
-    // Worker использует свой systemPrompt и tools
+    // Worker uses its systemPrompt and tools
     messages := []openai.ChatCompletionMessage{
         {Role: "system", Content: w.systemPrompt},
         {Role: "user", Content: task},
     }
-    // ... выполнение ...
+    // ... execution ...
 }
 ```
 
-## Где это встраивать в нашем коде
+## Where to Integrate in Our Code
 
-### Точка интеграции: Multi-Agent System
+### Integration Point: Multi-Agent System
 
-В `labs/lab08-multi-agent/main.go` добавьте трейсинг и изоляцию контекста:
+In `labs/lab08-multi-agent/main.go`, add tracing and context isolation:
 
 ```go
 func (s *Supervisor) ExecuteTask(ctx context.Context, task string) (string, error) {
     runID := generateRunID()
     
-    // Трейсинг Supervisor
+    // Supervisor tracing
     log.Printf("SUPERVISOR_START: run_id=%s task=%s", runID, task)
     
     worker := s.RouteTask(task)
     
-    // Трейсинг Worker
+    // Worker tracing
     log.Printf("WORKER_START: run_id=%s worker=%s", runID, worker.name)
     
     result, err := worker.Execute(task)
@@ -103,37 +103,36 @@ func (s *Supervisor) ExecuteTask(ctx context.Context, task string) (string, erro
 }
 ```
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: Нет трейсинга цепочки
+### Mistake 1: No Chain Tracing
 
-**Симптом:** Невозможно понять, где произошла ошибка в цепочке Supervisor → Worker → Tool.
+**Symptom:** Cannot understand where error occurred in chain Supervisor → Worker → Tool.
 
-**Решение:** Трассируйте каждый шаг цепочки с `run_id`.
+**Solution:** Trace each chain step with `run_id`.
 
-### Ошибка 2: Нет изоляции контекста
+### Mistake 2: No Context Isolation
 
-**Симптом:** Контекст переполняется, агенты путаются между задачами.
+**Symptom:** Context overflows, agents confuse between tasks.
 
-**Решение:** Каждый Worker имеет свой изолированный контекст.
+**Solution:** Each Worker has its isolated context.
 
-## Критерии сдачи / Чек-лист
+## Completion Criteria / Checklist
 
-✅ **Сдано:**
-- Трейсинг через цепочку агентов
-- Изоляция контекста для каждого Worker
-- Кореляция логов через `run_id`
+✅ **Completed:**
+- Tracing through agent chain
+- Context isolation for each Worker
+- Log correlation via `run_id`
 
-❌ **Не сдано:**
-- Нет трейсинга цепочки
-- Нет изоляции контекста
+❌ **Not completed:**
+- No chain tracing
+- No context isolation
 
-## Связь с другими главами
+## Connection with Other Chapters
 
-- **Multi-Agent:** Базовые концепции — [Глава 08: Multi-Agent Systems](../08-multi-agent/README.md)
-- **Observability:** Трейсинг как часть observability — [Observability и Tracing](observability.md)
+- **Multi-Agent:** Basic concepts — [Chapter 08: Multi-Agent Systems](../08-multi-agent/README.md)
+- **Observability:** Tracing as part of observability — [Observability and Tracing](observability.md)
 
 ---
 
-**Навигация:** [← Evals в CI/CD](evals_in_cicd.md) | [Оглавление главы 12](README.md) | [Модель и декодинг →](model_and_decoding.md)
-
+**Navigation:** [← Evals in CI/CD](evals_in_cicd.md) | [Chapter 12 Table of Contents](README.md) | [Model and Decoding →](model_and_decoding.md)

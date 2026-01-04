@@ -1,28 +1,28 @@
-# Evals в CI/CD
+# Evals in CI/CD
 
-## Зачем это нужно?
+## Why This Chapter?
 
-Вы изменили промпт или код, и агент стал работать хуже. Но вы узнаёте об этом только после деплоя в прод. Без evals в CI/CD вы не можете автоматически проверять качество перед деплоем.
+You changed prompt or code, and agent works worse. But you only learn about it after deploying to production. Without evals in CI/CD, you cannot automatically check quality before deployment.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Вы обновили системный промпт и задеплоили изменения. Через день пользователи жалуются, что агент стал хуже работать.
+**Situation:** You updated system prompt and deployed changes. After a day, users complain that agent works worse.
 
-**Проблема:** Нет автоматической проверки качества перед деплоем. Изменения деплоятся без тестирования.
+**Problem:** No automatic quality check before deployment. Changes are deployed without testing.
 
-**Решение:** Evals в CI/CD pipeline, quality gates, блокировка деплоя при ухудшении метрик. Теперь плохие изменения не попадают в прод.
+**Solution:** Evals in CI/CD pipeline, quality gates, blocking deployment on metric degradation. Now bad changes don't reach production.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### Что такое Quality Gates?
+### What Are Quality Gates?
 
-Quality Gates — это проверки качества, которые блокируют деплой, если метрики ухудшились.
+Quality Gates are quality checks that block deployment if metrics degraded.
 
-## Как это работает (пошагово)
+## How It Works (Step-by-Step)
 
-### Шаг 1: Quality Gates в CI/CD
+### Step 1: Quality Gates in CI/CD
 
-Интегрируйте evals в CI/CD pipeline:
+Integrate evals into CI/CD pipeline:
 
 ```yaml
 # .github/workflows/evals.yml
@@ -43,9 +43,9 @@ jobs:
           fi
 ```
 
-### Шаг 2: Версионирование датасетов
+### Step 2: Dataset Versioning
 
-Храните "золотые" сценарии в датасете:
+Store "golden" scenarios in dataset:
 
 ```go
 type EvalDataset struct {
@@ -59,11 +59,11 @@ type EvalCase struct {
 }
 ```
 
-## Где это встраивать в нашем коде
+## Where to Integrate in Our Code
 
-### Точка интеграции: CI/CD Pipeline
+### Integration Point: CI/CD Pipeline
 
-Создайте отдельный файл `cmd/evals/main.go` для запуска evals:
+Create separate file `cmd/evals/main.go` for running evals:
 
 ```go
 func main() {
@@ -74,29 +74,28 @@ func main() {
 }
 ```
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: Evals не интегрированы в CI/CD
+### Mistake 1: Evals Not Integrated in CI/CD
 
-**Симптом:** Evals запускаются вручную, плохие изменения попадают в прод.
+**Symptom:** Evals run manually, bad changes reach production.
 
-**Решение:** Интегрируйте evals в CI/CD pipeline.
+**Solution:** Integrate evals into CI/CD pipeline.
 
-## Критерии сдачи / Чек-лист
+## Completion Criteria / Checklist
 
-✅ **Сдано:**
-- Evals интегрированы в CI/CD
-- Quality gates блокируют деплой при ухудшении
+✅ **Completed:**
+- Evals integrated in CI/CD
+- Quality gates block deployment on degradation
 
-❌ **Не сдано:**
-- Evals не интегрированы в CI/CD
+❌ **Not completed:**
+- Evals not integrated in CI/CD
 
-## Связь с другими главами
+## Connection with Other Chapters
 
-- **Evals:** Базовые концепции evals — [Глава 09: Evals и Надежность](../09-evals-and-reliability/README.md)
-- **Prompt Management:** Проверка промптов через evals — [Prompt и Program Management](prompt_program_mgmt.md)
+- **Evals:** Basic eval concepts — [Chapter 09: Evals and Reliability](../09-evals-and-reliability/README.md)
+- **Prompt Management:** Prompt checking via evals — [Prompt and Program Management](prompt_program_mgmt.md)
 
 ---
 
-**Навигация:** [← RAG в продакшене](rag_in_prod.md) | [Оглавление главы 12](README.md) | [Multi-Agent в продакшене →](multi_agent_in_prod.md)
-
+**Navigation:** [← RAG in Production](rag_in_prod.md) | [Chapter 12 Table of Contents](README.md) | [Multi-Agent in Production →](multi_agent_in_prod.md)

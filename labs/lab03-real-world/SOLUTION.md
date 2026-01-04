@@ -1,16 +1,16 @@
 # Lab 03 Solution: Real World (Interfaces & Infrastructure)
 
-## 🎯 Цель
-Научиться строить архитектуру, которая позволяет легко добавлять новые инструменты без изменения основного кода. Использовать интерфейсы Go для абстракции сложных внешних систем (Proxmox, Ansible).
+## 🎯 Goal
+Learn to build architecture that allows easily adding new tools without changing main code. Use Go interfaces to abstract complex external systems (Proxmox, Ansible).
 
-## 📝 Разбор решения
+## 📝 Solution Breakdown
 
-### 1. Паттерн Command / Interface
-Вместо хардкода `if name == "func1" ... else if name == "func2"`, мы используем полиморфизм.
-Интерфейс `Tool` обязывает каждый инструмент иметь:
-*   Имя (для LLM).
-*   Описание (для LLM).
-*   Метод `Execute` (для выполнения).
+### 1. Command / Interface Pattern
+Instead of hardcoding `if name == "func1" ... else if name == "func2"`, we use polymorphism.
+The `Tool` interface requires each tool to have:
+*   Name (for LLM).
+*   Description (for LLM).
+*   `Execute` method (for execution).
 
 ```go
 type Tool interface {
@@ -20,28 +20,28 @@ type Tool interface {
 }
 ```
 
-### 2. Реализация Ansible Tool
-Мы создаем структуру, которая реализует этот интерфейс. Внутри метода `Execute` мы используем стандартную библиотеку `os/exec` для вызова CLI утилиты. Это самый простой способ интеграции с DevOps инструментами.
+### 2. Ansible Tool Implementation
+We create a structure that implements this interface. Inside the `Execute` method, we use standard library `os/exec` to call CLI utility. This is the simplest way to integrate with DevOps tools.
 
 ```go
 func (t *AnsibleRunPlaybookTool) Execute(args json.RawMessage) (string, error) {
-    // 1. Парсим аргументы
+    // 1. Parse arguments
     var params struct { Playbook string }
     if err := json.Unmarshal(args, &params); err != nil {
         return "", err
     }
     
-    // 2. Реальный вызов (эмуляция для лабы)
+    // 2. Real call (emulated for lab)
     // cmd := exec.Command("ansible-playbook", params.Playbook)
     // ...
     return fmt.Sprintf("Playbook %s executed successfully.", params.Playbook), nil
 }
 ```
 
-### 3. Реестр (Registry)
-Мы используем `map[string]Tool` для хранения всех инструментов. Это позволяет искать инструмент по имени за O(1).
+### 3. Registry
+We use `map[string]Tool` to store all tools. This allows O(1) lookup by name.
 
-### 🔍 Полный код решения
+### 🔍 Complete Solution Code
 
 ```go
 package main
@@ -52,7 +52,7 @@ import (
 	"strings"
 )
 
-// --- Интерфейсы ---
+// --- Interfaces ---
 
 type Tool interface {
 	Name() string
@@ -60,14 +60,14 @@ type Tool interface {
 	Execute(args json.RawMessage) (string, error)
 }
 
-// --- Инструменты ---
+// --- Tools ---
 
 type ProxmoxListVMsTool struct{}
 
 func (t *ProxmoxListVMsTool) Name() string        { return "list_vms" }
 func (t *ProxmoxListVMsTool) Description() string { return "List all VMs in the cluster" }
 func (t *ProxmoxListVMsTool) Execute(args json.RawMessage) (string, error) {
-	// Mock: Реальный вызов API был бы здесь
+	// Mock: Real API call would be here
 	return "ID: 100, Name: web-01, Status: Running\nID: 101, Name: db-01, Status: Stopped", nil
 }
 
@@ -88,7 +88,7 @@ func (t *AnsibleRunPlaybookTool) Execute(args json.RawMessage) (string, error) {
 // --- Main ---
 
 func main() {
-	// 1. Регистрация инструментов
+	// 1. Tool registration
 	registry := make(map[string]Tool)
 	
 	tools := []Tool{
@@ -101,14 +101,14 @@ func main() {
 		fmt.Printf("Registered tool: %s\n", t.Name())
 	}
 
-	// 2. Эмуляция выбора пользователя (или LLM)
-	// Допустим, LLM вернула нам это:
+	// 2. Emulate user selection (or LLM)
+	// Let's say LLM returned this:
 	toolName := "run_playbook"
 	toolArgsRaw := json.RawMessage(`{"playbook": "deploy_nginx.yml"}`)
 
 	fmt.Printf("\n🤖 Requesting execution of: %s\n", toolName)
 
-	// 3. Поиск и выполнение
+	// 3. Search and execute
 	if tool, exists := registry[toolName]; exists {
 		result, err := tool.Execute(toolArgsRaw)
 		if err != nil {
@@ -122,6 +122,5 @@ func main() {
 }
 ```
 
-## 🧠 Почему это важно?
-В больших системах у вас могут быть сотни инструментов. Использование интерфейсов и реестра позволяет отделить логику агента (мозга) от логики инструментов (рук). Вы сможете добавлять новые возможности, не переписывая основной цикл агента.
-
+## 🧠 Why Is This Important?
+In large systems, you may have hundreds of tools. Using interfaces and registry allows separating agent logic (brain) from tool logic (hands). You can add new capabilities without rewriting the main agent loop.

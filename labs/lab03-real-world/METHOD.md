@@ -1,22 +1,22 @@
-# Методическое пособие: Lab 03 — Real World (Interfaces & Infrastructure)
+# Study Guide: Lab 03 — Real World (Interfaces & Infrastructure)
 
-## Зачем это нужно?
+## Why This Lab?
 
-В этой лабораторной работе вы научитесь интегрировать реальные инфраструктурные инструменты (API Proxmox, CLI Ansible) в код агента. Использование интерфейсов позволяет сделать агента расширяемым: вы можете добавлять новые инструменты без изменения основного кода.
+In this laboratory assignment, you'll learn to integrate real infrastructure tools (Proxmox API, Ansible CLI) into agent code. Using interfaces allows making the agent extensible: you can add new tools without changing the main code.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Вы создали агента с инструментами для Proxmox. Потом понадобилось добавить поддержку Ansible. Вы начали копировать код и менять его вручную.
+**Situation:** You've created an agent with tools for Proxmox. Then needed to add Ansible support. You started copying code and changing it manually.
 
-**Проблема:** Код стал нечитаемым, добавление нового инструмента требует правок в десятках мест.
+**Problem:** Code became unreadable, adding a new tool requires changes in dozens of places.
 
-**Решение:** Использование интерфейсов Go и паттерна Registry позволяет добавлять инструменты без изменения основного кода.
+**Solution:** Using Go interfaces and Registry pattern allows adding tools without changing the main code.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### Интерфейсы в Go
+### Interfaces in Go
 
-Интерфейс определяет контракт: "Что должен уметь объект", но не говорит "Как это делать".
+An interface defines a contract: "What an object must be able to do", but doesn't say "How to do it".
 
 ```go
 type Tool interface {
@@ -26,11 +26,11 @@ type Tool interface {
 }
 ```
 
-Любой тип, который реализует эти методы, автоматически удовлетворяет интерфейсу `Tool`.
+Any type that implements these methods automatically satisfies the `Tool` interface.
 
-### Паттерн Registry
+### Registry Pattern
 
-Registry (Реестр) — это хранилище инструментов, доступное по имени.
+Registry is a storage of tools, accessible by name.
 
 ```go
 registry := make(map[string]Tool)
@@ -38,11 +38,11 @@ registry["list_vms"] = &ProxmoxListVMsTool{}
 registry["run_playbook"] = &AnsibleRunPlaybookTool{}
 ```
 
-Это позволяет искать инструмент по имени за O(1) и выполнять его полиморфно.
+This allows searching for a tool by name in O(1) and executing it polymorphically.
 
-## Алгоритм выполнения
+## Execution Algorithm
 
-### Шаг 1: Определение интерфейса
+### Step 1: Interface Definition
 
 ```go
 type Tool interface {
@@ -52,7 +52,7 @@ type Tool interface {
 }
 ```
 
-### Шаг 2: Реализация инструментов
+### Step 2: Tool Implementation
 
 ```go
 type ProxmoxListVMsTool struct{}
@@ -66,12 +66,12 @@ func (t *ProxmoxListVMsTool) Description() string {
 }
 
 func (t *ProxmoxListVMsTool) Execute(args json.RawMessage) (string, error) {
-    // Реальная логика вызова API Proxmox
+    // Real Proxmox API call logic
     return "VM-100 (Running), VM-101 (Stopped)", nil
 }
 ```
 
-### Шаг 3: Регистрация инструментов
+### Step 3: Tool Registration
 
 ```go
 registry := make(map[string]Tool)
@@ -86,7 +86,7 @@ for _, tool := range tools {
 }
 ```
 
-### Шаг 4: Использование реестра
+### Step 4: Using Registry
 
 ```go
 toolName := "list_vms"
@@ -99,41 +99,41 @@ if tool, exists := registry[toolName]; exists {
 }
 ```
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: Неправильная реализация интерфейса
+### Mistake 1: Incorrect Interface Implementation
 
-**Симптом:** Компилятор ругается: "does not implement Tool".
+**Symptom:** Compiler complains: "does not implement Tool".
 
-**Причина:** Не все методы интерфейса реализованы.
+**Cause:** Not all interface methods are implemented.
 
-**Решение:** Убедитесь, что все методы интерфейса реализованы:
+**Solution:** Ensure all interface methods are implemented:
 
 ```go
-// Должны быть все три метода:
+// All three methods must be present:
 func (t *MyTool) Name() string { ... }
 func (t *MyTool) Description() string { ... }
 func (t *MyTool) Execute(...) (string, error) { ... }
 ```
 
-### Ошибка 2: Инструмент не найден в реестре
+### Mistake 2: Tool Not Found in Registry
 
-**Симптом:** `exists == false` при поиске инструмента.
+**Symptom:** `exists == false` when searching for tool.
 
-**Причина:** Инструмент не зарегистрирован или имя не совпадает.
+**Cause:** Tool not registered or name doesn't match.
 
-**Решение:**
+**Solution:**
 ```go
-// Проверьте, что имя совпадает
+// Check that name matches
 fmt.Printf("Looking for: %s\n", toolName)
 fmt.Printf("Available: %v\n", getKeys(registry))
 ```
 
-## Мини-упражнения
+## Mini-Exercises
 
-### Упражнение 1: Добавьте новый инструмент
+### Exercise 1: Add New Tool
 
-Создайте инструмент `SSHCommandTool`, который выполняет команду через SSH:
+Create an `SSHCommandTool` that executes a command via SSH:
 
 ```go
 type SSHCommandTool struct {
@@ -145,14 +145,14 @@ func (t *SSHCommandTool) Execute(args json.RawMessage) (string, error) {
         Command string `json:"command"`
     }
     json.Unmarshal(args, &params)
-    // Реализуйте SSH выполнение
+    // Implement SSH execution
     return "", nil
 }
 ```
 
-### Упражнение 2: Добавьте валидацию
+### Exercise 2: Add Validation
 
-Добавьте проверку аргументов перед выполнением:
+Add argument validation before execution:
 
 ```go
 func (t *AnsibleRunPlaybookTool) Execute(args json.RawMessage) (string, error) {
@@ -169,20 +169,19 @@ func (t *AnsibleRunPlaybookTool) Execute(args json.RawMessage) (string, error) {
 }
 ```
 
-## Критерии сдачи
+## Completion Criteria
 
-✅ **Сдано:**
-- Интерфейс `Tool` определен
-- Реализованы минимум 2 инструмента (Proxmox и Ansible)
-- Инструменты зарегистрированы в реестре
-- Код компилируется и работает
+✅ **Completed:**
+- `Tool` interface defined
+- At least 2 tools implemented (Proxmox and Ansible)
+- Tools registered in registry
+- Code compiles and works
 
-❌ **Не сдано:**
-- Интерфейс не реализован полностью
-- Инструменты не регистрируются
-- Код не компилируется
+❌ **Not completed:**
+- Interface not fully implemented
+- Tools don't register
+- Code doesn't compile
 
 ---
 
-**Следующий шаг:** После успешного прохождения Lab 03 переходите к [Lab 04: Autonomy](../lab04-autonomy/README.md)
-
+**Next step:** After successfully completing Lab 03, proceed to [Lab 04: Autonomy](../lab04-autonomy/README.md)

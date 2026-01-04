@@ -1,50 +1,50 @@
-# Observability и Tracing
+# Observability and Tracing
 
-## Зачем это нужно?
+## Why This Chapter?
 
-Без observability вы работаете вслепую. Агент выполнил действие, но вы не можете понять:
-- Почему он выбрал именно этот инструмент?
-- Сколько времени заняло выполнение?
-- Сколько токенов было использовано?
-- Где произошла ошибка?
+Without observability, you work blind. Agent performed action, but you cannot understand:
+- Why did it choose this tool?
+- How long did execution take?
+- How many tokens were used?
+- Where did error occur?
 
-Observability — это "зрение" для вашего агента. Без него вы не можете отлаживать проблемы, оптимизировать производительность или понимать поведение агента в проде.
+Observability is "vision" for your agent. Without it, you cannot debug problems, optimize performance, or understand agent behavior in production.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Агент в проде выполнил операцию удаления данных без подтверждения. Пользователь пожаловался.
+**Situation:** Agent in production performed data deletion operation without confirmation. User complained.
 
-**Проблема:** Вы не можете понять, почему агент не запросил подтверждение. В логах только "Agent executed delete_database". Нет информации о том, какие инструменты были доступны, какой промпт использовался, какие аргументы были переданы.
+**Problem:** You cannot understand why agent didn't request confirmation. In logs only "Agent executed delete_database". No information about which tools were available, which prompt was used, which arguments were passed.
 
-**Решение:** Структурированное логирование с трейсингом позволяет увидеть полную картину: входной запрос → выбор инструментов → выполнение → результат. Теперь вы можете понять, что агент не увидел инструмент с подтверждением или промпт был неправильным.
+**Solution:** Structured logging with tracing allows seeing full picture: input request → tool selection → execution → result. Now you can understand that agent didn't see confirmation tool or prompt was wrong.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### Что такое Observability?
+### What Is Observability?
 
-Observability — это способность понять, что происходит внутри системы, наблюдая за её выходными данными (логами, метриками, трейсами).
+Observability is ability to understand what happens inside system by observing its output data (logs, metrics, traces).
 
-**Три столпа observability:**
-1. **Логи** — что произошло (события, ошибки, действия)
-2. **Метрики** — сколько и как часто (latency, token usage, error rate)
-3. **Трейсы** — как это связано (полный путь запроса через систему)
+**Three pillars of observability:**
+1. **Logs** — what happened (events, errors, actions)
+2. **Metrics** — how much and how often (latency, token usage, error rate)
+3. **Traces** — how it's connected (full request path through system)
 
-### Как работает трейсинг в агентах?
+### How Does Tracing Work in Agents?
 
-Каждый agent run — это цепочка событий:
-1. Пользователь отправляет запрос → создаётся `run_id`
-2. Агент анализирует запрос → логируем входные данные
-3. Агент выбирает инструменты → логируем `tool_calls`
-4. Инструменты выполняются → логируем результаты
-5. Агент формирует ответ → логируем финальный ответ
+Each agent run is a chain of events:
+1. User sends request → `run_id` created
+2. Agent analyzes request → log input data
+3. Agent selects tools → log `tool_calls`
+4. Tools execute → log results
+5. Agent forms answer → log final answer
 
-Все эти события связаны через `run_id`, что позволяет восстановить полную картину выполнения.
+All these events linked via `run_id`, allowing to reconstruct full execution picture.
 
-## Как это работает (пошагово)
+## How It Works (Step-by-Step)
 
-### Шаг 1: Структура для логирования agent run
+### Step 1: Structure for Logging Agent Run
 
-Создайте структуру для хранения информации о запуске агента:
+Create structure for storing agent run information:
 
 ```go
 type AgentRun struct {
@@ -74,9 +74,9 @@ type ToolResult struct {
 }
 ```
 
-### Шаг 2: Генерация уникального run_id
+### Step 2: Generate Unique run_id
 
-В начале каждого agent run генерируйте уникальный ID:
+At start of each agent run, generate unique ID:
 
 ```go
 import (
@@ -92,16 +92,16 @@ func generateRunID() string {
 }
 ```
 
-### Шаг 3: Логирование в agent loop
+### Step 3: Logging in Agent Loop
 
-Вставьте логирование в цикл агента (см. `labs/lab04-autonomy/main.go`):
+Insert logging into agent loop (see `labs/lab04-autonomy/main.go`):
 
 ```go
 func runAgent(ctx context.Context, client *openai.Client, userInput string) (string, error) {
     runID := generateRunID()
     startTime := time.Now()
     
-    // Создаём структуру для логирования
+    // Create structure for logging
     run := AgentRun{
         RunID:     runID,
         UserInput: userInput,
@@ -114,7 +114,7 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) (str
         {Role: openai.ChatMessageRoleUser, Content: userInput},
     }
     
-    // THE LOOP с логированием
+    // THE LOOP with logging
     for i := 0; i < 5; i++ {
         req := openai.ChatCompletionRequest{
             Model:    openai.GPT3Dot5Turbo,
@@ -131,7 +131,7 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) (str
         msg := resp.Choices[0].Message
         messages = append(messages, msg)
         
-        // Логируем использование токенов
+        // Log token usage
         run.TokensUsed += resp.Usage.TotalTokens
         
         if len(msg.ToolCalls) == 0 {
@@ -141,7 +141,7 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) (str
             return msg.Content, nil
         }
         
-        // Логируем tool calls
+        // Log tool calls
         for _, toolCall := range msg.ToolCalls {
             toolCallLog := ToolCall{
                 ID:        toolCall.ID,
@@ -151,7 +151,7 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) (str
             }
             run.ToolCalls = append(run.ToolCalls, toolCallLog)
             
-            // Выполняем инструмент с логированием
+            // Execute tool with logging
             result, err := executeToolWithLogging(runID, toolCall)
             if err != nil {
                 run.ToolResults = append(run.ToolResults, ToolResult{
@@ -181,9 +181,9 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) (str
 }
 ```
 
-### Шаг 4: Структурированное логирование
+### Step 4: Structured Logging
 
-Реализуйте функцию логирования в JSON формате:
+Implement logging function in JSON format:
 
 ```go
 import (
@@ -210,9 +210,9 @@ func logAgentRunError(runID string, err error) {
 }
 ```
 
-### Шаг 5: Логирование tool execution
+### Step 5: Tool Execution Logging
 
-В функции выполнения инструментов (см. `labs/lab02-tools/main.go`) добавьте логирование:
+In tool execution function (see `labs/lab02-tools/main.go`), add logging:
 
 ```go
 func executeToolWithLogging(runID string, toolCall openai.ToolCall) (string, error) {
@@ -248,44 +248,44 @@ func executeToolWithLogging(runID string, toolCall openai.ToolCall) (string, err
 }
 ```
 
-## Где это встраивать в нашем коде
+## Where to Integrate in Our Code
 
-### Точка интеграции 1: Agent Loop
+### Integration Point 1: Agent Loop
 
-В `labs/lab04-autonomy/main.go` добавьте логирование в цикл агента:
+In `labs/lab04-autonomy/main.go`, add logging to agent loop:
 
 ```go
-// В начале main():
+// At start of main():
 runID := generateRunID()
 startTime := time.Now()
 
-// В цикле перед CreateChatCompletion:
+// In loop before CreateChatCompletion:
 log.Printf("AGENT_ITERATION: run_id=%s iteration=%d", runID, i)
 
-// После получения ответа:
+// After getting response:
 log.Printf("AGENT_RESPONSE: run_id=%s tokens_used=%d", runID, resp.Usage.TotalTokens)
 
-// После выполнения инструментов:
+// After executing tools:
 log.Printf("TOOL_EXECUTED: run_id=%s tool=%s result=%s", runID, toolCall.Function.Name, result)
 ```
 
-### Точка интеграции 2: Tool Execution
+### Integration Point 2: Tool Execution
 
-В `labs/lab02-tools/main.go` добавьте логирование при выполнении инструментов:
+In `labs/lab02-tools/main.go`, add logging when executing tools:
 
 ```go
-// В функции выполнения инструмента:
+// In tool execution function:
 func executeTool(runID string, toolCall openai.ToolCall) (string, error) {
     log.Printf("TOOL_START: run_id=%s tool=%s", runID, toolCall.Function.Name)
-    // ... выполнение ...
+    // ... execution ...
     log.Printf("TOOL_END: run_id=%s tool=%s result=%s", runID, toolCall.Function.Name, result)
     return result, nil
 }
 ```
 
-## Мини-пример кода
+## Mini Code Example
 
-Полный пример с observability на базе `labs/lab04-autonomy/main.go`:
+Complete example with observability based on `labs/lab04-autonomy/main.go`:
 
 ```go
 package main
@@ -361,9 +361,9 @@ func main() {
     client := openai.NewClientWithConfig(config)
 
     ctx := context.Background()
-    userInput := "У меня кончилось место. Разберись."
+    userInput := "I'm out of disk space. Fix it."
 
-    // Генерируем run_id
+    // Generate run_id
     runID := generateRunID()
     startTime := time.Now()
 
@@ -469,20 +469,20 @@ func main() {
 }
 ```
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: Нет структурированного логирования
+### Mistake 1: No Structured Logging
 
-**Симптом:** Логи в виде простого текста: "Agent executed tool check_disk". Невозможно автоматически парсить или анализировать логи.
+**Symptom:** Logs in plain text: "Agent executed tool check_disk". Cannot automatically parse or analyze logs.
 
-**Причина:** Использование `fmt.Printf` вместо структурированного JSON логирования.
+**Cause:** Using `fmt.Printf` instead of structured JSON logging.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
+// BAD
 fmt.Printf("Agent executed tool %s\n", toolName)
 
-// ХОРОШО
+// GOOD
 logJSON, _ := json.Marshal(map[string]interface{}{
     "run_id": runID,
     "tool": toolName,
@@ -491,58 +491,58 @@ logJSON, _ := json.Marshal(map[string]interface{}{
 log.Printf("TOOL_EXECUTED: %s", string(logJSON))
 ```
 
-### Ошибка 2: Нет run_id для кореляции
+### Mistake 2: No run_id for Correlation
 
-**Симптом:** Невозможно связать логи разных компонентов (агент, инструменты, внешние системы) для одного запроса.
+**Symptom:** Cannot link logs from different components (agent, tools, external systems) for one request.
 
-**Причина:** Каждый компонент логирует независимо, без общего идентификатора.
+**Cause:** Each component logs independently, without common identifier.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
+// BAD
 log.Printf("Tool executed: %s", toolName)
 
-// ХОРОШО
-runID := generateRunID() // В начале agent run
+// GOOD
+runID := generateRunID() // At start of agent run
 log.Printf("TOOL_EXECUTED: run_id=%s tool=%s", runID, toolName)
 ```
 
-### Ошибка 3: Не логируются токены и latency
+### Mistake 3: Tokens and Latency Not Logged
 
-**Симптом:** Невозможно понять, сколько стоит выполнение или где узкие места по производительности.
+**Symptom:** Cannot understand how much execution costs or where performance bottlenecks are.
 
-**Причина:** Не отслеживается использование токенов и время выполнения.
+**Cause:** Token usage and execution time not tracked.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
+// BAD
 resp, _ := client.CreateChatCompletion(ctx, req)
-// Токены не логируются
+// Tokens not logged
 
-// ХОРОШО
+// GOOD
 resp, _ := client.CreateChatCompletion(ctx, req)
 log.Printf("TOKENS_USED: run_id=%s tokens=%d", runID, resp.Usage.TotalTokens)
 
 startTime := time.Now()
-// ... выполнение ...
+// ... execution ...
 log.Printf("LATENCY: run_id=%s latency=%v", runID, time.Since(startTime))
 ```
 
-### Ошибка 4: Логирование только успешных случаев
+### Mistake 4: Only Successful Cases Logged
 
-**Симптом:** Ошибки не логируются, невозможно понять, почему агент упал.
+**Symptom:** Errors not logged, cannot understand why agent crashed.
 
-**Причина:** Логирование только в успешных ветках кода.
+**Cause:** Logging only in successful code branches.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
+// BAD
 result, err := executeTool(toolCall)
 if err != nil {
-    return "", err // Ошибка не логируется
+    return "", err // Error not logged
 }
 
-// ХОРОШО
+// GOOD
 result, err := executeTool(toolCall)
 if err != nil {
     log.Printf("TOOL_ERROR: run_id=%s tool=%s error=%v", runID, toolCall.Function.Name, err)
@@ -550,58 +550,58 @@ if err != nil {
 }
 ```
 
-### Ошибка 5: Нет метрик (только логи)
+### Mistake 5: No Metrics (Only Logs)
 
-**Симптом:** Невозможно построить графики latency, error rate, token usage во времени.
+**Symptom:** Cannot build graphs of latency, error rate, token usage over time.
 
-**Причина:** Логируются только события, но не агрегируются метрики.
+**Cause:** Only events logged, but metrics not aggregated.
 
-**Решение:** Используйте метрики (Prometheus, StatsD) в дополнение к логам:
+**Solution:** Use metrics (Prometheus, StatsD) in addition to logs:
 ```go
-// Логируем событие
+// Log event
 log.Printf("TOOL_EXECUTED: run_id=%s tool=%s", runID, toolName)
 
-// Отправляем метрику
+// Send metric
 metrics.IncrementCounter("tool_executions_total", map[string]string{"tool": toolName})
 metrics.RecordLatency("tool_execution_duration", latency, map[string]string{"tool": toolName})
 ```
 
-## Мини-упражнения
+## Mini-Exercises
 
-### Упражнение 1: Реализуйте структурированное логирование
+### Exercise 1: Implement Structured Logging
 
-Добавьте структурированное логирование в `labs/lab04-autonomy/main.go`:
+Add structured logging to `labs/lab04-autonomy/main.go`:
 
 ```go
 func logAgentRun(runID string, userInput string, toolCalls []ToolCall, result string) {
-    // Ваш код здесь
-    // Логируйте в формате JSON
+    // Your code here
+    // Log in JSON format
 }
 ```
 
-**Ожидаемый результат:**
-- Логи в формате JSON
-- Содержат все необходимые поля: run_id, user_input, tool_calls, result, timestamp
+**Expected result:**
+- Logs in JSON format
+- Contain all necessary fields: run_id, user_input, tool_calls, result, timestamp
 
-### Упражнение 2: Добавьте трейсинг tool calls
+### Exercise 2: Add Tool Call Tracing
 
-Реализуйте функцию логирования tool call с измерением latency:
+Implement function for logging tool call with latency measurement:
 
 ```go
 func logToolCall(runID string, toolCallID string, toolName string, latency time.Duration) {
-    // Ваш код здесь
-    // Логируйте в формате: TOOL_CALL: run_id=... tool_id=... tool_name=... latency=...
+    // Your code here
+    // Log in format: TOOL_CALL: run_id=... tool_id=... tool_name=... latency=...
 }
 ```
 
-**Ожидаемый результат:**
-- Каждый tool call логируется с run_id
-- Измеряется и логируется latency
-- Формат позволяет легко парсить логи
+**Expected result:**
+- Each tool call logged with run_id
+- Latency measured and logged
+- Format allows easy log parsing
 
-### Упражнение 3: Реализуйте метрики
+### Exercise 3: Implement Metrics
 
-Добавьте подсчёт метрик (можно использовать простой in-memory счётчик):
+Add metrics counting (can use simple in-memory counter):
 
 ```go
 type Metrics struct {
@@ -612,41 +612,40 @@ type Metrics struct {
 }
 
 func (m *Metrics) RecordRun(tokens int, latency time.Duration, err error) {
-    // Ваш код здесь
-    // Обновляйте метрики
+    // Your code here
+    // Update metrics
 }
 ```
 
-**Ожидаемый результат:**
-- Метрики обновляются при каждом agent run
-- Можно получить средние значения через методы типа `GetAvgLatency()`
+**Expected result:**
+- Metrics updated on each agent run
+- Can get average values via methods like `GetAvgLatency()`
 
-## Критерии сдачи / Чек-лист
+## Completion Criteria / Checklist
 
-✅ **Сдано (готовность к прод):**
-- Реализовано структурированное логирование (JSON формат)
-- Каждый agent run имеет уникальный `run_id`
-- Логируются все этапы: входной запрос → выбор инструментов → выполнение → результат
-- Логируются токены и latency для каждого запроса
-- Tool calls логируются с `run_id` для кореляции
-- Ошибки логируются с контекстом
-- Метрики отслеживаются (latency, token usage, error rate)
+✅ **Completed (production-ready):**
+- Structured logging implemented (JSON format)
+- Each agent run has unique `run_id`
+- All stages logged: input request → tool selection → execution → result
+- Tokens and latency logged for each request
+- Tool calls logged with `run_id` for correlation
+- Errors logged with context
+- Metrics tracked (latency, token usage, error rate)
 
-❌ **Не сдано:**
-- Логи в виде простого текста без структуры
-- Нет `run_id` для кореляции логов
-- Не логируются токены и latency
-- Ошибки не логируются
-- Нет метрик
+❌ **Not completed:**
+- Logs in plain text without structure
+- No `run_id` for log correlation
+- Tokens and latency not logged
+- Errors not logged
+- No metrics
 
-## Связь с другими главами
+## Connection with Other Chapters
 
-- **Best Practices:** Общие практики логирования изучены в [Главе 11: Best Practices](../11-best-practices/README.md)
-- **Agent Loop:** Базовый цикл агента изучен в [Главе 05: Автономность и Циклы](../05-autonomy-and-loops/README.md)
-- **Tools:** Выполнение инструментов изучено в [Главе 04: Инструменты и Function Calling](../04-tools-and-function-calling/README.md)
-- **Cost Engineering:** Использование токенов для контроля стоимости — [Cost & Latency Engineering](cost_latency.md)
+- **Best Practices:** General logging practices studied in [Chapter 11: Best Practices](../11-best-practices/README.md)
+- **Agent Loop:** Basic agent loop studied in [Chapter 05: Autonomy and Loops](../05-autonomy-and-loops/README.md)
+- **Tools:** Tool execution studied in [Chapter 04: Tools and Function Calling](../04-tools-and-function-calling/README.md)
+- **Cost Engineering:** Token usage for cost control — [Cost & Latency Engineering](cost_latency.md)
 
 ---
 
-**Навигация:** [← Оглавление главы 12](README.md) | [Cost & Latency Engineering →](cost_latency.md)
-
+**Navigation:** [← Chapter 12 Table of Contents](README.md) | [Cost & Latency Engineering →](cost_latency.md)

@@ -1,72 +1,72 @@
-# Методическое пособие: Lab 05 — Human-in-the-Loop
+# Study Guide: Lab 05 — Human-in-the-Loop
 
-## Зачем это нужно?
+## Why This Lab?
 
-Автономность не означает вседозволенность. Есть два сценария, когда агент **обязан** вернуть управление человеку:
+Autonomy doesn't mean permissiveness. There are two scenarios when the agent **must** return control to a human:
 
-1. **Уточнение (Clarification):** Пользователь поставил задачу нечетко
-2. **Подтверждение (Confirmation):** Действие слишком опасное
+1. **Clarification:** User set the task unclearly
+2. **Confirmation:** Action is too dangerous
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация 1 (Уточнение):**
-- User: "Отправь письмо боссу"
-- Agent: "Какая тема и текст письма?" ← Агент спрашивает уточнение
-- User: "Тема: Отчет, текст: Все готово"
-- Agent: [Отправляет письмо]
+**Situation 1 (Clarification):**
+- User: "Send email to boss"
+- Agent: "What subject and text?" ← Agent asks for clarification
+- User: "Subject: Report, text: All ready"
+- Agent: [Sends email]
 
-**Ситуация 2 (Подтверждение):**
-- User: "Удали базу данных prod"
-- Agent: "Вы уверены? Это удалит все данные в продакшене. Введите 'yes' для подтверждения." ← Агент запрашивает подтверждение
+**Situation 2 (Confirmation):**
+- User: "Delete prod database"
+- Agent: "Are you sure? This will delete all data in production. Enter 'yes' to confirm." ← Agent requests confirmation
 - User: "yes"
-- Agent: [Удаляет базу]
+- Agent: [Deletes database]
 
-**Без Human-in-the-Loop:** Агент мог бы удалить базу без подтверждения, что привело бы к катастрофе.
+**Without Human-in-the-Loop:** Agent could delete the database without confirmation, leading to disaster.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### Объединение циклов (Nested Loops)
+### Nested Loops
 
-Мы используем структуру вложенных циклов:
+We use a nested loop structure:
 
-- **Внешний цикл (`While True`):** Отвечает за общение с пользователем. Читает `stdin`.
-- **Внутренний цикл (Agent Loop):** Отвечает за "мышление". Крутится до тех пор, пока агент вызывает инструменты. Как только агент выдает текст — мы выходим во внешний цикл.
+- **Outer loop (`While True`):** Handles communication with user. Reads `stdin`.
+- **Inner loop (Agent Loop):** Handles "thinking". Loops while agent calls tools. As soon as agent outputs text — we exit to outer loop.
 
-**Схема:**
+**Diagram:**
 
 ```
-Внешний цикл (Chat):
-  Читаем ввод пользователя
-  Внутренний цикл (Agent):
-    Пока агент вызывает инструменты:
-      Выполняем инструмент
-      Продолжаем внутренний цикл
-    Если агент ответил текстом:
-      Показываем пользователю
-      Выходим из внутреннего цикла
-  Ждем следующего ввода пользователя
+Outer loop (Chat):
+  Read user input
+  Inner loop (Agent):
+    While agent calls tools:
+      Execute tool
+      Continue inner loop
+    If agent responded with text:
+      Show to user
+      Exit inner loop
+  Wait for next user input
 ```
 
-### System Prompt как Правила Безопасности
+### System Prompt as Safety Rules
 
-Мы явно прописываем в системном промпте: *"Always ask for explicit confirmation before deleting anything"*.
+We explicitly write in the system prompt: *"Always ask for explicit confirmation before deleting anything"*.
 
-LLM (особенно GPT-4) хорошо следует этому правилу. Вместо генерации `ToolCall("delete_db")` она генерирует текст *"Are you sure you want to delete...?"*.
+LLM (especially GPT-4) follows this rule well. Instead of generating `ToolCall("delete_db")`, it generates text *"Are you sure you want to delete...?"*.
 
-Поскольку это текст, внутренний цикл прерывается, и вопрос показывается пользователю.
+Since this is text, the inner loop breaks, and the question is shown to the user.
 
-### Продолжение разговора
+### Continuing Conversation
 
-Когда пользователь отвечает *"Yes"*, мы добавляем это в историю и снова запускаем агента. Теперь у него в контексте есть:
+When the user responds *"Yes"*, we add it to history and run the agent again. Now it has in context:
 1. User: "Delete DB"
 2. Assistant: "Are you sure?"
 3. User: "Yes"
 
-Агент видит подтверждение и на этот раз генерирует `ToolCall("delete_db")`.
+Agent sees confirmation and this time generates `ToolCall("delete_db")`.
 
-## Алгоритм выполнения
+## Execution Algorithm
 
-### Шаг 1: Определение критических инструментов
+### Step 1: Defining Critical Tools
 
 ```go
 tools := []openai.Tool{
@@ -81,9 +81,9 @@ tools := []openai.Tool{
 }
 ```
 
-**Важно:** В `Description` указывайте, что действие опасное.
+**Important:** In `Description`, indicate that the action is dangerous.
 
-### Шаг 2: System Prompt с правилами безопасности
+### Step 2: System Prompt with Safety Rules
 
 ```go
 systemPrompt := `You are a helpful assistant.
@@ -92,88 +92,88 @@ IMPORTANT:
 2. If user parameters are missing, ask clarifying questions.`
 ```
 
-### Шаг 3: Вложенные циклы
+### Step 3: Nested Loops
 
 ```go
-// Внешний цикл (Chat)
+// Outer loop (Chat)
 for {
-    // Читаем ввод пользователя
+    // Read user input
     input := readUserInput()
     messages = append(messages, userMessage)
     
-    // Внутренний цикл (Agent)
+    // Inner loop (Agent)
     for {
         resp := client.CreateChatCompletion(...)
         msg := resp.Choices[0].Message
         messages = append(messages, msg)
         
         if len(msg.ToolCalls) == 0 {
-            // Агент ответил текстом (вопрос или финальный ответ)
+            // Agent responded with text (question or final answer)
             fmt.Println("Agent:", msg.Content)
-            break  // Выходим из внутреннего цикла
+            break  // Exit inner loop
         }
         
-        // Выполняем инструменты
+        // Execute tools
         for _, toolCall := range msg.ToolCalls {
             result := executeTool(toolCall)
             messages = append(messages, toolResult)
         }
-        // Продолжаем внутренний цикл
+        // Continue inner loop
     }
-    // Ждем следующего ввода пользователя
+    // Wait for next user input
 }
 ```
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: Агент не спрашивает подтверждение
+### Mistake 1: Agent Doesn't Ask for Confirmation
 
-**Симптом:** Агент сразу удаляет базу без подтверждения.
+**Symptom:** Agent immediately deletes database without confirmation.
 
-**Причина:** System Prompt недостаточно строгий или модель его игнорирует.
+**Cause:** System Prompt not strict enough or model ignores it.
 
-**Решение:**
-1. Усильте System Prompt: "CRITICAL: Never delete without explicit confirmation"
-2. Используйте модель помощнее (GPT-4 вместо GPT-3.5)
-3. Добавьте Few-Shot примеры в промпт
+**Solution:**
+1. Strengthen System Prompt: "CRITICAL: Never delete without explicit confirmation"
+2. Use a stronger model (GPT-4 instead of GPT-3.5)
+3. Add Few-Shot examples to prompt
 
-### Ошибка 2: Агент не уточняет параметры
+### Mistake 2: Agent Doesn't Clarify Parameters
 
-**Симптом:** Агент пытается вызвать инструмент с неполными аргументами.
+**Symptom:** Agent tries to call tool with incomplete arguments.
 
-**Пример:**
+**Example:**
 ```
-User: "Отправь письмо"
-Agent: [Пытается вызвать send_email без темы и текста]
+User: "Send email"
+Agent: [Tries to call send_email without subject and text]
 ```
 
-**Решение:**
+**Solution:**
 ```go
-// В System Prompt:
+// In System Prompt:
 "If required parameters are missing, ask the user for them. Do not guess."
 ```
 
-### Ошибка 3: Подтверждение не работает
+### Mistake 3: Confirmation Doesn't Work
 
-**Симптом:** Пользователь подтвердил, но агент снова спрашивает.
+**Symptom:** User confirmed, but agent asks again.
 
-**Причина:** Подтверждение не добавлено в историю или добавлено неправильно.
+**Cause:** Confirmation not added to history or added incorrectly.
 
-**Решение:**
+**Solution:**
 ```go
-// После подтверждения пользователя:
+// After user confirmation:
 messages = append(messages, ChatCompletionMessage{
     Role:    "user",
-    Content: "yes",  // Подтверждение
+    Content: "yes",  // Confirmation
 })
-// Теперь агент увидит подтверждение в контексте
+// Now agent will see confirmation in context
 ```
 
-## Мини-упражнения
+## Mini-Exercises
 
-### Упражнение 1: Добавьте риск-скоринг
+### Exercise 1: Add Risk Scoring
 
-Реализуйте функцию, которая определяет уровень риска действия:
+Implement a function that determines action risk level:
 
 ```go
 func calculateRisk(toolName string) float64 {
@@ -186,34 +186,33 @@ func calculateRisk(toolName string) float64 {
 }
 ```
 
-### Упражнение 2: Разные уровни подтверждения
+### Exercise 2: Different Confirmation Levels
 
-Реализуйте разные типы подтверждений для разных уровней риска:
+Implement different confirmation types for different risk levels:
 
 ```go
 if risk > 0.8 {
-    // Критическое действие: требуем явного "yes"
+    // Critical action: require explicit "yes"
 } else if risk > 0.5 {
-    // Средний риск: достаточно простого подтверждения
+    // Medium risk: simple confirmation enough
 } else {
-    // Низкий риск: можно выполнять без подтверждения
+    // Low risk: can execute without confirmation
 }
 ```
 
-## Критерии сдачи
+## Completion Criteria
 
-✅ **Сдано:**
-- Агент спрашивает подтверждение перед опасными действиями
-- Агент уточняет параметры, если они отсутствуют
-- Подтверждение работает корректно
-- Вложенные циклы реализованы правильно
+✅ **Completed:**
+- Agent asks for confirmation before dangerous actions
+- Agent clarifies parameters if they're missing
+- Confirmation works correctly
+- Nested loops implemented correctly
 
-❌ **Не сдано:**
-- Агент не спрашивает подтверждение
-- Агент не уточняет параметры
-- Подтверждение не работает
+❌ **Not completed:**
+- Agent doesn't ask for confirmation
+- Agent doesn't clarify parameters
+- Confirmation doesn't work
 
 ---
 
-**Следующий шаг:** После успешного прохождения Lab 05 переходите к [Lab 06: Incident Management](../lab06-incident/README.md)
-
+**Next step:** After successfully completing Lab 05, proceed to [Lab 06: Incident Management](../lab06-incident/README.md)

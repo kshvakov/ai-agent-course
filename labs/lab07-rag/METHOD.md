@@ -1,58 +1,58 @@
-# Методическое пособие: Lab 07 — RAG & Knowledge Base
+# Study Guide: Lab 07 — RAG & Knowledge Base
 
-## Зачем это нужно?
+## Why This Lab?
 
-Обычный агент знает только то, чему его научили при тренировке (до даты cut-off). Он не знает ваши локальные инструкции типа "Как перезагружать сервер Phoenix согласно регламенту №5".
+A regular agent only knows what it was taught during training (before cut-off date). It doesn't know your local instructions like "How to restart Phoenix server according to regulation #5".
 
-**RAG (Retrieval Augmented Generation)** — это механизм "подглядывания в шпаргалку". Агент сначала ищет информацию в базе знаний, а потом действует.
+**RAG (Retrieval Augmented Generation)** is a mechanism of "peeking at a cheat sheet". The agent first searches for information in the knowledge base, then acts.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Пользователь просит: "Перезагрузи сервер Phoenix согласно регламенту".
+**Situation:** User asks: "Restart Phoenix server according to regulation".
 
-**Без RAG:**
-- Агент: [Сразу рестартит сервер]
-- Результат: Нарушение регламента (нужно было сначала создать бэкап)
+**Without RAG:**
+- Agent: [Immediately restarts server]
+- Result: Regulation violation (should have created backup first)
 
-**С RAG:**
-- Агент: Ищет в базе знаний "Phoenix restart protocol"
-- База знаний: "POLICY #12: Before restarting Phoenix, you MUST run backup_db"
-- Агент: Создает бэкап → Рестартит сервер → Следует регламенту
+**With RAG:**
+- Agent: Searches knowledge base "Phoenix restart protocol"
+- Knowledge base: "POLICY #12: Before restarting Phoenix, you MUST run backup_db"
+- Agent: Creates backup → Restarts server → Follows regulation
 
-**Разница:** RAG позволяет агенту использовать актуальную документацию.
+**Difference:** RAG allows agent to use current documentation.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### Как работает RAG?
+### How Does RAG Work?
 
-1. **Задача:** "Перезагрузи сервер Phoenix согласно регламенту"
-2. **Мысль агента:** "Я не знаю регламент. Надо поискать"
-3. **Действие:** `search_knowledge_base("Phoenix restart protocol")`
-4. **Результат:** "Файл `protocols.txt`: ...сначала выключить балансировщик, потом сервер..."
-5. **Мысль агента:** "Ага, понял. Сначала выключаю балансировщик..."
+1. **Task:** "Restart Phoenix server according to regulation"
+2. **Agent's thought:** "I don't know the regulation. Need to search"
+3. **Action:** `search_knowledge_base("Phoenix restart protocol")`
+4. **Result:** "File `protocols.txt`: ...first turn off load balancer, then server..."
+5. **Agent's thought:** "Got it. First I'll turn off the load balancer..."
 
-### Простой RAG vs Векторный поиск
+### Simple RAG vs Vector Search
 
-В этой лабе мы реализуем **простой RAG** (поиск по ключевым словам). В продакшене используется **векторный поиск** (Semantic Search), который ищет по смыслу, а не по словам.
+In this lab, we implement **simple RAG** (keyword search). In production, **vector search** (Semantic Search) is used, which searches by meaning, not by words.
 
-**Простой RAG (Lab 07):**
+**Simple RAG (Lab 07):**
 ```go
-// Поиск по вхождению подстроки
+// Search by substring match
 if strings.Contains(content, query) {
     return content
 }
 ```
 
-**Векторный поиск (продакшен):**
+**Vector search (production):**
 ```go
-// Документы преобразуются в векторы (embeddings)
-// Поиск похожих векторов по косинусному расстоянию
+// Documents converted to vectors (embeddings)
+// Search similar vectors by cosine distance
 similarDocs := vectorDB.Search(queryEmbedding, topK=3)
 ```
 
-## Алгоритм выполнения
+## Execution Algorithm
 
-### Шаг 1: Создание базы знаний
+### Step 1: Creating Knowledge Base
 
 ```go
 var knowledgeBase = map[string]string{
@@ -61,7 +61,7 @@ var knowledgeBase = map[string]string{
 }
 ```
 
-### Шаг 2: Инструмент поиска
+### Step 2: Search Tool
 
 ```go
 func searchKnowledge(query string) string {
@@ -78,7 +78,7 @@ func searchKnowledge(query string) string {
 }
 ```
 
-### Шаг 3: System Prompt с инструкцией
+### Step 3: System Prompt with Instruction
 
 ```go
 systemPrompt := `You are a DevOps Agent.
@@ -86,97 +86,96 @@ CRITICAL: Always search knowledge base for policies before any restart action.
 If you don't know the procedure, search first.`
 ```
 
-### Шаг 4: Цикл агента
+### Step 4: Agent Loop
 
 ```go
-// Агент получает задачу: "Restart server"
-// Агент думает: "Нужно проверить регламент"
-// Агент вызывает: search_knowledge_base("restart")
-// Получает: "POLICY #12: ...MUST run backup..."
-// Агент думает: "Нужно сделать бэкап сначала"
-// Агент вызывает: run_backup()
-// Агент вызывает: restart_server()
+// Agent receives task: "Restart server"
+// Agent thinks: "Need to check regulation"
+// Agent calls: search_knowledge_base("restart")
+// Gets: "POLICY #12: ...MUST run backup..."
+// Agent thinks: "Need to do backup first"
+// Agent calls: run_backup()
+// Agent calls: restart_server()
 ```
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: Агент не ищет в базе знаний
+### Mistake 1: Agent Doesn't Search Knowledge Base
 
-**Симптом:** Агент сразу выполняет действие без поиска.
+**Symptom:** Agent immediately executes action without search.
 
-**Причина:** System Prompt недостаточно строгий.
+**Cause:** System Prompt not strict enough.
 
-**Решение:**
+**Solution:**
 ```go
-// Усильте промпт:
+// Strengthen prompt:
 "BEFORE any action, you MUST search knowledge base. This is mandatory."
 ```
 
-### Ошибка 2: Поиск не находит документы
+### Mistake 2: Search Doesn't Find Documents
 
-**Симптом:** `search_knowledge_base` возвращает "No documents found".
+**Symptom:** `search_knowledge_base` returns "No documents found".
 
-**Причина:** Запрос не совпадает с содержимым документов.
+**Cause:** Query doesn't match document content.
 
-**Решение:**
-1. Улучшите поиск (используйте несколько ключевых слов)
-2. Добавьте больше документов в базу знаний
-3. Используйте векторный поиск (в продакшене)
+**Solution:**
+1. Improve search (use multiple keywords)
+2. Add more documents to knowledge base
+3. Use vector search (in production)
 
-### Ошибка 3: Агент игнорирует найденную информацию
+### Mistake 3: Agent Ignores Found Information
 
-**Симптом:** Агент нашел регламент, но не следует ему.
+**Symptom:** Agent found regulation but doesn't follow it.
 
-**Причина:** Информация не добавлена в контекст правильно.
+**Cause:** Information not added to context correctly.
 
-**Решение:**
+**Solution:**
 ```go
-// Убедитесь, что результат поиска добавлен в историю:
+// Ensure search result is added to history:
 messages = append(messages, ChatCompletionMessage{
     Role:    "tool",
-    Content: searchResult,  // Агент должен это увидеть!
+    Content: searchResult,  // Agent must see this!
 })
 ```
 
-## Мини-упражнения
+## Mini-Exercises
 
-### Упражнение 1: Улучшите поиск
+### Exercise 1: Improve Search
 
-Реализуйте поиск по нескольким ключевым словам:
+Implement search by multiple keywords:
 
 ```go
 func searchKnowledge(query string) string {
-    keywords := strings.Fields(query)  // Разбиваем на слова
-    // Ищем документы, содержащие хотя бы одно ключевое слово
+    keywords := strings.Fields(query)  // Split into words
+    // Search documents containing at least one keyword
     // ...
 }
 ```
 
-### Упражнение 2: Добавьте приоритет документов
+### Exercise 2: Add Document Priority
 
-Некоторые документы важнее других. Реализуйте ранжирование:
+Some documents are more important than others. Implement ranking:
 
 ```go
 type Document struct {
     Content string
-    Priority int  // 1 = высокий, 3 = низкий
+    Priority int  // 1 = high, 3 = low
 }
 ```
 
-## Критерии сдачи
+## Completion Criteria
 
-✅ **Сдано:**
-- Агент ищет в базе знаний перед действием
-- Поиск находит релевантные документы
-- Агент следует найденным инструкциям
-- Код компилируется и работает
+✅ **Completed:**
+- Agent searches knowledge base before action
+- Search finds relevant documents
+- Agent follows found instructions
+- Code compiles and works
 
-❌ **Не сдано:**
-- Агент не ищет в базе знаний
-- Поиск не работает
-- Агент игнорирует найденную информацию
+❌ **Not completed:**
+- Agent doesn't search knowledge base
+- Search doesn't work
+- Agent ignores found information
 
 ---
 
-**Следующий шаг:** После успешного прохождения Lab 07 переходите к [Lab 08: Multi-Agent](../lab08-multi-agent/README.md)
-
+**Next step:** After successfully completing Lab 07, proceed to [Lab 08: Multi-Agent](../lab08-multi-agent/README.md)

@@ -1,45 +1,45 @@
 # Cost & Latency Engineering
 
-## Зачем это нужно?
+## Why This Chapter?
 
-Агент работает, но счёт за LLM API растёт неконтролируемо. Один запрос стоит $5, а другой — $0.10. Почему? Без контроля стоимости и оптимизации latency вы не можете:
-- Предсказать бюджет на месяц
-- Оптимизировать дорогие запросы
-- Гарантировать время ответа пользователю
+Agent works, but LLM API bill grows uncontrollably. One request costs $5, another — $0.10. Why? Without cost control and latency optimization, you cannot:
+- Predict monthly budget
+- Optimize expensive requests
+- Guarantee response time to user
 
-Cost & Latency Engineering — это контроль бюджета и производительности. Без него вы рискуете потратить тысячи долларов на простые запросы или получить медленный агент, который пользователи не будут использовать.
+Cost & Latency Engineering is budget and performance control. Without it, you risk spending thousands of dollars on simple requests or getting slow agent that users won't use.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Агент для DevOps работает в проде неделю. Счёт за LLM API — $5000 за месяц вместо ожидаемых $500.
+**Situation:** DevOps agent works in production for a week. LLM API bill — $5000 per month instead of expected $500.
 
-**Проблема:** Агент использует GPT-4 для всех запросов, даже для простых проверок статуса. Нет лимитов на токены, нет кэширования, нет fallback на более дешёвые модели. Один запрос "проверь статус сервера" использует 50,000 токенов из-за большого контекста.
+**Problem:** Agent uses GPT-4 for all requests, even for simple status checks. No token limits, no caching, no fallback to cheaper models. One request "check server status" uses 50,000 tokens due to large context.
 
-**Решение:** Бюджеты токенов, лимиты итераций, кэширование, маршрутизация моделей по сложности задачи. Теперь простые запросы используют GPT-3.5 ($0.002 за 1K токенов), сложные — GPT-4 ($0.03 за 1K токенов). Счёт снизился до $600 в месяц.
+**Solution:** Token budgets, iteration limits, caching, model routing by task complexity. Now simple requests use GPT-3.5 ($0.002 per 1K tokens), complex — GPT-4 ($0.03 per 1K tokens). Bill reduced to $600 per month.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### Что такое Cost Engineering?
+### What Is Cost Engineering?
 
-Cost Engineering — это контроль и оптимизация стоимости использования LLM API. Основные рычаги:
-1. **Выбор модели** — GPT-4 дороже GPT-3.5 в 15 раз
-2. **Количество токенов** — чем больше контекст, тем дороже
-3. **Количество запросов** — каждый вызов LLM стоит денег
-4. **Кэширование** — одинаковые запросы можно не повторять
+Cost Engineering is control and optimization of LLM API usage cost. Main levers:
+1. **Model selection** — GPT-4 is 15x more expensive than GPT-3.5
+2. **Token count** — larger context = more expensive
+3. **Request count** — each LLM call costs money
+4. **Caching** — identical requests can be not repeated
 
-### Что такое Latency Engineering?
+### What Is Latency Engineering?
 
-Latency Engineering — это контроль времени ответа. Основные факторы:
-1. **Модель** — GPT-4 медленнее GPT-3.5
-2. **Размер контекста** — больше токенов = больше времени обработки
-3. **Количество итераций** — больше циклов ReAct = больше времени
-4. **Таймауты** — защита от зависаний
+Latency Engineering is response time control. Main factors:
+1. **Model** — GPT-4 is slower than GPT-3.5
+2. **Context size** — more tokens = more processing time
+3. **Iteration count** — more ReAct cycles = more time
+4. **Timeouts** — protection from hangs
 
-## Как это работает (пошагово)
+## How It Works (Step-by-Step)
 
-### Шаг 1: Бюджеты токенов
+### Step 1: Token Budgets
 
-Установите лимит токенов на запрос:
+Set token limit per request:
 
 ```go
 const (
@@ -60,9 +60,9 @@ func checkTokenBudget(budget TokenBudget) error {
 }
 ```
 
-### Шаг 2: Лимиты итераций
+### Step 2: Iteration Limits
 
-Ограничьте количество итераций ReAct loop (см. `labs/lab04-autonomy/main.go`):
+Limit number of ReAct loop iterations (see `labs/lab04-autonomy/main.go`):
 
 ```go
 func runAgent(ctx context.Context, client *openai.Client, userInput string) (string, error) {
@@ -77,21 +77,21 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) (str
         
         tokenBudget.Used += resp.Usage.TotalTokens
         
-        // Проверяем бюджет
+        // Check budget
         if err := checkTokenBudget(tokenBudget); err != nil {
             return "", fmt.Errorf("stopping: %v", err)
         }
         
-        // ... остальной код ...
+        // ... rest of code ...
     }
     
     return "", fmt.Errorf("max iterations (%d) exceeded", maxIterations)
 }
 ```
 
-### Шаг 3: Кэширование результатов LLM
+### Step 3: LLM Result Caching
 
-Кэшируйте результаты для одинаковых запросов:
+Cache results for identical requests:
 
 ```go
 import (
@@ -109,7 +109,7 @@ type CacheEntry struct {
 var cache = sync.Map{} // map[string]*CacheEntry
 
 func getCacheKey(messages []openai.ChatCompletionMessage) string {
-    // Создаём ключ из содержимого сообщений
+    // Create key from message content
     data := ""
     for _, msg := range messages {
         data += msg.Role + ":" + msg.Content
@@ -139,38 +139,38 @@ func setCachedResult(key string, result string, ttl time.Duration) {
 }
 ```
 
-### Шаг 4: Маршрутизация моделей по сложности
+### Step 4: Model Routing by Complexity
 
-Используйте более дешёвые модели для простых задач (см. `labs/lab09-context-optimization/main.go`):
+Use cheaper models for simple tasks (see `labs/lab09-context-optimization/main.go`):
 
 ```go
 func selectModel(taskComplexity string) string {
     switch taskComplexity {
     case "simple":
-        return openai.GPT3Dot5Turbo // Дешевле и быстрее
+        return openai.GPT3Dot5Turbo // Cheaper and faster
     case "complex":
-        return openai.GPT4 // Лучше качество, но дороже
+        return openai.GPT4 // Better quality, but more expensive
     default:
         return openai.GPT3Dot5Turbo
     }
 }
 
 func assessTaskComplexity(userInput string) string {
-    // Простые задачи: проверка статуса, чтение логов
+    // Simple tasks: status check, reading logs
     simpleKeywords := []string{"check", "status", "read", "get", "list"}
     for _, keyword := range simpleKeywords {
         if strings.Contains(strings.ToLower(userInput), keyword) {
             return "simple"
         }
     }
-    // Сложные задачи: анализ, планирование, решение проблем
+    // Complex tasks: analysis, planning, problem solving
     return "complex"
 }
 ```
 
-### Шаг 5: Fallback-модели
+### Step 5: Fallback Models
 
-Реализуйте цепочку fallback при ошибках или превышении бюджета:
+Implement fallback chain on errors or budget exceeded:
 
 ```go
 func createChatCompletionWithFallback(ctx context.Context, client *openai.Client, req openai.ChatCompletionRequest) (*openai.ChatCompletionResponse, error) {
@@ -182,30 +182,30 @@ func createChatCompletionWithFallback(ctx context.Context, client *openai.Client
         if err == nil {
             return resp, nil
         }
-        // Если ошибка, пробуем следующую модель
+        // If error, try next model
     }
     
     return nil, fmt.Errorf("all models failed")
 }
 ```
 
-### Шаг 6: Таймауты
+### Step 6: Timeouts
 
-Установите timeout для всего agent run и для каждого вызова инструмента:
+Set timeout for entire agent run and each tool call:
 
 ```go
 import "context"
 import "time"
 
 func runAgentWithTimeout(ctx context.Context, client *openai.Client, userInput string) (string, error) {
-    // Timeout для всего agent run (5 минут)
+    // Timeout for entire agent run (5 minutes)
     ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
     defer cancel()
     
     // ... agent loop ...
     
     for i := 0; i < maxIterations; i++ {
-        // Timeout для каждого вызова LLM (30 секунд)
+        // Timeout for each LLM call (30 seconds)
         callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
         resp, err := client.CreateChatCompletion(callCtx, req)
         callCancel()
@@ -217,52 +217,52 @@ func runAgentWithTimeout(ctx context.Context, client *openai.Client, userInput s
             return "", err
         }
         
-        // ... остальной код ...
+        // ... rest of code ...
     }
 }
 ```
 
-## Где это встраивать в нашем коде
+## Where to Integrate in Our Code
 
-### Точка интеграции 1: Agent Loop
+### Integration Point 1: Agent Loop
 
-В `labs/lab04-autonomy/main.go` добавьте проверку бюджета и лимит итераций:
+In `labs/lab04-autonomy/main.go`, add budget check and iteration limit:
 
 ```go
 const MaxIterations = 10
 const MaxTokensPerRequest = 10000
 
-// В цикле:
+// In loop:
 for i := 0; i < MaxIterations; i++ {
     resp, err := client.CreateChatCompletion(ctx, req)
-    // Проверяем токены
+    // Check tokens
     if resp.Usage.TotalTokens > MaxTokensPerRequest {
         return "", fmt.Errorf("token limit exceeded")
     }
-    // ... остальной код ...
+    // ... rest of code ...
 }
 ```
 
-### Точка интеграции 2: Context Optimization
+### Integration Point 2: Context Optimization
 
-В `labs/lab09-context-optimization/main.go` уже есть подсчёт токенов. Добавьте проверку бюджета:
+In `labs/lab09-context-optimization/main.go`, token counting already exists. Add budget check:
 
 ```go
 func adaptiveContextManagement(ctx context.Context, client *openai.Client, messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
     usedTokens := countTokensInMessages(messages)
     
-    // Если превышен бюджет, применяем агрессивную оптимизацию
+    // If budget exceeded, apply aggressive optimization
     if usedTokens > MaxTokensPerRequest {
         return compressOldMessages(ctx, client, messages, maxTokens)
     }
     
-    // ... остальная логика ...
+    // ... rest of logic ...
 }
 ```
 
-## Мини-пример кода
+## Mini Code Example
 
-Полный пример с контролем стоимости на базе `labs/lab04-autonomy/main.go`:
+Complete example with cost control based on `labs/lab04-autonomy/main.go`:
 
 ```go
 package main
@@ -321,10 +321,10 @@ func main() {
     ctx, cancel := context.WithTimeout(context.Background(), AgentTimeout)
     defer cancel()
 
-    userInput := "У меня кончилось место. Разберись."
+    userInput := "I'm out of disk space. Fix it."
     
-    // Определяем сложность задачи
-    model := selectModel("simple") // Для простых задач используем GPT-3.5
+    // Determine task complexity
+    model := selectModel("simple") // For simple tasks use GPT-3.5
     
     tokenBudget := TokenBudget{Limit: MaxTokensPerRequest}
 
@@ -353,7 +353,7 @@ func main() {
     fmt.Println("Starting Agent Loop...")
 
     for i := 0; i < MaxIterations; i++ {
-        // Проверяем бюджет перед запросом
+        // Check budget before request
         if err := checkTokenBudget(tokenBudget); err != nil {
             fmt.Printf("Budget exceeded: %v\n", err)
             break
@@ -365,7 +365,7 @@ func main() {
             Tools:    tools,
         }
 
-        // Timeout для каждого вызова LLM
+        // Timeout for each LLM call
         callCtx, callCancel := context.WithTimeout(ctx, LLMTimeout)
         resp, err := client.CreateChatCompletion(callCtx, req)
         callCancel()
@@ -381,7 +381,7 @@ func main() {
         msg := resp.Choices[0].Message
         messages = append(messages, msg)
 
-        // Обновляем бюджет
+        // Update budget
         tokenBudget.Used += resp.Usage.TotalTokens
         fmt.Printf("Tokens used: %d / %d\n", tokenBudget.Used, tokenBudget.Limit)
 
@@ -412,75 +412,75 @@ func main() {
 }
 ```
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: Нет лимитов на токены
+### Mistake 1: No Token Limits
 
-**Симптом:** Счёт за LLM API растёт неконтролируемо. Один запрос может использовать 100,000 токенов.
+**Symptom:** LLM API bill grows uncontrollably. One request can use 100,000 tokens.
 
-**Причина:** Не проверяется использование токенов перед отправкой запроса.
+**Cause:** Token usage not checked before sending request.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
+// BAD
 resp, _ := client.CreateChatCompletion(ctx, req)
-// Нет проверки токенов
+// No token check
 
-// ХОРОШО
+// GOOD
 tokenBudget.Used += resp.Usage.TotalTokens
 if err := checkTokenBudget(tokenBudget); err != nil {
     return "", err
 }
 ```
 
-### Ошибка 2: Нет лимита итераций
+### Mistake 2: No Iteration Limit
 
-**Симптом:** Агент зацикливается и делает 50+ итераций, тратя тысячи токенов.
+**Symptom:** Agent loops and does 50+ iterations, spending thousands of tokens.
 
-**Причина:** Нет ограничения на количество итераций ReAct loop.
+**Cause:** No limit on ReAct loop iteration count.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
+// BAD
 for {
-    // Бесконечный цикл
+    // Infinite loop
 }
 
-// ХОРОШО
+// GOOD
 for i := 0; i < MaxIterations; i++ {
-    // Ограниченное количество итераций
+    // Limited number of iterations
 }
 ```
 
-### Ошибка 3: Использование GPT-4 для всех задач
+### Mistake 3: Using GPT-4 for All Tasks
 
-**Симптом:** Простые запросы стоят в 15 раз дороже, чем нужно.
+**Symptom:** Simple requests cost 15x more than needed.
 
-**Причина:** Всегда используется самая дорогая модель.
+**Cause:** Always uses most expensive model.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
-req.Model = openai.GPT4 // Всегда GPT-4
+// BAD
+req.Model = openai.GPT4 // Always GPT-4
 
-// ХОРОШО
+// GOOD
 model := selectModel(assessTaskComplexity(userInput))
 req.Model = model
 ```
 
-### Ошибка 4: Нет кэширования
+### Mistake 4: No Caching
 
-**Симптом:** Одинаковые запросы выполняются повторно, тратя токены.
+**Symptom:** Identical requests executed repeatedly, spending tokens.
 
-**Причина:** Нет кэша для результатов LLM.
+**Cause:** No cache for LLM results.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
+// BAD
 resp, _ := client.CreateChatCompletion(ctx, req)
-// Каждый раз новый запрос
+// New request every time
 
-// ХОРОШО
+// GOOD
 key := getCacheKey(messages)
 if result, ok := getCachedResult(key); ok {
     return result, nil
@@ -489,19 +489,19 @@ resp, _ := client.CreateChatCompletion(ctx, req)
 setCachedResult(key, resp.Choices[0].Message.Content, 1*time.Hour)
 ```
 
-### Ошибка 5: Нет таймаутов
+### Mistake 5: No Timeouts
 
-**Симптом:** Агент зависает на 10+ минут, пользователь ждёт.
+**Symptom:** Agent hangs for 10+ minutes, user waits.
 
-**Причина:** Нет timeout для вызовов LLM или инструментов.
+**Cause:** No timeout for LLM calls or tools.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
+// BAD
 resp, _ := client.CreateChatCompletion(ctx, req)
-// Может зависнуть навсегда
+// May hang forever
 
-// ХОРОШО
+// GOOD
 ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 defer cancel()
 resp, err := client.CreateChatCompletion(ctx, req)
@@ -510,82 +510,81 @@ if err == context.DeadlineExceeded {
 }
 ```
 
-## Мини-упражнения
+## Mini-Exercises
 
-### Упражнение 1: Реализуйте проверку бюджета токенов
+### Exercise 1: Implement Token Budget Check
 
-Добавьте проверку бюджета в `labs/lab04-autonomy/main.go`:
+Add budget check to `labs/lab04-autonomy/main.go`:
 
 ```go
 func checkTokenBudget(used int, limit int) error {
-    // Ваш код здесь
-    // Верните ошибку, если превышен лимит
+    // Your code here
+    // Return error if limit exceeded
 }
 ```
 
-**Ожидаемый результат:**
-- Функция возвращает ошибку, если использовано токенов больше лимита
-- Функция возвращает nil, если лимит не превышен
+**Expected result:**
+- Function returns error if tokens used exceed limit
+- Function returns nil if limit not exceeded
 
-### Упражнение 2: Реализуйте маршрутизацию моделей
+### Exercise 2: Implement Model Routing
 
-Создайте функцию выбора модели по сложности задачи:
+Create function to select model by task complexity:
 
 ```go
 func selectModelByComplexity(userInput string) string {
-    // Ваш код здесь
-    // Верните GPT-3.5 для простых задач, GPT-4 для сложных
+    // Your code here
+    // Return GPT-3.5 for simple tasks, GPT-4 for complex
 }
 ```
 
-**Ожидаемый результат:**
-- Простые задачи (check, status, read) → GPT-3.5
-- Сложные задачи (analyze, fix, plan) → GPT-4
+**Expected result:**
+- Simple tasks (check, status, read) → GPT-3.5
+- Complex tasks (analyze, fix, plan) → GPT-4
 
-### Упражнение 3: Реализуйте кэширование
+### Exercise 3: Implement Caching
 
-Добавьте простое in-memory кэширование результатов LLM:
+Add simple in-memory caching for LLM results:
 
 ```go
 var cache = make(map[string]CacheEntry)
 
 func getCachedResult(key string) (string, bool) {
-    // Ваш код здесь
+    // Your code here
 }
 
 func setCachedResult(key string, result string, ttl time.Duration) {
-    // Ваш код здесь
+    // Your code here
 }
 ```
 
-**Ожидаемый результат:**
-- Одинаковые запросы возвращаются из кэша
-- Кэш имеет TTL (время жизни)
+**Expected result:**
+- Identical requests returned from cache
+- Cache has TTL (time to live)
 
-## Критерии сдачи / Чек-лист
+## Completion Criteria / Checklist
 
-✅ **Сдано (готовность к прод):**
-- Реализованы бюджеты токенов с проверкой перед каждым запросом
-- Установлен лимит итераций ReAct loop
-- Реализована маршрутизация моделей по сложности задачи
-- Реализовано кэширование результатов LLM
-- Установлены таймауты для вызовов LLM и agent run
-- Отслеживается использование токенов и предупреждается при превышении
+✅ **Completed (production-ready):**
+- Token budgets implemented with check before each request
+- ReAct loop iteration limit set
+- Model routing by task complexity implemented
+- LLM result caching implemented
+- Timeouts set for LLM calls and agent run
+- Token usage tracked and warned on exceed
 
-❌ **Не сдано:**
-- Нет лимитов на токены
-- Нет лимита итераций
-- Всегда используется самая дорогая модель
-- Нет кэширования
-- Нет таймаутов
+❌ **Not completed:**
+- No token limits
+- No iteration limit
+- Always uses most expensive model
+- No caching
+- No timeouts
 
-## Связь с другими главами
+## Connection with Other Chapters
 
-- **Observability:** Логирование использования токенов — [Observability и Tracing](observability.md)
-- **Context Optimization:** Управление размером контекста — [Lab 09: Context Optimization](../../labs/lab09-context-optimization/METHOD.md)
-- **Agent Loop:** Базовый цикл агента — [Глава 05: Автономность и Циклы](../05-autonomy-and-loops/README.md)
+- **Observability:** Logging token usage — [Observability and Tracing](observability.md)
+- **Context Optimization:** Context size management — [Lab 09: Context Optimization](../../labs/lab09-context-optimization/METHOD.md)
+- **Agent Loop:** Basic agent loop — [Chapter 05: Autonomy and Loops](../05-autonomy-and-loops/README.md)
 
 ---
 
-**Навигация:** [← Observability](observability.md) | [Оглавление главы 12](README.md) | [Workflow и State Management →](workflow_state.md)
-
+**Navigation:** [← Observability](observability.md) | [Chapter 12 Table of Contents](README.md) | [Workflow and State Management →](workflow_state.md)

@@ -1,88 +1,88 @@
-# Руководство по стилю документации
+# Documentation Style Guide
 
-Этот документ описывает единую стилистику для всех глав учебника `docs/book/*`. Цель — сделать документацию такой же простой и обучающей через практику, как лабораторные работы `labs/*/METHOD.md`.
+This document describes a unified style for all textbook chapters `docs/book/*`. The goal is to make documentation as simple and educational through practice as lab assignments `labs/*/METHOD.md`.
 
-## Философия
+## Philosophy
 
-**Принцип:** Сначала интуиция и практика, потом формализация.
+**Principle:** Intuition and practice first, then formalization.
 
-- **Простым языком** — избегаем академического жаргона без необходимости
-- **Через примеры** — показываем, как это работает на практике
-- **Ошибки как обучение** — типовые ошибки помогают понять концепцию глубже
-- **Самопроверка** — мини-упражнения и чек-листы для закрепления
+- **Simple language** — avoid academic jargon without necessity
+- **Through examples** — show how it works in practice
+- **Errors as learning** — common mistakes help understand concept deeper
+- **Self-check** — mini-exercises and checklists for reinforcement
 
-## Унифицированный шаблон главы
+## Unified Chapter Template
 
-Каждая глава `docs/book/*/README.md` должна следовать этой структуре:
+Each chapter `docs/book/*/README.md` should follow this structure:
 
-### 1. Зачем это нужно? (обязательно)
+### 1. Why This Chapter? (required)
 
-1-2 абзаца, объясняющие:
-- Зачем читать эту главу
-- Какую проблему она решает
-- Почему это важно для создания агентов
+1-2 paragraphs explaining:
+- Why read this chapter
+- What problem it solves
+- Why it's important for creating agents
 
-**Пример:**
+**Example:**
 ```markdown
-## Зачем это нужно?
+## Why This Chapter?
 
-Function Calling превращает LLM из "болтуна" в "работника". Без инструментов агент может только отвечать текстом, но не может взаимодействовать с реальным миром.
+Function Calling turns LLM from a "chatterbox" into a "worker". Without tools, an agent can only respond with text, but cannot interact with the real world.
 ```
 
-### 2. Реальный кейс (обязательно)
+### 2. Real-World Case Study (required)
 
-Короткий сценарий из практики, показывающий проблему и решение.
+Short scenario from practice showing the problem and solution.
 
-**Формат:**
-- **Ситуация:** Описание проблемы
-- **Проблема:** Что не работает без этой концепции
-- **Решение:** Как концепция решает проблему
+**Format:**
+- **Situation:** Problem description
+- **Problem:** What doesn't work without this concept
+- **Solution:** How the concept solves the problem
 
-**Пример:**
+**Example:**
 ```markdown
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Пользователь пишет: "Проверь статус сервера web-01"
-**Проблема:** Бот не может реально проверить сервер. Он только говорит.
-**Решение:** Function Calling позволяет модели вызывать реальные функции Go.
+**Situation:** User writes: "Check status of server web-01"
+**Problem:** Bot cannot actually check the server. It only talks.
+**Solution:** Function Calling allows model to call real Go functions.
 ```
 
-### 3. Теория простыми словами (обязательно)
+### 3. Theory in Simple Terms (required)
 
-Интуитивное объяснение концепции без формализации. Используем аналогии и простые примеры.
+Intuitive explanation of concept without formalization. Use analogies and simple examples.
 
-**Правила:**
-- Короткие абзацы (2-3 предложения)
-- Избегаем математики в основном тексте
-- Используем аналогии ("как в реальной жизни...")
+**Rules:**
+- Short paragraphs (2-3 sentences)
+- Avoid mathematics in main text
+- Use analogies ("like in real life...")
 
-**Пример:**
+**Example:**
 ```markdown
-## Теория простыми словами
+## Theory in Simple Terms
 
-### Как работает Function Calling?
+### How Does Function Calling Work?
 
-1. Вы описываете функцию в формате JSON Schema
-2. LLM видит описание и решает: "Мне нужно вызвать эту функцию"
-3. LLM генерирует JSON с именем функции и аргументами
-4. Ваш код парсит JSON и выполняет реальную функцию
-5. Результат возвращается в LLM для дальнейшей обработки
+1. You describe a function in JSON Schema format
+2. LLM sees description and decides: "I need to call this function"
+3. LLM generates JSON with function name and arguments
+4. Your code parses JSON and executes real function
+5. Result is returned to LLM for further processing
 ```
 
-### 4. Как это работает (пошагово) (обязательно)
+### 4. How It Works (Step-by-Step) (required)
 
-Алгоритм или протокол работы. Показываем шаги с примерами кода.
+Algorithm or work protocol. Show steps with code examples.
 
-**Формат:**
-- Нумерованные шаги
-- Минимальный пример кода на каждом шаге
-- Комментарии объясняют, что происходит
+**Format:**
+- Numbered steps
+- Minimal code example at each step
+- Comments explain what's happening
 
-**Пример:**
+**Example:**
 ```markdown
-## Алгоритм выполнения
+## Execution Algorithm
 
-### Шаг 1: Определение инструмента
+### Step 1: Tool Definition
 
 ```go
 tools := []openai.Tool{
@@ -97,172 +97,172 @@ tools := []openai.Tool{
 }
 ```
 
-**Важно:** `Description` — это самое важное поле! LLM ориентируется именно по нему.
+**Important:** `Description` is the most important field! LLM relies on it.
 ```
 
-### 5. Мини-пример кода (обязательно)
+### 5. Mini Code Example (required)
 
-Полный рабочий пример, показывающий концепцию в действии.
+Complete working example showing the concept in action.
 
-**Правила:**
-- Начинаем с минимального примера
-- Затем расширяем, показывая более сложные случаи
-- Комментарии объясняют каждый важный момент
+**Rules:**
+- Start with minimal example
+- Then expand, showing more complex cases
+- Comments explain each important point
 
-### 6. Типовые ошибки (обязательно, минимум 3-5)
+### 6. Common Mistakes (required, minimum 3-5)
 
-Формат: **Симптом → Причина → Решение**
+Format: **Symptom → Cause → Solution**
 
-**Шаблон:**
+**Template:**
 ```markdown
-### Ошибка N: [Название]
+### Mistake N: [Name]
 
-**Симптом:** [Что видит пользователь, когда что-то не так]
+**Symptom:** [What user sees when something is wrong]
 
-**Причина:** [Почему это происходит]
+**Cause:** [Why this happens]
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
+// BAD
 // ...
 
-// ХОРОШО
+// GOOD
 // ...
 ```
 ```
 
-**Пример:**
+**Example:**
 ```markdown
-### Ошибка 1: История не сохраняется
+### Mistake 1: History Not Saved
 
-**Симптом:** Агент не помнит предыдущие сообщения.
+**Symptom:** Agent doesn't remember previous messages.
 
-**Причина:** Вы не добавляете ответ ассистента в историю.
+**Cause:** You don't add assistant's answer to history.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
+// BAD
 messages = append(messages, userMessage)
 resp := client.CreateChatCompletion(...)
 answer := resp.Choices[0].Message.Content
-// История не обновлена!
+// History not updated!
 
-// ХОРОШО
+// GOOD
 messages = append(messages, userMessage)
 resp := client.CreateChatCompletion(...)
-messages = append(messages, resp.Choices[0].Message)  // Сохраняем ответ!
+messages = append(messages, resp.Choices[0].Message)  // Save answer!
 ```
 ```
 
-### 7. Мини-упражнения / Самопроверка (обязательно)
+### 7. Mini-Exercises / Self-Check (required)
 
-Практические задания для закрепления материала.
+Practical assignments for reinforcing material.
 
-**Формат:**
+**Format:**
 ```markdown
-## Мини-упражнения
+## Mini-Exercises
 
-### Упражнение 1: [Название]
+### Exercise 1: [Name]
 
-[Описание задания]
+[Assignment description]
 
 ```go
-// Шаблон кода для начала
+// Code template to start
 ```
 
-**Ожидаемый результат:**
-- [Критерий 1]
-- [Критерий 2]
+**Expected result:**
+- [Criterion 1]
+- [Criterion 2]
 ```
 
-### 8. Чек-лист "Готово" (обязательно)
+### 8. "Done" Checklist (required)
 
-Список критериев, по которым читатель может проверить, что понял материал.
+List of criteria by which reader can check they understood the material.
 
-**Формат:**
+**Format:**
 ```markdown
-## Критерии сдачи / Чек-лист
+## Completion Criteria / Checklist
 
-✅ **Сдано:**
-- [Критерий 1]
-- [Критерий 2]
+✅ **Completed:**
+- [Criterion 1]
+- [Criterion 2]
 
-❌ **Не сдано:**
-- [Типовая ошибка 1]
-- [Типовая ошибка 2]
+❌ **Not completed:**
+- [Common mistake 1]
+- [Common mistake 2]
 ```
 
-### 9. Для любопытных (опционально, но рекомендуется)
+### 9. For the Curious (optional, but recommended)
 
-Формализация, математика, глубокие детали. Выносим в конец, чтобы не ломать основной поток.
+Formalization, mathematics, deep details. Put at the end so as not to break main flow.
 
-**Формат:**
+**Format:**
 ```markdown
-## Для любопытных
+## For the Curious
 
-> Этот раздел объясняет [что] на более глубоком уровне. Можно пропустить, если вас интересует только практика.
+> This section explains [what] at a deeper level. Can skip if you're only interested in practice.
 
-[Формализация, математика, детали реализации]
+[Formalization, mathematics, implementation details]
 ```
 
-### 10. Связь с другими главами (обязательно)
+### 10. Connection with Other Chapters (required)
 
-Ссылки на связанные главы и лабораторные работы.
+Links to related chapters and lab assignments.
 
-**Формат:**
+**Format:**
 ```markdown
-## Связь с другими главами
+## Connection with Other Chapters
 
-- **[Глава X: Название](../XX-chapter/README.md)** — [как связана]
-- **[Lab XX: Название](../../labs/labXX-name/README.md)** — [практика]
+- **[Chapter X: Name](../XX-chapter/README.md)** — [how related]
+- **[Lab XX: Name](../../labs/labXX-name/README.md)** — [practice]
 ```
 
-### 11. Что дальше? (обязательно)
+### 11. What's Next? (required)
 
-Навигация к следующей главе.
+Navigation to next chapter.
 
-**Формат:**
+**Format:**
 ```markdown
-## Что дальше?
+## What's Next?
 
-После изучения [темы] переходите к:
-- **[XX. Следующая глава](../XX-next/README.md)** — [краткое описание]
+After studying [topic], proceed to:
+- **[XX. Next Chapter](../XX-next/README.md)** — [brief description]
 ```
 
-## Правила простого языка
+## Simple Language Rules
 
-### Структура предложений
+### Sentence Structure
 
-- **Короткие предложения** (до 20 слов)
-- **Один факт на предложение**
-- **Активный залог** ("Агент вызывает функцию" вместо "Функция вызывается агентом")
+- **Short sentences** (up to 20 words)
+- **One fact per sentence**
+- **Active voice** ("Agent calls function" instead of "Function is called by agent")
 
-### Терминология
+### Terminology
 
-- **Сначала объясняем простыми словами**, потом используем термин
-- **Единообразие терминов** — используем один термин для одного понятия
-- **Англицизмы только при необходимости** — если есть хороший русский эквивалент, используем его
+- **Explain in simple terms first**, then use term
+- **Term consistency** — use one term for one concept
+- **Anglicisms only when necessary** — if there's a good Russian equivalent, use it
 
-**Пример:**
+**Example:**
 ```markdown
-// ПЛОХО
-Function Calling — это механизм вызова функций.
+// BAD
+Function Calling is a function call mechanism.
 
-// ХОРОШО
-Function Calling (вызов функций) — это механизм, при котором LLM возвращает не текст, а структурированный JSON с именем функции и аргументами.
+// GOOD
+Function Calling (function calls) is a mechanism where LLM returns not text, but structured JSON with function name and arguments.
 ```
 
-### Примеры кода
+### Code Examples
 
-**Правила:**
-- **Минимальный пример сначала** — показываем самую простую рабочую версию
-- **Затем расширяем** — добавляем сложность постепенно
-- **Комментарии объясняют "почему"**, а не "что" (код самодокументирован)
-- **Избегаем "простыней"** — если пример длинный, разбиваем на шаги
+**Rules:**
+- **Minimal example first** — show simplest working version
+- **Then expand** — add complexity gradually
+- **Comments explain "why"**, not "what" (code is self-documenting)
+- **Avoid "walls of text"** — if example is long, break into steps
 
-**Пример:**
+**Example:**
 ```markdown
-// Минимальный пример
+// Minimal example
 ```go
 tools := []openai.Tool{
     {
@@ -275,7 +275,7 @@ tools := []openai.Tool{
 }
 ```
 
-// Расширенный пример с валидацией
+// Extended example with validation
 ```go
 tools := []openai.Tool{
     {
@@ -296,159 +296,158 @@ tools := []openai.Tool{
 ```
 ```
 
-### Магия vs Реальность
+### Magic vs Reality
 
-Для объяснения сложных концепций используем паттерн "Магия vs Реальность":
+For explaining complex concepts, use "Magic vs Reality" pattern:
 
-**Формат:**
+**Format:**
 ```markdown
-### [Концепция] — Магия vs Реальность
+### [Concept] — Magic vs Reality
 
-**❌ Магия (как обычно объясняют):**
-> [Упрощенное/неправильное объяснение]
+**❌ Magic (how usually explained):**
+> [Simplified/incorrect explanation]
 
-**✅ Реальность (как на самом деле):**
+**✅ Reality (how it actually works):**
 
-[Детальное объяснение с примерами кода]
+[Detailed explanation with code examples]
 ```
 
-Это помогает:
-- Развеять мифы и упрощения
-- Показать реальный механизм работы
-- Дать читателю правильное понимание
+This helps:
+- Dispel myths and simplifications
+- Show real mechanism
+- Give reader correct understanding
 
-## Формат "Типовые ошибки"
+## "Common Mistakes" Format
 
-Каждая ошибка должна следовать шаблону:
+Each mistake should follow template:
 
 ```markdown
-### Ошибка N: [Краткое название]
+### Mistake N: [Short name]
 
-**Симптом:** [Что видит пользователь]
+**Symptom:** [What user sees]
 
-**Причина:** [Почему это происходит]
+**Cause:** [Why this happens]
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
-[Неправильный код]
+// BAD
+[Wrong code]
 
-// ХОРОШО
-[Правильный код]
+// GOOD
+[Correct code]
 ```
 ```
 
-**Важно:**
-- Начинаем с симптома (что видит пользователь)
-- Объясняем причину (почему так происходит)
-- Даем конкретное решение с кодом
+**Important:**
+- Start with symptom (what user sees)
+- Explain cause (why it happens)
+- Give concrete solution with code
 
-## Формат "Мини-упражнения"
+## "Mini-Exercises" Format
 
 ```markdown
-## Мини-упражнения
+## Mini-Exercises
 
-### Упражнение N: [Название]
+### Exercise N: [Name]
 
-[Описание задания и контекста]
+[Assignment description and context]
 
 ```go
-// Шаблон кода (если нужен)
+// Code template (if needed)
 ```
 
-**Ожидаемый результат:**
-- [Критерий 1]
-- [Критерий 2]
+**Expected result:**
+- [Criterion 1]
+- [Criterion 2]
 ```
 
-## Формат "Чек-лист"
+## "Checklist" Format
 
 ```markdown
-## Критерии сдачи / Чек-лист
+## Completion Criteria / Checklist
 
-✅ **Сдано:**
-- [Критерий 1]
-- [Критерий 2]
+✅ **Completed:**
+- [Criterion 1]
+- [Criterion 2]
 
-❌ **Не сдано:**
-- [Типовая ошибка 1]
-- [Типовая ошибка 2]
+❌ **Not completed:**
+- [Common mistake 1]
+- [Common mistake 2]
 ```
 
-## Примеры из разных доменов
+## Examples from Different Domains
 
-**Правило:** Один главный сквозной сценарий (DevOps) + 1-2 коротких примера из других доменов только там, где это усиливает понимание.
+**Rule:** One main continuous scenario (DevOps) + 1-2 short examples from other domains only where it enhances understanding.
 
-**Когда добавлять примеры из других доменов:**
-- Когда концепция универсальна и примеры из разных доменов показывают разные аспекты
-- Когда нужно показать, что подход работает не только в DevOps
+**When to add examples from other domains:**
+- When concept is universal and examples from different domains show different aspects
+- When need to show that approach works not only in DevOps
 
-**Когда НЕ добавлять:**
-- Если примеры дублируют друг друга
-- Если это усложняет чтение без пользы
+**When NOT to add:**
+- If examples duplicate each other
+- If it complicates reading without benefit
 
-## Навигация между главами
+## Navigation Between Chapters
 
-В конце каждой главы:
+At the end of each chapter:
 
 ```markdown
 ---
 
-**Навигация:** [← Предыдущая глава](../XX-prev/README.md) | [Оглавление](../README.md) | [Следующая глава →](../XX-next/README.md)
+**Navigation:** [← Previous Chapter](../XX-prev/README.md) | [Table of Contents](../README.md) | [Next Chapter →](../XX-next/README.md)
 ```
 
-## Заголовки
+## Headings
 
-**Структура:**
-- `#` — название главы (только в начале файла)
-- `##` — основные разделы (Зачем, Теория, Алгоритм, и т.д.)
-- `###` — подразделы (Ошибка 1, Упражнение 1, и т.д.)
-- `####` — только если действительно нужно
+**Structure:**
+- `#` — chapter title (only at file start)
+- `##` — main sections (Why, Theory, Algorithm, etc.)
+- `###` — subsections (Mistake 1, Exercise 1, etc.)
+- `####` — only if really needed
 
-**Правила:**
-- Заголовки должны быть описательными, а не абстрактными
-- Избегаем "Введение", "Заключение" — используем конкретные названия
+**Rules:**
+- Headings should be descriptive, not abstract
+- Avoid "Introduction", "Conclusion" — use concrete names
 
-## Диаграммы (Mermaid)
+## Diagrams (Mermaid)
 
-Используем диаграммы для визуализации:
-- Архитектуры
-- Алгоритмов
-- Потоков данных
+Use diagrams for visualization:
+- Architecture
+- Algorithms
+- Data flows
 
-**Правила:**
-- Диаграммы должны быть простыми и понятными
-- Если диаграмма сложная, разбиваем на несколько простых
-- Всегда добавляем текстовое описание под диаграммой
+**Rules:**
+- Diagrams should be simple and clear
+- If diagram is complex, break into several simple ones
+- Always add text description under diagram
 
-## Ссылки
+## Links
 
-**Формат:**
-- На другие главы: `[Название](../XX-chapter/README.md)`
-- На лабораторные: `[Lab XX: Название](../../labs/labXX-name/README.md)`
-- На разделы: `[Название раздела](../XX-chapter/README.md#anchor)`
+**Format:**
+- To other chapters: `[Name](../XX-chapter/README.md)`
+- To labs: `[Lab XX: Name](../../labs/labXX-name/README.md)`
+- To sections: `[Section Name](../XX-chapter/README.md#anchor)`
 
-**Правила:**
-- Всегда используем относительные пути
-- Проверяем, что ссылки работают
-- Используем описательные названия ссылок, а не "здесь" или "тут"
+**Rules:**
+- Always use relative paths
+- Check that links work
+- Use descriptive link names, not "here" or "there"
 
-## Проверка перед коммитом
+## Pre-Commit Checklist
 
-Перед коммитом проверьте:
+Before commit, check:
 
-- [ ] Структура соответствует шаблону главы
-- [ ] Есть раздел "Зачем это нужно?"
-- [ ] Есть реальный кейс
-- [ ] Есть минимум 3 типовые ошибки
-- [ ] Есть мини-упражнения
-- [ ] Есть чек-лист
-- [ ] Примеры кода минимальны и понятны
-- [ ] Нет академического жаргона без объяснения
-- [ ] Все ссылки работают
-- [ ] Навигация в конце главы корректна
+- [ ] Structure matches chapter template
+- [ ] Has "Why This Chapter?" section
+- [ ] Has real-world case study
+- [ ] Has minimum 3 common mistakes
+- [ ] Has mini-exercises
+- [ ] Has checklist
+- [ ] Code examples are minimal and clear
+- [ ] No academic jargon without explanation
+- [ ] All links work
+- [ ] Navigation at end of chapter is correct
 
 ---
 
-**См. также:** [`.cursor/rules.md`](../../.cursor/rules.md) — правила для Cursor AI
-
+**See also:** [`.cursor/rules.md`](../../.cursor/rules.md) — rules for Cursor AI

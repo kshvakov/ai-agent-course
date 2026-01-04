@@ -1,138 +1,138 @@
-# Методическое пособие: Lab 09 — Context Optimization
+# Study Guide: Lab 09 — Context Optimization
 
-## Зачем это нужно?
+## Why This Lab?
 
-В этой лабораторной работе вы научитесь управлять контекстным окном LLM — критически важный навык для создания долгоживущих агентов.
+In this laboratory assignment, you'll learn to manage the LLM context window — a critically important skill for creating long-lived agents.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Вы создали автономного DevOps агента, который решает инциденты. Агент работает в цикле:
-1. Проверяет метрики
-2. Анализирует логи
-3. Проверяет конфигурацию
-4. Исправляет проблему
-5. Проверяет снова
+**Situation:** You've created an autonomous DevOps agent that resolves incidents. Agent works in a loop:
+1. Checks metrics
+2. Analyzes logs
+3. Checks configuration
+4. Fixes problem
+5. Checks again
 
-После 15 шагов контекст переполняется (4000 токенов), и агент:
-- Забывает начальную задачу
-- Повторяет уже выполненные шаги
-- Теряет важную информацию
+After 15 steps, context overflows (4000 tokens), and agent:
+- Forgets initial task
+- Repeats already executed steps
+- Loses important information
 
-**Проблема:** История слишком длинная, не влезает в контекстное окно.
+**Problem:** History too long, doesn't fit in context window.
 
-**Решение:** Оптимизация контекста — сжатие старых сообщений через саммаризацию, сохраняя важную информацию.
+**Solution:** Context optimization — compressing old messages via summarization, preserving important information.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### Контекстное окно — это ограничение
+### Context Window is a Limitation
 
-**Контекстное окно** — это максимальное количество токенов, которое модель может "увидеть" за раз.
+**Context window** is the maximum number of tokens the model can "see" at once.
 
-**Примеры лимитов:**
-- GPT-3.5-turbo: 4,096 токенов
-- GPT-4: 8,192 токенов
-- GPT-4-turbo: 128,000 токенов
-- Llama 2: 4,096 токенов
+**Example limits:**
+- GPT-3.5-turbo: 4,096 tokens
+- GPT-4: 8,192 tokens
+- GPT-4-turbo: 128,000 tokens
+- Llama 2: 4,096 tokens
 
-**Что входит в контекст:**
-- System Prompt (200-500 токенов)
-- История диалога (растет с каждым сообщением)
-- Tool calls и их результаты (50-200 токенов каждый)
-- Новый запрос пользователя
+**What's included in context:**
+- System Prompt (200-500 tokens)
+- Dialogue history (grows with each message)
+- Tool calls and their results (50-200 tokens each)
+- New user request
 
-### Почему контекст переполняется?
+### Why Does Context Overflow?
 
-**Пример:**
+**Example:**
 ```
-Сообщение 1: "Привет! Меня зовут Иван" (10 токенов)
-Сообщение 2: "Я работаю DevOps инженером" (8 токенов)
-... (еще 18 сообщений по 20 токенов) ...
-Сообщение 21: "Как меня зовут?" (5 токенов)
+Message 1: "Hello! My name is Ivan" (10 tokens)
+Message 2: "I work as a DevOps engineer" (8 tokens)
+... (18 more messages, 20 tokens each) ...
+Message 21: "What's my name?" (5 tokens)
 
-ИТОГО: 10 + 8 + (18 × 20) + 5 = 383 токена
+TOTAL: 10 + 8 + (18 × 20) + 5 = 383 tokens
 ```
 
-Но если каждое сообщение содержит результаты инструментов (100+ токенов), контекст быстро переполняется.
+But if each message contains tool results (100+ tokens), context quickly overflows.
 
-### Техники оптимизации
+### Optimization Techniques
 
-#### 1. Подсчет токенов
+#### 1. Token Counting
 
-**Зачем:** Всегда знать, сколько токенов используется.
+**Why:** Always know how many tokens are used.
 
-**Как:**
-- Приблизительно: 1 токен ≈ 4 символа (английский), ≈ 3 символа (русский)
-- Точно: Использовать библиотеку `tiktoken` или `tiktoken-go`
+**How:**
+- Approximately: 1 token ≈ 4 characters (English), ≈ 3 characters (Russian)
+- Precisely: Use library `tiktoken` or `tiktoken-go`
 
-**Пример:**
+**Example:**
 ```go
 func estimateTokens(text string) int {
-    return len(text) / 4  // Приблизительно
+    return len(text) / 4  // Approximately
 }
 ```
 
-#### 2. Обрезка истории (Truncation)
+#### 2. History Truncation
 
-**Зачем:** Быстрое решение, когда история слишком длинная.
+**Why:** Quick solution when history is too long.
 
-**Как:** Оставляем только последние N сообщений.
+**How:** Keep only last N messages.
 
-**Проблема:** Теряем важную информацию из начала.
+**Problem:** We lose important information from the start.
 
-**Пример:**
+**Example:**
 ```go
-// Оставляем только последние 10 сообщений
+// Keep only last 10 messages
 if len(messages) > 10 {
     messages = append(
         []openai.ChatCompletionMessage{messages[0]},  // System
-        messages[len(messages)-9:]...,  // Последние 9
+        messages[len(messages)-9:]...,  // Last 9
     )
 }
 ```
 
-#### 3. Саммаризация (Summarization)
+#### 3. Summarization
 
-**Зачем:** Сохранить важную информацию, сжав старые сообщения.
+**Why:** Preserve important information, compressing old messages.
 
-**Как:** Используем LLM для создания краткого резюме.
+**How:** Use LLM to create brief summary.
 
-**Что сохраняем:**
-- Важные факты (имя пользователя, роль)
-- Решения (что было сделано)
-- Текущее состояние задачи
+**What to preserve:**
+- Important facts (user name, role)
+- Decisions (what was done)
+- Current task state
 
-**Пример:**
+**Example:**
 ```
-Исходная история (2000 токенов):
-- User: "Меня зовут Иван"
-- Assistant: "Привет, Иван!"
-- User: "Я DevOps инженер"
-- Assistant: "Отлично!"
-... (еще 50 сообщений)
+Original history (2000 tokens):
+- User: "My name is Ivan"
+- Assistant: "Hello, Ivan!"
+- User: "I'm a DevOps engineer"
+- Assistant: "Great!"
+... (50 more messages)
 
-Сжатая версия (200 токенов):
-Summary: "Пользователь Иван, DevOps инженер. Обсуждали настройку сервера.
-Текущая задача: проверка мониторинга."
+Compressed version (200 tokens):
+Summary: "User Ivan, DevOps engineer. Discussed server setup.
+Current task: monitoring check."
 ```
 
-#### 4. Адаптивное управление
+#### 4. Adaptive Management
 
-**Зачем:** Выбирать технику в зависимости от ситуации.
+**Why:** Choose technique depending on situation.
 
-**Логика:**
-- < 80% заполненности → ничего не делаем
-- 80-90% → приоритизация (сохраняем важные сообщения)
-- > 90% → саммаризация (сжимаем старые сообщения)
+**Logic:**
+- < 80% full → do nothing
+- 80-90% → prioritization (preserve important messages)
+- > 90% → summarization (compress old messages)
 
-## Алгоритм выполнения
+## Execution Algorithm
 
-### Шаг 1: Подсчет токенов
+### Step 1: Token Counting
 
 ```go
 func estimateTokens(text string) int {
-    // Приблизительная оценка
-    // Для русского: 1 токен ≈ 3 символа
-    // Для английского: 1 токен ≈ 4 символа
+    // Approximate estimate
+    // For Russian: 1 token ≈ 3 characters
+    // For English: 1 token ≈ 4 characters
     return len(text) / 4
 }
 
@@ -140,16 +140,16 @@ func countTokensInMessages(messages []openai.ChatCompletionMessage) int {
     total := 0
     for _, msg := range messages {
         total += estimateTokens(msg.Content)
-        // Tool calls тоже занимают токены
+        // Tool calls also take tokens
         if len(msg.ToolCalls) > 0 {
-            total += len(msg.ToolCalls) * 80  // Примерно 80 токенов на вызов
+            total += len(msg.ToolCalls) * 80  // Approximately 80 tokens per call
         }
     }
     return total
 }
 ```
 
-### Шаг 2: Обрезка истории
+### Step 2: History Truncation
 
 ```go
 func truncateHistory(messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
@@ -161,7 +161,7 @@ func truncateHistory(messages []openai.ChatCompletionMessage, maxTokens int) []o
     result := []openai.ChatCompletionMessage{systemMsg}
     currentTokens := estimateTokens(systemMsg.Content)
     
-    // Идем с конца и добавляем сообщения, пока не достигнем лимита
+    // Go from end and add messages until limit reached
     for i := len(messages) - 1; i > 0; i-- {
         msgTokens := estimateTokens(messages[i].Content)
         if len(messages[i].ToolCalls) > 0 {
@@ -172,7 +172,7 @@ func truncateHistory(messages []openai.ChatCompletionMessage, maxTokens int) []o
             break
         }
         
-        // Добавляем в начало результата
+        // Add to beginning of result
         result = append([]openai.ChatCompletionMessage{messages[i]}, result...)
         currentTokens += msgTokens
     }
@@ -181,11 +181,11 @@ func truncateHistory(messages []openai.ChatCompletionMessage, maxTokens int) []o
 }
 ```
 
-### Шаг 3: Саммаризация
+### Step 3: Summarization
 
 ```go
 func summarizeMessages(ctx context.Context, client *openai.Client, messages []openai.ChatCompletionMessage) string {
-    // Собираем текст всех сообщений (кроме System)
+    // Collect text of all messages (except System)
     conversation := ""
     for i := 1; i < len(messages); i++ {
         msg := messages[i]
@@ -198,7 +198,7 @@ func summarizeMessages(ctx context.Context, client *openai.Client, messages []op
         conversation += fmt.Sprintf("%s: %s\n", role, msg.Content)
     }
     
-    // Создаем промпт для саммаризации
+    // Create prompt for summarization
     summaryPrompt := fmt.Sprintf(`Summarize this conversation, keeping only:
 1. Important facts about the user (name, role, preferences)
 2. Key decisions made
@@ -207,7 +207,7 @@ func summarizeMessages(ctx context.Context, client *openai.Client, messages []op
 Conversation:
 %s`, conversation)
     
-    // Вызываем LLM
+    // Call LLM
     resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
         Model: openai.GPT3Dot5Turbo,
         Messages: []openai.ChatCompletionMessage{
@@ -220,7 +220,7 @@ Conversation:
                 Content: summaryPrompt,
             },
         },
-        Temperature: 0,  // Детерминированная саммаризация
+        Temperature: 0,  // Deterministic summarization
     })
     
     if err != nil {
@@ -231,22 +231,22 @@ Conversation:
 }
 ```
 
-### Шаг 4: Сжатие контекста
+### Step 4: Context Compression
 
 ```go
 func compressOldMessages(ctx context.Context, client *openai.Client, messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
     if len(messages) <= 10 {
-        return messages  // Нечего сжимать
+        return messages  // Nothing to compress
     }
     
     systemMsg := messages[0]
-    oldMessages := messages[1 : len(messages)-10]  // Все кроме последних 10
-    recentMessages := messages[len(messages)-10:]   // Последние 10
+    oldMessages := messages[1 : len(messages)-10]  // All except last 10
+    recentMessages := messages[len(messages)-10:]   // Last 10
     
-    // Сжимаем старые сообщения
+    // Compress old messages
     summary := summarizeMessages(ctx, client, oldMessages)
     
-    // Собираем новый контекст
+    // Assemble new context
     compressed := []openai.ChatCompletionMessage{
         systemMsg,
         {
@@ -260,7 +260,7 @@ func compressOldMessages(ctx context.Context, client *openai.Client, messages []
 }
 ```
 
-### Шаг 5: Приоритизация
+### Step 5: Prioritization
 
 ```go
 func prioritizeMessages(messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
@@ -270,7 +270,7 @@ func prioritizeMessages(messages []openai.ChatCompletionMessage, maxTokens int) 
     
     important := []openai.ChatCompletionMessage{messages[0]}  // System
     
-    // Всегда сохраняем последние 5 сообщений
+    // Always preserve last 5 messages
     startIdx := len(messages) - 5
     if startIdx < 1 {
         startIdx = 1
@@ -281,7 +281,7 @@ func prioritizeMessages(messages []openai.ChatCompletionMessage, maxTokens int) 
         important = append(important, msg)
     }
     
-    // Сохраняем результаты инструментов и ошибки из старых сообщений
+    // Preserve tool results and errors from old messages
     for i := 1; i < startIdx; i++ {
         msg := messages[i]
         if msg.Role == openai.ChatMessageRoleTool {
@@ -295,73 +295,73 @@ func prioritizeMessages(messages []openai.ChatCompletionMessage, maxTokens int) 
 }
 ```
 
-### Шаг 6: Адаптивное управление
+### Step 6: Adaptive Management
 
 ```go
 func adaptiveContextManagement(ctx context.Context, client *openai.Client, messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
     usedTokens := countTokensInMessages(messages)
     
     if usedTokens < threshold80 {
-        // Все хорошо, ничего не делаем
+        // All good, do nothing
         return messages
     } else if usedTokens < threshold90 {
-        // Применяем легкую оптимизацию: приоритизация
+        // Apply light optimization: prioritization
         return prioritizeMessages(messages, maxTokens)
     } else {
-        // Критично! Применяем саммаризацию
+        // Critical! Apply summarization
         return compressOldMessages(ctx, client, messages, maxTokens)
     }
 }
 ```
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: Неправильный подсчет токенов
+### Mistake 1: Incorrect Token Counting
 
-**Симптом:** Контекст переполняется раньше, чем ожидалось.
+**Symptom:** Context overflows earlier than expected.
 
-**Причина:** Не учтены Tool calls, которые занимают много токенов.
+**Cause:** Tool calls not accounted for, which take many tokens.
 
-**Решение:**
+**Solution:**
 ```go
-// Учитывайте Tool calls
+// Account for Tool calls
 if len(msg.ToolCalls) > 0 {
     total += len(msg.ToolCalls) * 80
 }
 ```
 
-### Ошибка 2: Саммаризация теряет важную информацию
+### Mistake 2: Summarization Loses Important Information
 
-**Симптом:** Агент забывает имя пользователя после саммаризации.
+**Symptom:** Agent forgets user's name after summarization.
 
-**Причина:** Промпт для саммаризации не указывает, что сохранять.
+**Cause:** Summarization prompt doesn't specify what to preserve.
 
-**Решение:** Явно укажите в промпте, что сохранять:
+**Solution:** Explicitly specify in prompt what to preserve:
 ```
 "Keep important facts about the user (name, role, preferences)"
 ```
 
-### Ошибка 3: Саммаризация вызывается слишком часто
+### Mistake 3: Summarization Called Too Often
 
-**Симптом:** Медленная работа агента из-за частых вызовов LLM для саммаризации.
+**Symptom:** Slow agent work due to frequent LLM calls for summarization.
 
-**Причина:** Саммаризация применяется при каждом запросе.
+**Cause:** Summarization applied on every request.
 
-**Решение:** Используйте адаптивное управление — саммаризация только при > 90% заполненности.
+**Solution:** Use adaptive management — summarization only when > 90% full.
 
-### Ошибка 4: System Prompt теряется при обрезке
+### Mistake 4: System Prompt Lost During Truncation
 
-**Симптом:** Агент забывает свою роль.
+**Symptom:** Agent forgets its role.
 
-**Причина:** System Prompt не сохранен при обрезке.
+**Cause:** System Prompt not preserved during truncation.
 
-**Решение:** Всегда сохраняйте `messages[0]` (System Prompt).
+**Solution:** Always preserve `messages[0]` (System Prompt).
 
-## Мини-упражнения
+## Mini-Exercises
 
-### Упражнение 1: Точный подсчет токенов
+### Exercise 1: Accurate Token Counting
 
-Используйте библиотеку `github.com/pkoukk/tiktoken-go` для точного подсчета:
+Use library `github.com/pkoukk/tiktoken-go` for accurate counting:
 
 ```go
 import "github.com/pkoukk/tiktoken-go"
@@ -373,31 +373,30 @@ func countTokensAccurate(text string, model string) int {
 }
 ```
 
-### Упражнение 2: Тестирование на длинном диалоге
+### Exercise 2: Testing on Long Dialogue
 
-Создайте тест с 30+ сообщениями и убедитесь, что:
-- Контекст не переполняется
-- Агент помнит начало разговора
-- Саммаризация работает корректно
+Create a test with 30+ messages and ensure:
+- Context doesn't overflow
+- Agent remembers start of conversation
+- Summarization works correctly
 
-## Критерии сдачи
+## Completion Criteria
 
-✅ **Сдано:**
-- Реализован подсчет токенов (приблизительный или точный)
-- Реализована обрезка истории
-- Реализована саммаризация через LLM
-- Реализовано адаптивное управление
-- Агент помнит начало разговора после оптимизации
-- Контекст не переполняется в длинном диалоге (20+ сообщений)
+✅ **Completed:**
+- Token counting implemented (approximate or accurate)
+- History truncation implemented
+- Summarization via LLM implemented
+- Adaptive management implemented
+- Agent remembers start of conversation after optimization
+- Context doesn't overflow in long dialogue (20+ messages)
 
-❌ **Не сдано:**
-- Контекст переполняется
-- Агент забывает важную информацию после оптимизации
-- Саммаризация не работает или работает некорректно
-- System Prompt теряется при обрезке
-- Код не компилируется
+❌ **Not completed:**
+- Context overflows
+- Agent forgets important information after optimization
+- Summarization doesn't work or works incorrectly
+- System Prompt lost during truncation
+- Code doesn't compile
 
 ---
 
-**Следующий шаг:** После успешного прохождения Lab 09 вы освоили все ключевые техники работы с агентами! Можете перейти к изучению [Multi-Agent Systems](../lab08-multi-agent/README.md) или [RAG](../lab07-rag/README.md).
-
+**Next step:** After successfully completing Lab 09, you've mastered all key agent techniques! You can proceed to study [Multi-Agent Systems](../lab08-multi-agent/README.md) or [RAG](../lab07-rag/README.md).

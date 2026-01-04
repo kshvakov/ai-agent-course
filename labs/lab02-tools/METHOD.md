@@ -1,38 +1,38 @@
-# Методическое пособие: Lab 02 — Function Calling (Tools)
+# Study Guide: Lab 02 — Function Calling (Tools)
 
-## Зачем это нужно?
+## Why This Lab?
 
-Обычная LLM возвращает текст. Но для создания агента нам нужно, чтобы модель могла вызывать функции (инструменты). Это превращает LLM из "болтуна" в "работника".
+A regular LLM returns text. But to create an agent, we need the model to be able to call functions (tools). This turns an LLM from a "talker" into a "worker".
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Вы создали чат-бота для DevOps. Пользователь пишет:
-- "Проверь статус сервера web-01"
-- Бот отвечает: "Я проверю статус сервера web-01 для вас..." (текст)
+**Situation:** You've created a chatbot for DevOps. User writes:
+- "Check server status web-01"
+- Bot responds: "I will check server status web-01 for you..." (text)
 
-**Проблема:** Бот не может реально проверить сервер. Он только говорит.
+**Problem:** Bot can't actually check the server. It only talks.
 
-**Решение:** Function Calling позволяет модели вызывать реальные функции Go.
+**Solution:** Function Calling allows the model to call real Go functions.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### Как работает Function Calling?
+### How Does Function Calling Work?
 
-1. **Вы описываете функцию** в формате JSON Schema
-2. **LLM видит описание** и решает: "Мне нужно вызвать эту функцию"
-3. **LLM генерирует JSON** с именем функции и аргументами
-4. **Ваш код парсит JSON** и выполняет реальную функцию
-5. **Результат возвращается** в LLM для дальнейшей обработки
+1. **You describe a function** in JSON Schema format
+2. **LLM sees the description** and decides: "I need to call this function"
+3. **LLM generates JSON** with function name and arguments
+4. **Your code parses JSON** and executes the real function
+5. **Result is returned** to LLM for further processing
 
-### Почему не все модели умеют Tools?
+### Why Don't All Models Support Tools?
 
-Function Calling — это результат специальной тренировки. Если модель не видела примеров вызовов функций, она будет просто продолжать диалог текстом.
+Function Calling is the result of special training. If the model hasn't seen function call examples, it will simply continue the dialogue with text.
 
-**Как проверить:** Запустите Lab 00 перед этой лабой!
+**How to check:** Run Lab 00 before this lab!
 
-## Алгоритм выполнения
+## Execution Algorithm
 
-### Шаг 1: Определение инструмента
+### Step 1: Tool Definition
 
 ```go
 tools := []openai.Tool{
@@ -56,91 +56,91 @@ tools := []openai.Tool{
 }
 ```
 
-**Важно:** `Description` — это самое важное поле! LLM ориентируется именно по нему.
+**Important:** `Description` is the most important field! LLM relies on it.
 
-### Шаг 2: Отправка запроса с инструментами
+### Step 2: Sending Request with Tools
 
 ```go
 req := openai.ChatCompletionRequest{
     Model:    openai.GPT3Dot5Turbo,
     Messages: messages,
-    Tools:    tools,  // Передаем список инструментов
+    Tools:    tools,  // Pass list of tools
 }
 ```
 
-### Шаг 3: Обработка ответа
+### Step 3: Response Processing
 
 ```go
 resp, err := client.CreateChatCompletion(ctx, req)
 msg := resp.Choices[0].Message
 
-// Проверяем, хочет ли модель вызвать функцию
+// Check if model wants to call a function
 if len(msg.ToolCalls) > 0 {
-    // Модель хочет вызвать инструмент!
+    // Model wants to call a tool!
     call := msg.ToolCalls[0]
     fmt.Printf("Function: %s\n", call.Function.Name)
     fmt.Printf("Arguments: %s\n", call.Function.Arguments)
     
-    // Парсим аргументы
+    // Parse arguments
     var args struct {
         IP string `json:"ip"`
     }
     json.Unmarshal([]byte(call.Function.Arguments), &args)
     
-    // Вызываем реальную функцию
+    // Call real function
     result := runGetServerStatus(args.IP)
     fmt.Printf("Result: %s\n", result)
 } else {
-    // Модель ответила текстом
+    // Model responded with text
     fmt.Println("Text response:", msg.Content)
 }
 ```
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: Модель не вызывает функцию
+### Mistake 1: Model Doesn't Call Function
 
-**Симптом:** `len(msg.ToolCalls) == 0`, модель отвечает текстом.
+**Symptom:** `len(msg.ToolCalls) == 0`, model responds with text.
 
-**Причины:**
-1. Модель не обучена на Function Calling
-2. Плохое описание инструмента (`Description` неясное)
-3. Temperature > 0 (слишком случайно)
+**Causes:**
+1. Model not trained on Function Calling
+2. Poor tool description (`Description` unclear)
+3. Temperature > 0 (too random)
 
-**Решение:**
-1. Проверьте модель через Lab 00
-2. Улучшите `Description`: сделайте его конкретным и понятным
-3. Установите `Temperature = 0`
+**Solution:**
+1. Check model via Lab 00
+2. Improve `Description`: make it specific and clear
+3. Set `Temperature = 0`
 
-### Ошибка 2: Сломанный JSON в аргументах
+### Mistake 2: Broken JSON in Arguments
 
-**Симптом:** `json.Unmarshal` возвращает ошибку.
+**Symptom:** `json.Unmarshal` returns error.
 
-**Пример:**
+**Example:**
 ```json
-{"ip": "192.168.1.10"  // Пропущена закрывающая скобка
+{"ip": "192.168.1.10"  // Missing closing brace
 ```
 
-**Решение:**
+**Solution:**
 ```go
-// Валидация JSON перед парсингом
+// Validate JSON before parsing
 if !json.Valid([]byte(call.Function.Arguments)) {
     return "Error: Invalid JSON", nil
 }
 ```
 
-### Ошибка 3: Неправильное имя функции
+### Mistake 3: Wrong Function Name
 
-**Симптом:** Модель вызывает функцию с другим именем.
+**Symptom:** Model calls function with different name.
 
-**Пример:**
+**Example:**
 ```json
-{"name": "check_server"}  // Но функция называется "get_server_status"
+{"name": "check_server"}  // But function is called "get_server_status"
 ```
 
-**Решение:**
+**Solution:**
 ```go
-// Валидация имени функции
+// Validate function name
 allowedFunctions := map[string]bool{
     "get_server_status": true,
 }
@@ -149,37 +149,36 @@ if !allowedFunctions[call.Function.Name] {
 }
 ```
 
-## Мини-упражнения
+## Mini-Exercises
 
-### Упражнение 1: Добавьте второй инструмент
+### Exercise 1: Add Second Tool
 
-Создайте инструмент `ping_host(host string)` и проверьте, что модель правильно выбирает между двумя инструментами.
+Create a `ping_host(host string)` tool and verify that the model correctly chooses between two tools.
 
-### Упражнение 2: Улучшите Description
+### Exercise 2: Improve Description
 
-Попробуйте разные описания и посмотрите, как это влияет на выбор модели:
+Try different descriptions and see how it affects model choice:
 
 ```go
-// Вариант 1: Короткое
+// Option 1: Short
 Description: "Ping a host"
 
-// Вариант 2: Детальное
+// Option 2: Detailed
 Description: "Ping a host to check network connectivity. Returns latency in milliseconds."
 ```
 
-## Критерии сдачи
+## Completion Criteria
 
-✅ **Сдано:**
-- Модель успешно вызывает функцию
-- Аргументы парсятся корректно
-- Результат функции обрабатывается
+✅ **Completed:**
+- Model successfully calls function
+- Arguments parsed correctly
+- Function result processed
 
-❌ **Не сдано:**
-- Модель не вызывает функцию (только текст)
-- JSON аргументов сломан
-- Код не компилируется
+❌ **Not completed:**
+- Model doesn't call function (only text)
+- JSON arguments broken
+- Code doesn't compile
 
 ---
 
-**Следующий шаг:** После успешного прохождения Lab 02 переходите к [Lab 03: Architecture](../lab03-real-world/README.md)
-
+**Next step:** After successfully completing Lab 02, proceed to [Lab 03: Architecture](../lab03-real-world/README.md)

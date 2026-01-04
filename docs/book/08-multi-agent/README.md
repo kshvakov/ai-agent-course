@@ -1,39 +1,39 @@
 # 08. Multi-Agent Systems
 
-## Зачем это нужно?
+## Why This Chapter?
 
-Один агент "мастер на все руки" часто путается в инструментах. Когда у агента слишком много инструментов (20+), модель начинает путаться в выборе и делает ошибки.
+A single "jack-of-all-trades" agent often gets confused with tools. When an agent has too many tools (20+), the model starts confusing choices and makes mistakes.
 
-Эффективнее разделить ответственность: создать команду узких специалистов, управляемую главным агентом (Supervisor). Каждый специалист знает только свои инструменты и фокусируется на своей области.
+It's more effective to divide responsibility: create a team of narrow specialists, managed by a main agent (Supervisor). Each specialist knows only their tools and focuses on their domain.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Вы создали агента для DevOps с 15 инструментами: проверка сетей, работа с БД, управление сервисами, логи, метрики, безопасность и т.д.
+**Situation:** You created a DevOps agent with 15 tools: network checks, database work, service management, logs, metrics, security, etc.
 
-**Проблема:** Агент путается в инструментах. Когда пользователь просит "Проверь доступность БД и узнай версию", агент может вызвать неправильный инструмент или пропустить шаг.
+**Problem:** Agent gets confused with tools. When user asks "Check database availability and find out version", agent may call wrong tool or skip a step.
 
-**Решение:** Multi-Agent система с Supervisor и специалистами. Supervisor делегирует задачу Network Expert для проверки доступности и DB Expert для получения версии. Каждый специалист фокусируется только на своей области.
+**Solution:** Multi-Agent system with Supervisor and specialists. Supervisor delegates task to Network Expert for availability check and DB Expert for version. Each specialist focuses only on their domain.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### Как работает Multi-Agent?
+### How Does Multi-Agent Work?
 
-1. **Supervisor получает задачу** от пользователя
-2. **Supervisor анализирует задачу** и решает, какие специалисты нужны
-3. **Supervisor вызывает специалистов** через tool calls
-4. **Специалисты выполняют задачи** в изолированном контексте
-5. **Результаты возвращаются Supervisor-у**, который собирает ответ
+1. **Supervisor receives task** from user
+2. **Supervisor analyzes task** and decides which specialists are needed
+3. **Supervisor calls specialists** via tool calls
+4. **Specialists perform tasks** in isolated context
+5. **Results returned to Supervisor**, who assembles answer
 
-**Ключевой момент:** Изоляция контекста — каждый специалист видит только свою задачу, а не всю историю Supervisor-а. Это экономит токены и фокусирует внимание.
+**Key point:** Context isolation — each specialist sees only their task, not Supervisor's entire history. This saves tokens and focuses attention.
 
-## Паттерн Supervisor (Начальник-Подчиненный)
+## Supervisor Pattern (Boss-Subordinate)
 
-**Архитектура:**
+**Architecture:**
 
-- **Supervisor:** Главный мозг. Не имеет инструментов, но знает, кто что умеет.
-- **Workers:** Специализированные агенты с узким набором инструментов.
+- **Supervisor:** Main brain. Has no tools, but knows who can do what.
+- **Workers:** Specialized agents with narrow tool sets.
 
-**Изоляция контекста:** Worker не видит всей переписки Supervisor-а, только свою задачу. Это экономит токены и фокусирует внимание.
+**Context isolation:** Worker doesn't see Supervisor's entire conversation, only their task. This saves tokens and focuses attention.
 
 ```mermaid
 graph TD
@@ -47,19 +47,19 @@ graph TD
     Supervisor --> User
 ```
 
-## Пример для DevOps — Магия vs Реальность
+## DevOps Example — Magic vs Reality
 
-**❌ Магия:**
-> Supervisor "думает" и "делегирует" задачи специалистам
+**❌ Magic:**
+> Supervisor "thinks" and "delegates" tasks to specialists
 
-**✅ Реальность:**
+**✅ Reality:**
 
-### Как работает Multi-Agent на практике
+### How Multi-Agent Works in Practice
 
-**Шаг 1: Supervisor получает задачу**
+**Step 1: Supervisor Receives Task**
 
 ```go
-// Supervisor имеет инструменты для вызова Workers
+// Supervisor has tools to call Workers
 supervisorTools := []openai.Tool{
     {
         Function: &openai.FunctionDefinition{
@@ -91,11 +91,11 @@ supervisorTools := []openai.Tool{
 
 supervisorMessages := []openai.ChatCompletionMessage{
     {Role: "system", Content: "You are a Supervisor. Delegate tasks to specialists."},
-    {Role: "user", Content: "Проверь, доступен ли сервер БД, и если да — узнай версию"},
+    {Role: "user", Content: "Check if DB server is available, and if yes — find out version"},
 }
 ```
 
-**Шаг 2: Supervisor генерирует tool calls для Workers**
+**Step 2: Supervisor Generates Tool Calls for Workers**
 
 ```go
 supervisorResp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
@@ -106,28 +106,28 @@ supervisorResp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionReque
 
 supervisorMsg := supervisorResp.Choices[0].Message
 // supervisorMsg.ToolCalls = [
-//     {Function: {Name: "ask_network_expert", Arguments: "{\"question\": \"Проверь доступность db-host.example.com\"}"}},
-//     {Function: {Name: "ask_database_expert", Arguments: "{\"question\": \"Какая версия PostgreSQL на db-host?\"}"}},
+//     {Function: {Name: "ask_network_expert", Arguments: "{\"question\": \"Check availability of db-host.example.com\"}"}},
+//     {Function: {Name: "ask_database_expert", Arguments: "{\"question\": \"What PostgreSQL version on db-host?\"}"}},
 // ]
 ```
 
-**Почему Supervisor вызвал оба инструмента?**
-- Supervisor видит задачу "проверить доступность" → связывает с Network Expert
-- Supervisor видит "узнай версию" → связывает с DB Expert
-- Supervisor понимает последовательность: сначала сеть, потом БД
+**Why did Supervisor call both tools?**
+- Supervisor sees task "check availability" → links to Network Expert
+- Supervisor sees "find out version" → links to DB Expert
+- Supervisor understands sequence: network first, then DB
 
-**Шаг 3: Runtime вызывает Worker для Network Expert**
+**Step 3: Runtime Calls Worker for Network Expert**
 
 ```go
-// Runtime перехватывает tool call "ask_network_expert"
+// Runtime intercepts tool call "ask_network_expert"
 func askNetworkExpert(question string) string {
-    // Создаем НОВЫЙ контекст для Worker (изоляция!)
+    // Create NEW context for Worker (isolation!)
     workerMessages := []openai.ChatCompletionMessage{
         {Role: "system", Content: "You are a Network Specialist. Use ping tool to check connectivity."},
-        {Role: "user", Content: question},  // Только вопрос, без всей истории Supervisor!
+        {Role: "user", Content: question},  // Only question, without Supervisor's entire history!
     }
     
-    // Worker имеет свои инструменты
+    // Worker has its own tools
     workerTools := []openai.Tool{
         {
             Function: &openai.FunctionDefinition{
@@ -142,20 +142,20 @@ func askNetworkExpert(question string) string {
         },
     }
     
-    // Запускаем Worker как отдельного агента
+    // Run Worker as separate agent
     workerResp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
         Model:    openai.GPT3Dot5Turbo,
-        Messages: workerMessages,  // Изолированный контекст!
+        Messages: workerMessages,  // Isolated context!
         Tools:    workerTools,
     })
     
     workerMsg := workerResp.Choices[0].Message
     // workerMsg.ToolCalls = [{Function: {Name: "ping", Arguments: "{\"host\": \"db-host.example.com\"}"}}]
     
-    // Выполняем ping
+    // Execute ping
     pingResult := ping("db-host.example.com")  // "Host is reachable"
     
-    // Worker видит результат и формулирует ответ
+    // Worker sees result and formulates answer
     workerMessages = append(workerMessages, workerMsg)
     workerMessages = append(workerMessages, openai.ChatCompletionMessage{
         Role:    "tool",
@@ -168,24 +168,24 @@ func askNetworkExpert(question string) string {
         Tools:    workerTools,
     })
     
-    // Возвращаем финальный ответ Worker-а Supervisor-у
+    // Return Worker's final answer to Supervisor
     return workerResp2.Choices[0].Message.Content  // "Host db-host.example.com is reachable"
 }
 ```
 
-**Ключевой момент изоляции:**
-- Worker **не видит** всю историю Supervisor-а
-- Worker видит только свой вопрос и свой контекст
-- Это экономит токены и фокусирует внимание Worker-а
+**Key isolation point:**
+- Worker **doesn't see** Supervisor's entire history
+- Worker sees only its question and its context
+- This saves tokens and focuses Worker's attention
 
-**Шаг 4: Runtime вызывает Worker для DB Expert**
+**Step 4: Runtime Calls Worker for DB Expert**
 
 ```go
 func askDatabaseExpert(question string) string {
-    // Аналогично Network Expert, но с другими инструментами
+    // Similarly to Network Expert, but with different tools
     workerMessages := []openai.ChatCompletionMessage{
         {Role: "system", Content: "You are a DB Specialist. Use SQL tools."},
-        {Role: "user", Content: question},  // Изолированный контекст!
+        {Role: "user", Content: question},  // Isolated context!
     }
     
     workerTools := []openai.Tool{
@@ -202,81 +202,81 @@ func askDatabaseExpert(question string) string {
         },
     }
     
-    // Worker генерирует SQL и выполняет
-    // Возвращает: "PostgreSQL 15.2"
+    // Worker generates SQL and executes
+    // Returns: "PostgreSQL 15.2"
     return "PostgreSQL 15.2"
 }
 ```
 
-**Шаг 5: Результаты Workers возвращаются Supervisor-у**
+**Step 5: Worker Results Returned to Supervisor**
 
 ```go
-// Runtime добавляет результаты как tool messages
+// Runtime adds results as tool messages
 supervisorMessages = append(supervisorMessages, supervisorMsg)
 supervisorMessages = append(supervisorMessages, openai.ChatCompletionMessage{
     Role:       "tool",
-    Content:    askNetworkExpert("Проверь доступность db-host.example.com"),  // "Host is reachable"
+    Content:    askNetworkExpert("Check availability of db-host.example.com"),  // "Host is reachable"
     ToolCallID: supervisorMsg.ToolCalls[0].ID,
 })
 supervisorMessages = append(supervisorMessages, openai.ChatCompletionMessage{
     Role:       "tool",
-    Content:    askDatabaseExpert("Какая версия PostgreSQL на db-host?"),  // "PostgreSQL 15.2"
+    Content:    askDatabaseExpert("What PostgreSQL version on db-host?"),  // "PostgreSQL 15.2"
     ToolCallID: supervisorMsg.ToolCalls[1].ID,
 })
 ```
 
-**Шаг 6: Supervisor собирает результаты и отвечает**
+**Step 6: Supervisor Assembles Results and Responds**
 
 ```go
-// Отправляем Supervisor-у результаты Workers
+// Send Supervisor results from Workers
 supervisorResp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
     Model:    openai.GPT4,
-    Messages: supervisorMessages,  // Supervisor видит результаты обоих Workers!
+    Messages: supervisorMessages,  // Supervisor sees results from both Workers!
     Tools:    supervisorTools,
 })
 
 finalMsg := supervisorResp2.Choices[0].Message
-// finalMsg.Content = "Сервер БД доступен (ping успешен). Версия PostgreSQL: 15.2"
+// finalMsg.Content = "DB server is available (ping successful). PostgreSQL version: 15.2"
 ```
 
-**Почему это не магия:**
+**Why this is not magic:**
 
-1. **Supervisor вызывает Workers как обычные tools** — это не "делегирование", а tool call
-2. **Workers — это отдельные агенты** — каждый со своим контекстом и инструментами
-3. **Изоляция контекста** — Worker не видит историю Supervisor-а, только свой вопрос
-4. **Runtime управляет всем** — он перехватывает tool calls Supervisor-а, запускает Workers, собирает результаты
+1. **Supervisor calls Workers as regular tools** — this is not "delegation", but tool call
+2. **Workers are separate agents** — each with its own context and tools
+3. **Context isolation** — Worker doesn't see Supervisor's history, only its question
+4. **Runtime manages everything** — it intercepts Supervisor's tool calls, runs Workers, collects results
 
-**Ключевой момент:** Multi-Agent — это не магия "командования", а механизм вызова специализированных агентов через tool calls с изоляцией контекста.
+**Key point:** Multi-Agent is not magic "commanding", but a mechanism for calling specialized agents through tool calls with context isolation.
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: Нет изоляции контекста
+### Mistake 1: No Context Isolation
 
-**Симптом:** Worker видит всю историю Supervisor-а, что приводит к переполнению контекста и путанице.
+**Symptom:** Worker sees Supervisor's entire history, leading to context overflow and confusion.
 
-**Причина:** Worker получает полную историю сообщений Supervisor-а вместо изолированного контекста.
+**Cause:** Worker receives Supervisor's full message history instead of isolated context.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО: Worker видит всю историю Supervisor-а
-workerMessages := supervisorMessages  // Вся история!
+// BAD: Worker sees Supervisor's entire history
+workerMessages := supervisorMessages  // Full history!
 
-// ХОРОШО: Worker получает только свой вопрос
+// GOOD: Worker receives only its question
 workerMessages := []openai.ChatCompletionMessage{
     {Role: "system", Content: "You are a Network Specialist."},
-    {Role: "user", Content: question},  // Только вопрос!
+    {Role: "user", Content: question},  // Only question!
 }
 ```
 
-### Ошибка 2: Supervisor не знает, кого вызвать
+### Mistake 2: Supervisor Doesn't Know Who to Call
 
-**Симптом:** Supervisor не вызывает нужных специалистов или вызывает неправильных.
+**Symptom:** Supervisor doesn't call needed specialists or calls wrong ones.
 
-**Причина:** Описания инструментов для вызова Workers недостаточно четкие.
+**Cause:** Tool descriptions for calling Workers are not clear enough.
 
-**Решение:**
+**Solution:**
 ```go
-// ХОРОШО: Четкое описание, когда вызывать каждого специалиста
+// GOOD: Clear description, when to call each specialist
 {
     Name: "ask_network_expert",
     Description: "Ask the network specialist about connectivity, pings, ports, network troubleshooting. Use this when user asks about network issues, connectivity, or network-related problems.",
@@ -287,88 +287,87 @@ workerMessages := []openai.ChatCompletionMessage{
 },
 ```
 
-### Ошибка 3: Worker не возвращает результат
+### Mistake 3: Worker Doesn't Return Result
 
-**Симптом:** Supervisor не получает ответ от Worker-а или получает пустой ответ.
+**Symptom:** Supervisor doesn't receive answer from Worker or receives empty answer.
 
-**Причина:** Worker не завершает свою работу или результат не возвращается Supervisor-у.
+**Cause:** Worker doesn't complete its work or result isn't returned to Supervisor.
 
-**Решение:**
+**Solution:**
 ```go
-// ХОРОШО: Worker завершает работу и возвращает результат
+// GOOD: Worker completes work and returns result
 func askNetworkExpert(question string) string {
-    // ... Worker выполняет задачу ...
+    // ... Worker performs task ...
     
-    // Возвращаем финальный ответ Worker-а
+    // Return Worker's final answer
     return workerResp2.Choices[0].Message.Content  // "Host is reachable"
 }
 
-// Supervisor получает результат
+// Supervisor receives result
 supervisorMessages = append(supervisorMessages, openai.ChatCompletionMessage{
     Role:       "tool",
-    Content:    askNetworkExpert("..."),  // Результат Worker-а
+    Content:    askNetworkExpert("..."),  // Worker's result
     ToolCallID: supervisorMsg.ToolCalls[0].ID,
 })
 ```
 
-## Мини-упражнения
+## Mini-Exercises
 
-### Упражнение 1: Реализуйте изоляцию контекста
+### Exercise 1: Implement Context Isolation
 
-Реализуйте функцию создания изолированного контекста для Worker-а:
+Implement a function to create isolated context for Worker:
 
 ```go
 func createWorkerContext(question string, workerRole string) []openai.ChatCompletionMessage {
-    // Создайте изолированный контекст для Worker-а
-    // Только System Prompt и вопрос пользователя
+    // Create isolated context for Worker
+    // Only System Prompt and user question
 }
 ```
 
-**Ожидаемый результат:**
-- Worker получает только System Prompt и свой вопрос
-- Worker не видит историю Supervisor-а
+**Expected result:**
+- Worker receives only System Prompt and its question
+- Worker doesn't see Supervisor's history
 
-### Упражнение 2: Реализуйте Supervisor с двумя специалистами
+### Exercise 2: Implement Supervisor with Two Specialists
 
-Создайте Supervisor-а с двумя специалистами (Network Expert и DB Expert):
+Create a Supervisor with two specialists (Network Expert and DB Expert):
 
 ```go
 supervisorTools := []openai.Tool{
-    // Ваш код здесь
+    // Your code here
 }
 ```
 
-**Ожидаемый результат:**
-- Supervisor может вызвать оба специалиста
-- Описания инструментов четкие и понятные
-- Supervisor правильно выбирает специалиста для задачи
+**Expected result:**
+- Supervisor can call both specialists
+- Tool descriptions are clear and understandable
+- Supervisor correctly chooses specialist for task
 
-## Критерии сдачи / Чек-лист
+## Completion Criteria / Checklist
 
-✅ **Сдано:**
-- Supervisor правильно делегирует задачи специалистам
-- Workers работают в изолированном контексте
-- Результаты Workers возвращаются Supervisor-у
-- Supervisor собирает результаты и формулирует финальный ответ
-- Описания инструментов для вызова Workers четкие
+✅ **Completed:**
+- Supervisor correctly delegates tasks to specialists
+- Workers operate in isolated context
+- Worker results returned to Supervisor
+- Supervisor assembles results and formulates final answer
+- Tool descriptions for calling Workers are clear
 
-❌ **Не сдано:**
-- Worker видит всю историю Supervisor-а (нет изоляции)
-- Supervisor не знает, кого вызвать (плохие описания)
-- Worker не возвращает результат Supervisor-у
-- Supervisor не собирает результаты от Workers
+❌ **Not completed:**
+- Worker sees Supervisor's entire history (no isolation)
+- Supervisor doesn't know who to call (poor descriptions)
+- Worker doesn't return result to Supervisor
+- Supervisor doesn't assemble results from Workers
 
-## Связь с другими главами
+## Connection with Other Chapters
 
-- **Инструменты:** Как Supervisor вызывает Workers через tool calls, см. [Главу 04: Инструменты](../04-tools-and-function-calling/README.md)
-- **Автономность:** Как Supervisor управляет циклом работы, см. [Главу 05: Автономность](../05-autonomy-and-loops/README.md)
+- **Tools:** How Supervisor calls Workers via tool calls, see [Chapter 04: Tools](../04-tools-and-function-calling/README.md)
+- **Autonomy:** How Supervisor manages work cycle, see [Chapter 05: Autonomy](../05-autonomy-and-loops/README.md)
 
-## Что дальше?
+## What's Next?
 
-После изучения Multi-Agent переходите к:
-- **[09. Evals и Надежность](../09-evals-and-reliability/README.md)** — как тестировать агентов
+After studying Multi-Agent, proceed to:
+- **[09. Evals and Reliability](../09-evals-and-reliability/README.md)** — how to test agents
 
 ---
 
-**Навигация:** [← RAG](../07-rag/README.md) | [Оглавление](../README.md) | [Evals →](../09-evals-and-reliability/README.md)
-
+**Navigation:** [← RAG](../07-rag/README.md) | [Table of Contents](../README.md) | [Evals →](../09-evals-and-reliability/README.md)

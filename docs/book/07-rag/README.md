@@ -1,49 +1,49 @@
-# 07. RAG и База Знаний
+# 07. RAG and Knowledge Base
 
-## Зачем это нужно?
+## Why This Chapter?
 
-Обычный агент знает только то, чему его научили при тренировке (до даты cut-off). Он не знает ваши локальные инструкции типа "Как перезагружать сервер Phoenix согласно регламенту №5".
+A regular agent only knows what it was taught during training (up to the cut-off date). It doesn't know your local instructions like "How to restart Phoenix server according to protocol #5".
 
-**RAG (Retrieval Augmented Generation)** — это механизм "подглядывания в шпаргалку". Агент сначала ищет информацию в базе знаний, а потом действует.
+**RAG (Retrieval Augmented Generation)** is a mechanism for "peeking at a cheat sheet". The agent first searches for information in the knowledge base, then acts.
 
-Без RAG агент не может использовать вашу документацию, регламенты и базу знаний. С RAG агент может найти нужную информацию и действовать согласно вашим инструкциям.
+Without RAG, an agent cannot use your documentation, protocols, and knowledge base. With RAG, the agent can find the needed information and act according to your instructions.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Пользователь пишет: "Перезагрузи сервер Phoenix согласно регламенту"
+**Situation:** User writes: "Restart Phoenix server according to protocol"
 
-**Проблема:** Агент не знает регламента перезагрузки сервера Phoenix. Он может выполнить стандартную перезагрузку, которая не соответствует вашим процедурам.
+**Problem:** Agent doesn't know the Phoenix server restart protocol. It may perform a standard restart that doesn't match your procedures.
 
-**Решение:** RAG позволяет агенту найти регламент в базе знаний перед выполнением действия. Агент находит документ "Регламент перезагрузки сервера Phoenix: 1. Выключить балансировщик 2. Перезагрузить сервер 3. Включить балансировщик" и следует этим шагам.
+**Solution:** RAG allows the agent to find the protocol in the knowledge base before performing the action. Agent finds document "Phoenix server restart protocol: 1. Turn off load balancer 2. Restart server 3. Turn on load balancer" and follows these steps.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### Как работает RAG?
+### How Does RAG Work?
 
-1. **Агент получает запрос** от пользователя
-2. **Агент ищет информацию** в базе знаний через инструмент поиска
-3. **База знаний возвращает** релевантные документы
-4. **Агент использует информацию** для выполнения действия
+1. **Agent receives request** from user
+2. **Agent searches for information** in knowledge base via search tool
+3. **Knowledge base returns** relevant documents
+4. **Agent uses information** to perform action
 
-## Как работает RAG? — Магия vs Реальность
+## How Does RAG Work? — Magic vs Reality
 
-**❌ Магия:**
-> Агент "знает", что нужно поискать в базе знаний и сам находит нужную информацию
+**❌ Magic:**
+> Agent "knows" it needs to search the knowledge base and finds the needed information itself
 
-**✅ Реальность:**
+**✅ Reality:**
 
-### Полный протокол RAG
+### Full RAG Protocol
 
-**Шаг 1: Запрос пользователя**
+**Step 1: User Request**
 
 ```go
 messages := []openai.ChatCompletionMessage{
     {Role: "system", Content: "You are a DevOps assistant. Always search knowledge base before actions."},
-    {Role: "user", Content: "Перезагрузи сервер Phoenix согласно регламенту"},
+    {Role: "user", Content: "Restart Phoenix server according to protocol"},
 }
 ```
 
-**Шаг 2: Модель видит описание инструмента поиска**
+**Step 2: Model Sees Search Tool Description**
 
 ```go
 tools := []openai.Tool{
@@ -76,7 +76,7 @@ tools := []openai.Tool{
 }
 ```
 
-**Шаг 3: Модель генерирует tool call для поиска**
+**Step 3: Model Generates Tool Call for Search**
 
 ```go
 resp1, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
@@ -94,18 +94,18 @@ msg1 := resp1.Choices[0].Message
 // }]
 ```
 
-**Почему модель сгенерировала tool_call на поиск?**
-- System Prompt говорит: "Always search knowledge base before actions"
-- Description инструмента говорит: "Use this BEFORE performing actions"
-- Модель видит слово "регламенту" в запросе и связывает это с инструментом поиска
+**Why did model generate tool_call for search?**
+- System Prompt says: "Always search knowledge base before actions"
+- Tool description says: "Use this BEFORE performing actions"
+- Model sees word "protocol" in request and links it to search tool
 
-**Шаг 4: Runtime выполняет поиск**
+**Step 4: Runtime Executes Search**
 
 ```go
 func searchKnowledgeBase(query string) string {
-    // Простой поиск по ключевым словам (в продакшене - векторный поиск)
+    // Simple keyword search (in production - vector search)
     knowledgeBase := map[string]string{
-        "protocols.txt": "Регламент перезагрузки сервера Phoenix:\n1. Выключить балансировщик\n2. Перезагрузить сервер\n3. Включить балансировщик",
+        "protocols.txt": "Phoenix server restart protocol:\n1. Turn off load balancer\n2. Restart server\n3. Turn on load balancer",
     }
     
     for filename, content := range knowledgeBase {
@@ -117,79 +117,79 @@ func searchKnowledgeBase(query string) string {
 }
 
 result1 := searchKnowledgeBase("Phoenix restart protocol")
-// result1 = "File: protocols.txt\nContent: Регламент перезагрузки сервера Phoenix:\n1. Выключить балансировщик..."
+// result1 = "File: protocols.txt\nContent: Phoenix server restart protocol:\n1. Turn off load balancer..."
 ```
 
-**Шаг 5: Результат поиска добавляется в контекст**
+**Step 5: Search Result Added to Context**
 
 ```go
 messages = append(messages, openai.ChatCompletionMessage{
     Role:       "tool",
-    Content:    result1,  // Вся найденная документация!
+    Content:    result1,  // All found documentation!
     ToolCallID: msg1.ToolCalls[0].ID,
 })
-// Теперь messages содержит:
+// Now messages contains:
 // [system, user, assistant(tool_call: search_kb), tool("File: protocols.txt\nContent: ...")]
 ```
 
-**Шаг 6: Модель видит документацию и действует**
+**Step 6: Model Sees Documentation and Acts**
 
 ```go
-// Отправляем обновленную историю (с документацией!) в модель
+// Send updated history (with documentation!) to model
 resp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
     Model:    openai.GPT3Dot5Turbo,
-    Messages: messages,  // Модель видит найденную документацию!
+    Messages: messages,  // Model sees found documentation!
     Tools:    tools,
 })
 
 msg2 := resp2.Choices[0].Message
-// Модель видит в контексте:
-// "Регламент перезагрузки сервера Phoenix:\n1. Выключить балансировщик..."
-// Модель генерирует tool calls согласно регламенту:
+// Model sees in context:
+// "Phoenix server restart protocol:\n1. Turn off load balancer..."
+// Model generates tool calls according to protocol:
 
 // msg2.ToolCalls = [
 //     {Function: {Name: "restart_server", Arguments: "{\"hostname\": \"phoenix\"}"}},
-//     // Или сначала выключить балансировщик, потом сервер
+//     // Or first turn off load balancer, then server
 // ]
 ```
 
-**Почему это не магия:**
+**Why this is not magic:**
 
-1. **Модель не "знает" регламент** — она видит его в контексте после поиска
-2. **Поиск — это обычный tool** — такой же, как `ping` или `restart_service`
-3. **Результат поиска добавляется в `messages[]`** — модель видит его как новое сообщение
-4. **Модель генерирует действия на основе контекста** — она видит документацию и следует ей
+1. **Model doesn't "know" protocol** — it sees it in context after search
+2. **Search is a regular tool** — same as `ping` or `restart_service`
+3. **Search result added to `messages[]`** — model sees it as a new message
+4. **Model generates actions based on context** — it sees documentation and follows it
 
-**Ключевой момент:** RAG — это не магия "знания", а механизм добавления релевантной информации в контекст модели через обычный tool call.
+**Key point:** RAG is not magic "knowledge", but a mechanism for adding relevant information to model context through a regular tool call.
 
-## Простой RAG vs Векторный поиск
+## Simple RAG vs Vector Search
 
-В этой лабе мы реализуем **простой RAG** (поиск по ключевым словам). В продакшене используется **векторный поиск** (Semantic Search), который ищет по смыслу, а не по словам.
+In this lab we implement **simple RAG** (keyword search). In production, **vector search** (Semantic Search) is used, which searches by meaning, not by words.
 
-**Простой RAG (Lab 07):**
+**Simple RAG (Lab 07):**
 ```go
-// Поиск по вхождению подстроки
+// Search by substring match
 if strings.Contains(content, query) {
     return content
 }
 ```
 
-**Векторный поиск (продакшен):**
+**Vector Search (production):**
 ```go
-// 1. Документы разбиваются на чанки и преобразуются в векторы (embeddings)
+// 1. Documents split into chunks and converted to vectors (embeddings)
 chunks := []Chunk{
-    {ID: "chunk_1", Text: "Регламент перезагрузки Phoenix...", Embedding: [1536]float32{...}},
-    {ID: "chunk_2", Text: "Шаг 2: Выключить балансировщик...", Embedding: [1536]float32{...}},
+    {ID: "chunk_1", Text: "Phoenix restart protocol...", Embedding: [1536]float32{...}},
+    {ID: "chunk_2", Text: "Step 2: Turn off load balancer...", Embedding: [1536]float32{...}},
 }
 
-// 2. Запрос пользователя тоже преобразуется в вектор
+// 2. User query also converted to vector
 queryEmbedding := embedQuery("Phoenix restart protocol")  // [1536]float32{...}
 
-// 3. Поиск похожих векторов по косинусному расстоянию
+// 3. Search similar vectors by cosine distance
 similarDocs := vectorDB.Search(queryEmbedding, topK=3)
-// Возвращает 3 наиболее похожих чанка по смыслу (не по словам!)
+// Returns 3 most similar chunks by meaning (not by words!)
 
-// 4. Результат добавляется в контекст модели так же, как в простом RAG
+// 4. Result added to model context same as in simple RAG
 result := formatChunks(similarDocs)  // "Chunk 1: ...\nChunk 2: ...\nChunk 3: ..."
 messages = append(messages, openai.ChatCompletionMessage{
     Role:    "tool",
@@ -197,124 +197,123 @@ messages = append(messages, openai.ChatCompletionMessage{
 })
 ```
 
-**Почему векторный поиск лучше:**
-- Ищет по **смыслу**, а не по словам
-- Найдет "restart Phoenix" даже если в документе написано "перезагрузка сервера Phoenix"
-- Работает с синонимами и разными формулировками
+**Why vector search is better:**
+- Searches by **meaning**, not by words
+- Will find "restart Phoenix" even if document says "Phoenix server restart"
+- Works with synonyms and different phrasings
 
-## Чанкинг (Chunking)
+## Chunking
 
-Документы разбиваются на чанки (куски) для эффективного поиска.
+Documents are split into chunks (pieces) for efficient search.
 
-**Пример:**
+**Example:**
 ```
-Документ: "Регламент перезагрузки сервера Phoenix..."
-Чанк 1: "Регламент перезагрузки сервера Phoenix: шаг 1..."
-Чанк 2: "Шаг 2: Выключить балансировщик..."
-Чанк 3: "Шаг 3: Перезагрузить сервер..."
+Document: "Phoenix server restart protocol..."
+Chunk 1: "Phoenix server restart protocol: step 1..."
+Chunk 2: "Step 2: Turn off load balancer..."
+Chunk 3: "Step 3: Restart server..."
 ```
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: Агент не ищет в базе знаний
+### Mistake 1: Agent Doesn't Search Knowledge Base
 
-**Симптом:** Агент выполняет действия без поиска в базе знаний, используя только общие знания.
+**Symptom:** Agent performs actions without searching knowledge base, using only general knowledge.
 
-**Причина:** System Prompt не инструктирует агента искать в базе знаний, или описание инструмента поиска недостаточно четкое.
+**Cause:** System Prompt doesn't instruct agent to search knowledge base, or search tool description is not clear enough.
 
-**Решение:**
+**Solution:**
 ```go
-// ХОРОШО: System Prompt требует поиск
+// GOOD: System Prompt requires search
 systemPrompt := `... Always search knowledge base before performing actions that require specific procedures.`
 
-// ХОРОШО: Четкое описание инструмента
+// GOOD: Clear tool description
 Description: "Search the knowledge base for documentation, protocols, and procedures. Use this BEFORE performing actions that require specific procedures."
 ```
 
-### Ошибка 2: Плохой поисковый запрос
+### Mistake 2: Poor Search Query
 
-**Симптом:** Агент не находит нужную информацию в базе знаний.
+**Symptom:** Agent doesn't find needed information in knowledge base.
 
-**Причина:** Поисковый запрос слишком общий или не содержит ключевых слов из документа.
+**Cause:** Search query is too general or doesn't contain keywords from document.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО: Слишком общий запрос
+// BAD: Too general query
 query := "server"
 
-// ХОРОШО: Конкретный запрос с ключевыми словами
+// GOOD: Specific query with keywords
 query := "Phoenix server restart protocol"
 ```
 
-### Ошибка 3: Чанки слишком большие
+### Mistake 3: Chunks Too Large
 
-**Симптом:** Поиск возвращает слишком большие документы, которые не влезают в контекст.
+**Symptom:** Search returns documents too large that don't fit in context.
 
-**Причина:** Размер чанков слишком большой (больше контекстного окна).
+**Cause:** Chunk size too large (larger than context window).
 
-**Решение:**
+**Solution:**
 ```go
-// ХОРОШО: Размер чанка ~500-1000 токенов
-chunkSize := 500  // Токенов
+// GOOD: Chunk size ~500-1000 tokens
+chunkSize := 500  // Tokens
 ```
 
-## Мини-упражнения
+## Mini-Exercises
 
-### Упражнение 1: Реализуйте простой поиск
+### Exercise 1: Implement Simple Search
 
-Реализуйте функцию простого поиска по ключевым словам:
+Implement a simple keyword search function:
 
 ```go
 func searchKnowledgeBase(query string) string {
-    // Простой поиск по ключевым словам
-    // Верните релевантные документы
+    // Simple keyword search
+    // Return relevant documents
 }
 ```
 
-**Ожидаемый результат:**
-- Функция находит документы, содержащие ключевые слова из запроса
-- Функция возвращает первые N релевантных документов
+**Expected result:**
+- Function finds documents containing keywords from query
+- Function returns first N relevant documents
 
-### Упражнение 2: Реализуйте чанкинг
+### Exercise 2: Implement Chunking
 
-Реализуйте функцию разбиения документа на чанки:
+Implement a function to split document into chunks:
 
 ```go
 func chunkDocument(text string, chunkSize int) []string {
-    // Разбейте документ на чанки размером chunkSize токенов
-    // Верните список чанков
+    // Split document into chunks of chunkSize tokens
+    // Return list of chunks
 }
 ```
 
-**Ожидаемый результат:**
-- Функция разбивает документ на чанки заданного размера
-- Чанки не перекрываются (или перекрываются минимально)
+**Expected result:**
+- Function splits document into chunks of specified size
+- Chunks don't overlap (or overlap minimally)
 
-## Критерии сдачи / Чек-лист
+## Completion Criteria / Checklist
 
-✅ **Сдано:**
-- Агент ищет в базе знаний перед выполнением действий
-- Поисковые запросы конкретные и содержат ключевые слова
-- Документы разбиты на чанки подходящего размера
-- Инструмент поиска имеет четкое описание
-- System Prompt инструктирует агента использовать базу знаний
+✅ **Completed:**
+- Agent searches knowledge base before performing actions
+- Search queries are specific and contain keywords
+- Documents split into appropriately sized chunks
+- Search tool has clear description
+- System Prompt instructs agent to use knowledge base
 
-❌ **Не сдано:**
-- Агент не ищет в базе знаний (использует только общие знания)
-- Поисковые запросы слишком общие (не находит нужную информацию)
-- Чанки слишком большие (не влезают в контекст)
+❌ **Not completed:**
+- Agent doesn't search knowledge base (uses only general knowledge)
+- Search queries too general (doesn't find needed information)
+- Chunks too large (don't fit in context)
 
-## Связь с другими главами
+## Connection with Other Chapters
 
-- **Инструменты:** Как инструмент поиска интегрируется в агента, см. [Главу 04: Инструменты](../04-tools-and-function-calling/README.md)
-- **Автономность:** Как RAG работает в цикле агента, см. [Главу 05: Автономность](../05-autonomy-and-loops/README.md)
+- **Tools:** How search tool integrates into agent, see [Chapter 04: Tools](../04-tools-and-function-calling/README.md)
+- **Autonomy:** How RAG works in agent loop, see [Chapter 05: Autonomy](../05-autonomy-and-loops/README.md)
 
-## Что дальше?
+## What's Next?
 
-После изучения RAG переходите к:
-- **[08. Multi-Agent Systems](../08-multi-agent/README.md)** — как создать команду агентов
+After studying RAG, proceed to:
+- **[08. Multi-Agent Systems](../08-multi-agent/README.md)** — how to create a team of agents
 
 ---
 
-**Навигация:** [← Безопасность](../06-safety-and-hitl/README.md) | [Оглавление](../README.md) | [Multi-Agent →](../08-multi-agent/README.md)
-
+**Navigation:** [← Safety](../06-safety-and-hitl/README.md) | [Table of Contents](../README.md) | [Multi-Agent →](../08-multi-agent/README.md)

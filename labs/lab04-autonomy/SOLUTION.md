@@ -1,12 +1,12 @@
 # Lab 04 Solution: The Agent Loop (Autonomy)
 
-## 📝 Разбор решения
+## 📝 Solution Breakdown
 
-### Использование Локальных Моделей
-Для цикла ReAct очень важно, чтобы модель умела **стабильно** вызывать инструменты.
-Если локальная модель "глючит" (вызывает несуществующие функции или забывает аргументы), попробуйте снизить `temperature` до `0` или `0.1`.
+### Using Local Models
+For ReAct loop, it's very important that the model can **stably** call tools.
+If local model "glitches" (calls non-existent functions or forgets arguments), try lowering `temperature` to `0` or `0.1`.
 
-### 🔍 Полный код решения
+### 🔍 Complete Solution Code
 
 ```go
 package main
@@ -63,7 +63,7 @@ func main() {
 
 	messages := []openai.ChatCompletionMessage{
 		{Role: openai.ChatMessageRoleSystem, Content: "You are an autonomous DevOps agent. Solve problems efficiently."},
-		{Role: openai.ChatMessageRoleUser, Content: "У меня кончилось место на сервере. Разберись."},
+		{Role: openai.ChatMessageRoleUser, Content: "I'm out of disk space on the server. Fix it."},
 	}
 
 	fmt.Println("🏁 Starting Agent Loop...\n")
@@ -74,7 +74,7 @@ func main() {
 			Model:    openai.GPT3Dot5Turbo,
 			Messages: messages,
 			Tools:    tools,
-			Temperature: 0.1, // Для агентов лучше пониже
+			Temperature: 0.1, // Lower is better for agents
 		}
 
 		resp, err := client.CreateChatCompletion(ctx, req)

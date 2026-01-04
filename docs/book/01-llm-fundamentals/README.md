@@ -726,7 +726,7 @@ After summarization: "User Ivan, DevOps engineer. Discussed server problem. Curr
 - **Truncation:** Quick one-time tasks, history not important
 - **Summarization:** Long sessions, contextual information important, autonomous agents
 
-See more: section "Context Optimization" in [Chapter 03: Agent Anatomy](../03-agent-architecture/README.md#оптимизация-контекста-context-optimization) and [Lab 09: Context Optimization](../../labs/lab09-context-optimization/README.md)
+See more: section "Context Optimization" in [Chapter 03: Agent Anatomy](../03-agent-architecture/README.md#context-optimization) and [Lab 09: Context Optimization](../../labs/lab09-context-optimization/README.md)
 
 ### Mistake 3: Hallucinations
 
@@ -826,7 +826,7 @@ The model generates a sequence of tokens that matches the tool call format. This
 ## Connection with Other Chapters
 
 - **Function Calling:** More about how the model generates tool calls, see [Chapter 04: Tools](../04-tools-and-function-calling/README.md)
-- **Context Window:** How to manage message history, see [Chapter 03: Agent Anatomy](../03-agent-architecture/README.md#оптимизация-контекста-context-optimization)
+- **Context Window:** How to manage message history, see [Chapter 03: Agent Anatomy](../03-agent-architecture/README.md#context-optimization)
 - **Temperature:** Why `Temperature = 0` is used for agents, see [Chapter 04: Tools](../04-tools-and-function-calling/README.md)
 
 ## What's Next?
