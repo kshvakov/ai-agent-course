@@ -80,6 +80,69 @@ msg := resp.Choices[0].Message
 
 **Что происходит:** Модель выбрала инструмент `ping` и сгенерировала JSON с аргументами. Это **не магия** — модель видела `Description: "Ping a host to check connectivity"` и связала это с запросом пользователя.
 
+**Как модель выбирает между несколькими инструментами?**
+
+Давайте расширим пример, добавив несколько инструментов:
+
+```go
+tools := []openai.Tool{
+    {
+        Function: &openai.FunctionDefinition{
+            Name:        "ping",
+            Description: "Ping a host to check network connectivity. Use this when user asks about network reachability or connectivity.",
+        },
+    },
+    {
+        Function: &openai.FunctionDefinition{
+            Name:        "check_http",
+            Description: "Check HTTP status code of a website. Use this when user asks about website availability or HTTP errors.",
+        },
+    },
+    {
+        Function: &openai.FunctionDefinition{
+            Name:        "traceroute",
+            Description: "Trace the network path to a host. Use this when user asks about network routing or path analysis.",
+        },
+    },
+}
+
+userInput := "Проверь доступность google.com"
+```
+
+**Процесс выбора:**
+
+1. Модель видит **все три инструмента** и их `Description`:
+   - `ping`: "check network connectivity... Use this when user asks about network reachability"
+   - `check_http`: "Check HTTP status... Use this when user asks about website availability"
+   - `traceroute`: "Trace network path... Use this when user asks about routing"
+
+2. Модель сопоставляет запрос "Проверь доступность google.com" с описаниями:
+   - ✅ `ping` — описание содержит "connectivity" и "reachability" → **выбирает этот**
+   - ❌ `check_http` — про HTTP статус, не про сетевую доступность
+   - ❌ `traceroute` — про маршрутизацию, не про проверку доступности
+
+3. Модель возвращает tool call для `ping`:
+   ```json
+   {"name": "ping", "arguments": "{\"host\": \"google.com\"}"}
+   ```
+
+**Пример с другим запросом:**
+
+```go
+userInput := "Проверь, отвечает ли сайт google.com"
+
+// Модель видит те же 3 инструмента
+// Сопоставляет:
+// - ping: про сетевую доступность → не совсем то
+// - check_http: "Use this when user asks about website availability" → ✅ ВЫБИРАЕТ ЭТОТ
+// - traceroute: про маршрутизацию → не подходит
+
+// Модель возвращает:
+// {"name": "check_http", "arguments": "{\"url\": \"https://google.com\"}"}
+```
+
+**Ключевой момент:** Модель выбирает инструмент на основе **семантического соответствия** между запросом пользователя и `Description`. Чем точнее и конкретнее `Description`, тем лучше модель выбирает нужный инструмент.
+
 #### Шаг 4: Валидация (Runtime)
 
 ```go
@@ -160,10 +223,45 @@ if len(finalMsg.ToolCalls) == 0 {
 
 **Ключевые моменты:**
 
-1. **Модель видит описание инструментов** — она не "знает" про `ping` из коробки, она видит `Description` в JSON Schema
-2. **Модель возвращает структурированный JSON** — это не текст "я вызову ping", а конкретный tool call с аргументами
-3. **Runtime делает всю работу** — парсинг, валидация, выполнение, возврат результата
-4. **Модель видит результат** — она получает результат как новое сообщение в истории и продолжает работу
+1. **Модель видит описание ВСЕХ инструментов** — она не "знает" про инструменты из коробки, она видит их `Description` в JSON Schema. Модель выбирает нужный инструмент, сопоставляя запрос пользователя с описаниями.
+
+2. **Механизм выбора основан на семантике** — модель ищет соответствие между:
+   - Запросом пользователя ("Проверь доступность")
+   - Описанием инструмента ("Use this when user asks about network reachability")
+   - Контекстом предыдущих результатов (если есть)
+
+3. **Модель возвращает структурированный JSON** — это не текст "я вызову ping", а конкретный tool call с именем инструмента и аргументами
+
+4. **Runtime делает всю работу** — парсинг, валидация, выполнение, возврат результата
+
+5. **Модель видит результат** — она получает результат как новое сообщение в истории и продолжает работу
+
+**Пример выбора между похожими инструментами:**
+
+```go
+tools := []openai.Tool{
+    {
+        Function: &openai.FunctionDefinition{
+            Name:        "check_service_status",
+            Description: "Check if a systemd service is running. Use this for Linux services like nginx, mysql, etc.",
+        },
+    },
+    {
+        Function: &openai.FunctionDefinition{
+            Name:        "check_http_status",
+            Description: "Check HTTP response code of a web service. Use this for checking if a website or API is responding.",
+        },
+    },
+}
+
+// Запрос 1: "Проверь статус nginx"
+// Модель выбирает: check_service_status (nginx - это systemd service)
+
+// Запрос 2: "Проверь, отвечает ли сайт example.com"
+// Модель выбирает: check_http_status (сайт - это HTTP сервис)
+```
+
+**Важно:** Если описания инструментов слишком похожи или неясны, модель может выбрать неправильный инструмент. Поэтому `Description` должен быть **конкретным и различимым**.
 
 **Пример определения инструмента:**
 
