@@ -633,7 +633,7 @@ Not all models are equally good for agents.
 
 **Theory:** See [Appendix: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization) — detailed description of what we check and why it's important.
 
-**Practice:** See [Lab 00: Model Capability Benchmark](../../labs/lab00-capability-check/README.md) — ready-to-use tool for checking the model.
+**Practice:** See [Lab 00: Model Capability Benchmark](../../../labs/lab00-capability-check/README.md) — ready-to-use tool for checking the model.
 
 ## Common Mistakes
 
@@ -726,7 +726,7 @@ After summarization: "User Ivan, DevOps engineer. Discussed server problem. Curr
 - **Truncation:** Quick one-time tasks, history not important
 - **Summarization:** Long sessions, contextual information important, autonomous agents
 
-See more: section "Context Optimization" in [Chapter 03: Agent Anatomy](../03-agent-architecture/README.md#context-optimization) and [Lab 09: Context Optimization](../../labs/lab09-context-optimization/README.md)
+See more: section "Context Optimization" in [Chapter 03: Agent Anatomy](../03-agent-architecture/README.md#context-optimization) and [Lab 09: Context Optimization](../../../labs/lab09-context-optimization/README.md)
 
 ### Mistake 3: Hallucinations
 

@@ -582,7 +582,7 @@ func setCachedResult(key string, result string, ttl time.Duration) {
 ## Connection with Other Chapters
 
 - **Observability:** Logging token usage — [Observability and Tracing](observability.md)
-- **Context Optimization:** Context size management — [Lab 09: Context Optimization](../../labs/lab09-context-optimization/METHOD.md)
+- **Context Optimization:** Context size management — [Lab 09: Context Optimization](../../../labs/lab09-context-optimization/METHOD.md)
 - **Agent Loop:** Basic agent loop — [Chapter 05: Autonomy and Loops](../05-autonomy-and-loops/README.md)
 
 ---

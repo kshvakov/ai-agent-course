@@ -154,7 +154,7 @@ In `labs/lab06-incident/SOLUTION.md`, Temperature = 0 is already used for determ
 
 ## Connection with Other Chapters
 
-- **Capability Benchmark:** Model checking — [Lab 00: Capability Check](../../labs/lab00-capability-check/METHOD.md)
+- **Capability Benchmark:** Model checking — [Lab 00: Capability Check](../../../labs/lab00-capability-check/METHOD.md)
 - **LLM Physics:** Fundamental concepts — [Chapter 01: LLM Physics](../01-llm-fundamentals/README.md)
 - **Function Calling:** Tool calling — [Chapter 04: Tools and Function Calling](../04-tools-and-function-calling/README.md)
 - **Cost Engineering:** Model selection for cost optimization — [Cost & Latency Engineering](cost_latency.md)

@@ -305,9 +305,9 @@ Assistant: {"tool": "check_status", "args": {"hostname": "web-01"}}  // Same for
 - **CoT → SOP:** SOP is a **process** fixed by instruction and/or examples. CoT helps the model follow this process step by step.
 
 See more:
-- **[Lab 01: Basics](../../labs/lab01-basics/README.md)** — working with context and memory
-- **[Lab 02: Tools](../../labs/lab02-tools/README.md)** — response format via Function Calling
-- **[Lab 06: Incident (SOP)](../../labs/lab06-incident/README.md)** — SOP as action algorithm
+- **[Lab 01: Basics](../../../labs/lab01-basics/README.md)** — working with context and memory
+- **[Lab 02: Tools](../../../labs/lab02-tools/README.md)** — response format via Function Calling
+- **[Lab 06: Incident (SOP)](../../../labs/lab06-incident/README.md)** — SOP as action algorithm
 
 ## End-to-End Example: What Exactly the Agent Sends to LLM
 

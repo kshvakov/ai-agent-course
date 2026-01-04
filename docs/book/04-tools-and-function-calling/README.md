@@ -527,7 +527,7 @@ graph TB
 - Model sees full context (system + user + tool call + tool result)
 - Generates final answer: `"nginx is working normally, service ONLINE"`
 
-**Note:** For Go implementation, see examples in [Lab 02: Tools](../../labs/lab02-tools/README.md) and [Lab 04: Autonomy](../../labs/lab04-autonomy/README.md)
+**Note:** For Go implementation, see examples in [Lab 02: Tools](../../../labs/lab02-tools/README.md) and [Lab 04: Autonomy](../../../labs/lab04-autonomy/README.md)
 
 ### Key Points for Developers
 
@@ -551,7 +551,7 @@ graph TB
 
 See how to write instructions and examples: **[Chapter 02: Prompting](../02-prompt-engineering/README.md)**
 
-Practice: **[Lab 02: Tools](../../labs/lab02-tools/README.md)**, **[Lab 04: Autonomy](../../labs/lab04-autonomy/README.md)**
+Practice: **[Lab 02: Tools](../../../labs/lab02-tools/README.md)**, **[Lab 04: Autonomy](../../../labs/lab04-autonomy/README.md)**
 
 ### Why Is This Not Magic?
 
