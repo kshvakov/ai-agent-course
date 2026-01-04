@@ -582,7 +582,7 @@ func setCachedResult(key string, result string, ttl time.Duration) {
 ## Связь с другими главами
 
 - **Observability:** Логирование использования токенов — [Observability и Tracing](observability.md)
-- **Context Optimization:** Управление размером контекста — [Lab 09: Context Optimization](../../labs/lab09-context-optimization/METHOD.md)
+- **Context Optimization:** Управление размером контекста — [Lab 09: Context Optimization](../../../labs/lab09-context-optimization/METHOD.md)
 - **Agent Loop:** Базовый цикл агента — [Глава 05: Автономность и Циклы](../05-autonomy-and-loops/README.md)
 
 ---

@@ -154,7 +154,7 @@ req := openai.ChatCompletionRequest{
 
 ## Связь с другими главами
 
-- **Capability Benchmark:** Проверка модели — [Lab 00: Capability Check](../../labs/lab00-capability-check/METHOD.md)
+- **Capability Benchmark:** Проверка модели — [Lab 00: Capability Check](../../../labs/lab00-capability-check/METHOD.md)
 - **Физика LLM:** Фундаментальные концепции — [Глава 01: Физика LLM](../01-llm-fundamentals/README.md)
 - **Function Calling:** Tool calling — [Глава 04: Инструменты и Function Calling](../04-tools-and-function-calling/README.md)
 - **Cost Engineering:** Выбор модели для оптимизации стоимости — [Cost & Latency Engineering](cost_latency.md)

@@ -633,7 +633,7 @@ req := openai.ChatCompletionRequest{
 
 **Теория:** См. [Приложение: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization) — подробное описание того, что проверяем и почему это важно.
 
-**Практика:** См. [Lab 00: Model Capability Benchmark](../../labs/lab00-capability-check/README.md) — готовый инструмент для проверки модели.
+**Практика:** См. [Lab 00: Model Capability Benchmark](../../../labs/lab00-capability-check/README.md) — готовый инструмент для проверки модели.
 
 ## Типовые ошибки
 
@@ -726,7 +726,7 @@ compressed = append(compressed, recentMessages...)
 - **Обрезка:** Быстрые одноразовые задачи, неважна история
 - **Саммаризация:** Долгие сессии, важна контекстная информация, автономные агенты
 
-См. подробнее: раздел "Оптимизация контекста" в [Главе 03: Анатомия Агента](../03-agent-architecture/README.md#оптимизация-контекста-context-optimization) и [Lab 09: Context Optimization](../../labs/lab09-context-optimization/README.md)
+См. подробнее: раздел "Оптимизация контекста" в [Главе 03: Анатомия Агента](../03-agent-architecture/README.md#оптимизация-контекста-context-optimization) и [Lab 09: Context Optimization](../../../labs/lab09-context-optimization/README.md)
 
 ### Ошибка 3: Галлюцинации
 
