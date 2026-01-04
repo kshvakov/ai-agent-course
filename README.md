@@ -1,5 +1,10 @@
 # AI Agent Course 🤖
 
+## Translations
+
+- **English (EN)** — `main` (this branch)
+- **Русский (RU)** — [`ru` branch](https://github.com/kshvakov/ai-agent-course/tree/ru)
+
 ## Why This Course?
 
 Welcome to a practical course on building autonomous AI agents in Go!

@@ -4,6 +4,11 @@
 **For Course:** AI Agent Course  
 **Target Audience:** Programmers who want to build production AI agents
 
+## Translations
+
+- **English (EN)** — `main` (this branch)
+- **Русский (RU)** — [`ru` branch](https://github.com/kshvakov/ai-agent-course/blob/ru/docs/book/README.md)
+
 ---
 
 ## 📚 Table of Contents
