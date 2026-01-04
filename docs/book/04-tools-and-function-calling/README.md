@@ -6,11 +6,164 @@
 
 **Function Calling** — это механизм, при котором LLM возвращает не текст, а структурированный JSON с именем функции и аргументами.
 
-**Процесс:**
+### Полный цикл: от определения до выполнения
 
-1. Вы описываете функцию в формате JSON Schema
-2. LLM генерирует вызов: `{"name": "ping", "arguments": "{\"host\": \"google.com\"}"}`
-3. Ваш код (Runtime) парсит JSON, выполняет функцию и возвращает результат в LLM
+Давайте разберем **полный цикл** на примере инструмента `ping`:
+
+#### Шаг 1: Определение инструмента (Tool Schema)
+
+```go
+tools := []openai.Tool{
+    {
+        Type: openai.ToolTypeFunction,
+        Function: &openai.FunctionDefinition{
+            Name:        "ping",
+            Description: "Ping a host to check connectivity",
+            Parameters: json.RawMessage(`{
+                "type": "object",
+                "properties": {
+                    "host": {
+                        "type": "string",
+                        "description": "Hostname or IP address to ping"
+                    }
+                },
+                "required": ["host"]
+            }`),
+        },
+    },
+}
+```
+
+**Что происходит:** Мы описываем инструмент в формате JSON Schema. Это описание отправляется в модель вместе с запросом.
+
+#### Шаг 2: Запрос к модели
+
+```go
+messages := []openai.ChatCompletionMessage{
+    {Role: "system", Content: "You are a network admin. Use tools to check connectivity."},
+    {Role: "user", Content: "Проверь доступность google.com"},
+}
+
+req := openai.ChatCompletionRequest{
+    Model:    openai.GPT3Dot5Turbo,
+    Messages: messages,
+    Tools:    tools,  // Модель видит описание инструментов!
+    Temperature: 0,
+}
+
+resp, _ := client.CreateChatCompletion(ctx, req)
+msg := resp.Choices[0].Message
+```
+
+**Что происходит:** Модель видит:
+- System prompt (роль и инструкции)
+- User input (запрос пользователя)
+- **Tools schema** (описание доступных инструментов)
+
+#### Шаг 3: Ответ модели (Tool Call)
+
+Модель **не возвращает текст** "Я проверю ping". Она возвращает **структурированный tool call**:
+
+```go
+// msg.ToolCalls содержит:
+[]openai.ToolCall{
+    {
+        ID: "call_abc123",
+        Type: "function",
+        Function: openai.FunctionCall{
+            Name:      "ping",
+            Arguments: `{"host": "google.com"}`,
+        },
+    },
+}
+```
+
+**Что происходит:** Модель выбрала инструмент `ping` и сгенерировала JSON с аргументами. Это **не магия** — модель видела `Description: "Ping a host to check connectivity"` и связала это с запросом пользователя.
+
+#### Шаг 4: Валидация (Runtime)
+
+```go
+// Проверяем, что инструмент существует
+if msg.ToolCalls[0].Function.Name != "ping" {
+    return fmt.Errorf("unknown tool: %s", msg.ToolCalls[0].Function.Name)
+}
+
+// Валидируем JSON аргументов
+var args struct {
+    Host string `json:"host"`
+}
+if err := json.Unmarshal([]byte(msg.ToolCalls[0].Function.Arguments), &args); err != nil {
+    return fmt.Errorf("invalid JSON: %v", err)
+}
+
+// Проверяем обязательные поля
+if args.Host == "" {
+    return fmt.Errorf("host is required")
+}
+```
+
+**Что происходит:** Runtime валидирует вызов перед выполнением. Это **критично** для безопасности.
+
+#### Шаг 5: Выполнение инструмента
+
+```go
+func executePing(host string) string {
+    cmd := exec.Command("ping", "-c", "1", host)
+    output, err := cmd.CombinedOutput()
+    if err != nil {
+        return fmt.Sprintf("Error: %s", err)
+    }
+    return string(output)
+}
+
+result := executePing(args.Host)  // "PING google.com: 64 bytes from ..."
+```
+
+**Что происходит:** Runtime выполняет **реальную функцию** (в данном случае системную команду `ping`).
+
+#### Шаг 6: Возврат результата в модель
+
+```go
+// Добавляем результат в историю как сообщение с ролью "tool"
+messages = append(messages, openai.ChatCompletionMessage{
+    Role:       openai.ChatMessageRoleTool,
+    Content:    result,  // "PING google.com: 64 bytes from ..."
+    ToolCallID: msg.ToolCalls[0].ID,  // Связываем с вызовом
+})
+
+// Отправляем обновленную историю в модель снова
+resp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+    Model:    openai.GPT3Dot5Turbo,
+    Messages: messages,  // Теперь включает результат инструмента!
+    Tools:    tools,
+})
+```
+
+**Что происходит:** Модель видит результат выполнения инструмента и может:
+- Сформулировать финальный ответ пользователю
+- Вызвать другой инструмент, если нужно
+- Задать уточняющий вопрос
+
+#### Шаг 7: Финальный ответ
+
+```go
+finalMsg := resp2.Choices[0].Message
+if len(finalMsg.ToolCalls) == 0 {
+    // Это финальный текстовый ответ
+    fmt.Println(finalMsg.Content)  // "google.com доступен, время отклика 10ms"
+}
+```
+
+**Что происходит:** Модель видела результат `ping` и сформулировала понятный ответ для пользователя.
+
+### Почему это не магия?
+
+**Ключевые моменты:**
+
+1. **Модель видит описание инструментов** — она не "знает" про `ping` из коробки, она видит `Description` в JSON Schema
+2. **Модель возвращает структурированный JSON** — это не текст "я вызову ping", а конкретный tool call с аргументами
+3. **Runtime делает всю работу** — парсинг, валидация, выполнение, возврат результата
+4. **Модель видит результат** — она получает результат как новое сообщение в истории и продолжает работу
 
 **Пример определения инструмента:**
 
@@ -235,6 +388,12 @@ func executeTool(name string, args json.RawMessage) (string, error) {
 - [ ] Валидация аргументов реализована
 - [ ] Ошибки обрабатываются и возвращаются агенту
 - [ ] Критические инструменты требуют подтверждения
+
+## Связь с другими главами
+
+- **Физика LLM:** Почему модель выбирает tool call вместо текста, см. [Главу 01: Физика LLM](../01-llm-fundamentals/README.md)
+- **Промптинг:** Как описать инструменты так, чтобы модель их правильно использовала, см. [Главу 02: Промптинг](../02-prompt-engineering/README.md)
+- **Цикл:** Как результаты инструментов возвращаются в модель, см. [Главу 05: Автономность](../05-autonomy-and-loops/README.md)
 
 ## Что дальше?
 

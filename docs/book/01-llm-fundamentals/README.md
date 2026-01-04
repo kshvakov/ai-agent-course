@@ -13,20 +13,222 @@ $$P(x_{t+1} | x_1, ..., x_t)$$
 
 ### Что это значит на практике?
 
-#### Пример 1: DevOps
-Промпт: `"Проверь статус сервера"`
-- Модель видит контекст и предсказывает: "Я вызову инструмент `check_status`" (вероятность 0.85)
-- Или: "Я отвечу текстом" (вероятность 0.15)
+#### Пример 1: DevOps — Магия vs Реальность
 
-#### Пример 2: Support
-Промпт: `"Пользователь жалуется на ошибку 500"`
-- Модель предсказывает: "Сначала соберу контекст через `get_ticket_details`" (вероятность 0.9)
-- Или: "Сразу отвечу шаблоном" (вероятность 0.1)
+**❌ Магия (как обычно объясняют):**
+> Промпт: `"Проверь статус сервера"`  
+> Модель видит контекст и предсказывает: "Я вызову инструмент `check_status`" (вероятность 0.85)
 
-#### Пример 3: Data Analytics
-Промпт: `"Покажи продажи за последний месяц"`
-- Модель предсказывает: "Сформулирую SQL-запрос через `sql_select`" (вероятность 0.95)
-- Или: "Отвечу текстом без данных" (вероятность 0.05)
+**✅ Реальность (как на самом деле):**
+
+**1. Что отправляется в модель:**
+
+```go
+// System Prompt (задает роль и поведение)
+systemPrompt := `You are a DevOps assistant. 
+When user asks about server status, use the check_status tool.`
+
+// User Input
+userInput := "Проверь статус сервера"
+
+// Описание доступных инструментов (tools schema)
+tools := []openai.Tool{
+    {
+        Type: openai.ToolTypeFunction,
+        Function: &openai.FunctionDefinition{
+            Name:        "check_status",
+            Description: "Check the status of a server by hostname",
+            Parameters: json.RawMessage(`{
+                "type": "object",
+                "properties": {
+                    "hostname": {"type": "string", "description": "Server hostname"}
+                },
+                "required": ["hostname"]
+            }`),
+        },
+    },
+}
+
+// Полный запрос к API
+messages := []openai.ChatCompletionMessage{
+    {Role: "system", Content: systemPrompt},
+    {Role: "user", Content: userInput},
+}
+
+req := openai.ChatCompletionRequest{
+    Model:    openai.GPT3Dot5Turbo,
+    Messages: messages,
+    Tools:    tools,  // Ключевой момент: модель видит описание инструментов!
+}
+```
+
+**2. Что возвращает модель:**
+
+Модель **не возвращает текст** "Я вызову инструмент". Она возвращает **структурированный tool call**:
+
+```json
+{
+  "role": "assistant",
+  "content": null,
+  "tool_calls": [
+    {
+      "id": "call_abc123",
+      "type": "function",
+      "function": {
+        "name": "check_status",
+        "arguments": "{\"hostname\": \"web-01\"}"
+      }
+    }
+  ]
+}
+```
+
+**3. Что делает Runtime:**
+
+```go
+resp, _ := client.CreateChatCompletion(ctx, req)
+msg := resp.Choices[0].Message
+
+// Runtime проверяет: есть ли tool_calls?
+if len(msg.ToolCalls) > 0 {
+    // Парсим аргументы
+    var args struct {
+        Hostname string `json:"hostname"`
+    }
+    json.Unmarshal([]byte(msg.ToolCalls[0].Function.Arguments), &args)
+    
+    // Выполняем реальную функцию
+    result := checkStatus(args.Hostname)  // "Server is ONLINE"
+    
+    // Возвращаем результат обратно в модель
+    messages = append(messages, openai.ChatCompletionMessage{
+        Role:       "tool",
+        Content:    result,
+        ToolCallID: msg.ToolCalls[0].ID,
+    })
+    
+    // Отправляем обновленную историю в модель снова
+    // Модель видит результат и решает, что делать дальше
+}
+```
+
+**Примечание о "вероятностях":**
+
+Цифры типа "вероятность 0.85" — это **иллюстрация** для понимания. API OpenAI/локальных моделей обычно **не возвращает** эти вероятности напрямую (если не использовать `logprobs`). Важно понимать принцип: когда в контексте есть `tools` с хорошим `Description`, модель с высокой вероятностью выберет tool call вместо текста. Но это происходит **внутри модели**, мы видим только финальный выбор.
+
+#### Пример 2: Support — Магия vs Реальность
+
+**❌ Магия:**
+> Промпт: `"Пользователь жалуется на ошибку 500"`  
+> Модель предсказывает: "Сначала соберу контекст через `get_ticket_details`" (вероятность 0.9)
+
+**✅ Реальность:**
+
+**Что отправляется:**
+
+```go
+systemPrompt := `You are a Customer Support agent.
+When user reports an error, first gather context using get_ticket_details.`
+
+tools := []openai.Tool{
+    {
+        Type: openai.ToolTypeFunction,
+        Function: &openai.FunctionDefinition{
+            Name:        "get_ticket_details",
+            Description: "Get ticket details including user info, error logs, and history",
+            Parameters: json.RawMessage(`{
+                "type": "object",
+                "properties": {
+                    "ticket_id": {"type": "string"}
+                },
+                "required": ["ticket_id"]
+            }`),
+        },
+    },
+}
+
+messages := []openai.ChatCompletionMessage{
+    {Role: "system", Content: systemPrompt},
+    {Role: "user", Content: "Пользователь жалуется на ошибку 500"},
+}
+```
+
+**Что возвращает модель:**
+
+```json
+{
+  "role": "assistant",
+  "tool_calls": [
+    {
+      "id": "call_xyz789",
+      "function": {
+        "name": "get_ticket_details",
+        "arguments": "{\"ticket_id\": \"TICKET-12345\"}"
+      }
+    }
+  ]
+}
+```
+
+**Runtime:**
+- Парсит `ticket_id` из JSON
+- Вызывает реальную функцию `getTicketDetails("TICKET-12345")`
+- Возвращает результат в модель как сообщение с ролью `tool`
+- Модель видит результат и продолжает работу
+
+#### Пример 3: Data Analytics — Магия vs Реальность
+
+**❌ Магия:**
+> Промпт: `"Покажи продажи за последний месяц"`  
+> Модель предсказывает: "Сформулирую SQL-запрос через `sql_select`" (вероятность 0.95)
+
+**✅ Реальность:**
+
+**Что отправляется:**
+
+```go
+systemPrompt := `You are a Data Analyst.
+When user asks for data, formulate SQL query and use sql_select tool.`
+
+tools := []openai.Tool{
+    {
+        Type: openai.ToolTypeFunction,
+        Function: &openai.FunctionDefinition{
+            Name:        "sql_select",
+            Description: "Execute a SELECT query on the database. ONLY SELECT queries allowed.",
+            Parameters: json.RawMessage(`{
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "SQL SELECT query"}
+                },
+                "required": ["query"]
+            }`),
+        },
+    },
+}
+```
+
+**Что возвращает модель:**
+
+```json
+{
+  "role": "assistant",
+  "tool_calls": [
+    {
+      "function": {
+        "name": "sql_select",
+        "arguments": "{\"query\": \"SELECT region, SUM(amount) FROM sales WHERE date >= NOW() - INTERVAL '1 month' GROUP BY region\"}"
+      }
+    }
+  ]
+}
+```
+
+**Runtime:**
+- Валидирует, что это SELECT (не DELETE/DROP!)
+- Выполняет SQL через безопасное соединение (read-only)
+- Возвращает результаты в модель
+- Модель форматирует результаты для пользователя
 
 ### Почему это важно для инженера?
 
@@ -240,6 +442,12 @@ func trimHistory(messages []ChatCompletionMessage, maxTokens int) []ChatCompleti
     // ...
 }
 ```
+
+## Связь с другими главами
+
+- **Function Calling:** Подробнее о том, как модель генерирует tool calls, см. [Главу 04: Инструменты](../04-tools-and-function-calling/README.md)
+- **Контекстное окно:** Как управлять историей сообщений, см. [Главу 05: Автономность](../05-autonomy-and-loops/README.md)
+- **Temperature:** Почему для агентов используется `Temperature = 0`, см. [Главу 04: Инструменты](../04-tools-and-function-calling/README.md)
 
 ## Что дальше?
 
