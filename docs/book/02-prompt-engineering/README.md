@@ -335,124 +335,206 @@ graph LR
 
 ### Пример 1: Text-only ответ (без инструментов)
 
-```go
-// 1. System Prompt (инструкции + few-shot примеры)
-systemPrompt := `Ты DevOps инженер.
+**Request (JSON):**
 
-Примеры:
-User: "Как дела?"
-Assistant: "Все хорошо, чем могу помочь?"
-
-User: "Проверь статус"
-Assistant: "Сейчас проверю статус сервисов."`
-
-// 2. User Input
-userInput := "Привет!"
-
-// 3. Собираем запрос
-messages := []openai.ChatCompletionMessage{
-    {Role: "system", Content: systemPrompt},  // ← System Prompt здесь
-    {Role: "user", Content: userInput},        // ← User Input здесь
+```json
+{
+  "model": "gpt-3.5-turbo",
+  "messages": [
+    {
+      "role": "system",
+      "content": "Ты DevOps инженер.\n\nПримеры:\nUser: \"Как дела?\"\nAssistant: \"Все хорошо, чем могу помочь?\"\n\nUser: \"Проверь статус\"\nAssistant: \"Сейчас проверю статус сервисов.\""
+    },
+    {
+      "role": "user",
+      "content": "Привет!"
+    }
+  ]
 }
+```
 
-req := openai.ChatCompletionRequest{
-    Model:    openai.GPT3Dot5Turbo,
-    Messages: messages,
-    // Tools: НЕТ (не нужны инструменты)
+**Где что находится:**
+- **System Prompt** (инструкции + few-shot примеры) → `messages[0].content`
+- **User Input** → `messages[1].content`
+- **Tools** → отсутствует (не нужны для текстового ответа)
+
+**Response (JSON):**
+
+```json
+{
+  "id": "chatcmpl-abc123",
+  "choices": [{
+    "message": {
+      "role": "assistant",
+      "content": "Привет! Чем могу помочь?",
+      "tool_calls": null
+    }
+  }]
 }
-
-// 4. Отправляем запрос
-resp, _ := client.CreateChatCompletion(ctx, req)
-
-// 5. Модель возвращает текст
-assistantMsg := resp.Choices[0].Message
-// assistantMsg.Content = "Привет! Чем могу помочь?"
-// assistantMsg.ToolCalls = nil (нет вызовов инструментов)
 ```
 
 **Что происходит:**
-- System Prompt содержит инструкции и few-shot примеры
-- User Input — текущий запрос
+- System Prompt содержит инструкции и few-shot примеры (в `messages[0].content`)
+- User Input — текущий запрос (в `messages[1].content`)
 - Модель видит оба и генерирует текстовый ответ
 - **Tools не передаются** (не нужны)
 
-### Пример 2: Tool-call ответ (с инструментами)
+### Пример 2: Tool-call ответ (с инструментами, 2 хода)
 
-```go
-// 1. System Prompt (инструкции)
-systemPrompt := `Ты DevOps инженер. Используй инструменты для проверки сервисов.`
+**Ход 1: Request с tool call**
 
-// 2. Tools Schema (отдельно от промпта!)
-tools := []openai.Tool{
+```json
+{
+  "model": "gpt-3.5-turbo",
+  "messages": [
     {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "check_status",
-            Description: "Check service status",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "service": {"type": "string"}
-                },
-                "required": ["service"]
-            }`),
-        },
+      "role": "system",
+      "content": "Ты DevOps инженер. Используй инструменты для проверки сервисов."
     },
-}
-
-// 3. User Input
-userInput := "Проверь статус nginx"
-
-// 4. Собираем запрос
-messages := []openai.ChatCompletionMessage{
-    {Role: "system", Content: systemPrompt},  // ← System Prompt здесь
-    {Role: "user", Content: userInput},        // ← User Input здесь
-}
-
-req := openai.ChatCompletionRequest{
-    Model:    openai.GPT3Dot5Turbo,
-    Messages: messages,
-    Tools:    tools,  // ← Tools Schema здесь (отдельно!)
-}
-
-// 5. Отправляем запрос
-resp, _ := client.CreateChatCompletion(ctx, req)
-msg := resp.Choices[0].Message
-
-// 6. Модель возвращает tool call
-if len(msg.ToolCalls) > 0 {
-    // msg.ToolCalls[0].Function.Name = "check_status"
-    // msg.ToolCalls[0].Function.Arguments = `{"service": "nginx"}`
-    
-    // 7. Runtime выполняет инструмент
-    result := checkStatus("nginx")  // "nginx is ONLINE"
-    
-    // 8. Runtime добавляет результат в messages
-    messages = append(messages, openai.ChatCompletionMessage{
-        Role:       "tool",
-        Content:    result,                    // ← Tool Result здесь
-        ToolCallID: msg.ToolCalls[0].ID,
-    })
-    
-    // 9. Отправляем второй запрос с результатом
-    req2 := openai.ChatCompletionRequest{
-        Model:    openai.GPT3Dot5Turbo,
-        Messages: messages,  // Теперь включает tool result!
-        Tools:    tools,
+    {
+      "role": "user",
+      "content": "Проверь статус nginx"
     }
-    
-    resp2, _ := client.CreateChatCompletion(ctx, req2)
-    finalMsg := resp2.Choices[0].Message
-    // finalMsg.Content = "nginx работает нормально"
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "check_status",
+        "description": "Check service status",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "service": {
+              "type": "string",
+              "description": "Service name"
+            }
+          },
+          "required": ["service"]
+        }
+      }
+    }
+  ]
+}
+```
+
+**Где что находится:**
+- **System Prompt** (инструкции) → `messages[0].content`
+- **User Input** → `messages[1].content`
+- **Tools Schema** → отдельное поле `tools[]` (НЕ внутри промпта!)
+
+**Response #1 (tool call):**
+
+```json
+{
+  "id": "chatcmpl-xyz789",
+  "choices": [{
+    "message": {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_abc123",
+          "type": "function",
+          "function": {
+            "name": "check_status",
+            "arguments": "{\"service\": \"nginx\"}"
+          }
+        }
+      ]
+    }
+  }]
+}
+```
+
+**Runtime выполняет инструмент:**
+- Парсит `tool_calls[0].function.arguments` → `{"service": "nginx"}`
+- Вызывает `check_status("nginx")` → результат: `"nginx is ONLINE"`
+
+**Ход 2: Request с tool result**
+
+```json
+{
+  "model": "gpt-3.5-turbo",
+  "messages": [
+    {
+      "role": "system",
+      "content": "Ты DevOps инженер. Используй инструменты для проверки сервисов."
+    },
+    {
+      "role": "user",
+      "content": "Проверь статус nginx"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_abc123",
+          "type": "function",
+          "function": {
+            "name": "check_status",
+            "arguments": "{\"service\": \"nginx\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "content": "nginx is ONLINE",
+      "tool_call_id": "call_abc123"
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "check_status",
+        "description": "Check service status",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "service": {
+              "type": "string",
+              "description": "Service name"
+            }
+          },
+          "required": ["service"]
+        }
+      }
+    }
+  ]
+}
+```
+
+**Где что находится:**
+- **System Prompt** → `messages[0].content` (тот же)
+- **User Input** → `messages[1].content` (тот же)
+- **Tool Call** → `messages[2]` (добавлен runtime'ом после первого ответа)
+- **Tool Result** → `messages[3].content` (добавлен runtime'ом после выполнения)
+- **Tools Schema** → поле `tools[]` (тот же)
+
+**Response #2 (финальный ответ):**
+
+```json
+{
+  "id": "chatcmpl-def456",
+  "choices": [{
+    "message": {
+      "role": "assistant",
+      "content": "nginx работает нормально, сервис ONLINE",
+      "tool_calls": null
+    }
+  }]
 }
 ```
 
 **Что происходит:**
 - System Prompt содержит инструкции (может содержать few-shot примеры выбора инструментов)
-- **Tools Schema передается отдельным полем** (не внутри промпта!)
+- **Tools Schema передается отдельным полем** `tools[]` (не внутри промпта!)
 - User Input — текущий запрос
 - Модель видит все три части и решает вызвать инструмент
-- Runtime выполняет инструмент и добавляет результат в `messages`
+- Runtime выполняет инструмент и добавляет результат в `messages` с `role = "tool"`
 - Второй запрос включает tool result, модель формулирует финальный ответ
 
 ### Ключевые моменты
