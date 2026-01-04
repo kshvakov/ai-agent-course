@@ -1,52 +1,52 @@
-# Lab 08: Команда Агентов (Multi-Agent)
+# Lab 08: Agent Team (Multi-Agent)
 
-## Цель
-Создать систему из нескольких специализированных агентов, управляемую главным агентом (Supervisor). Реализовать паттерн Supervisor/Worker с изоляцией контекста.
+## Goal
+Create a system of multiple specialized agents managed by a main agent (Supervisor). Implement the Supervisor/Worker pattern with context isolation.
 
-## Теория
+## Theory
 
-### Проблема: Один агент "мастер на все руки"
+### Problem: One Agent "Jack of All Trades"
 
-Один агент с множеством инструментов часто путается. Контекст переполняется, агент может перепутать инструменты или принять неправильное решение.
+One agent with many tools often gets confused. Context overflows, the agent may mix up tools or make wrong decisions.
 
-**Решение:** Разделить ответственность между специализированными агентами.
+**Solution:** Divide responsibility among specialized agents.
 
-### Паттерн Supervisor (Начальник-Подчиненный)
+### Supervisor Pattern (Boss-Subordinate)
 
-**Архитектура:**
+**Architecture:**
 
-- **Supervisor:** Главный мозг. Не имеет инструментов для работы с инфраструктурой, но знает, кто что умеет.
-- **Workers:** Специализированные агенты с узким набором инструментов.
+- **Supervisor:** The main brain. Doesn't have tools for infrastructure work, but knows who can do what.
+- **Workers:** Specialized agents with a narrow set of tools.
 
-**Изоляция контекста:** Worker не видит всей переписки Supervisor-а, только свою задачу. Это экономит токены и фокусирует внимание.
+**Context isolation:** A Worker doesn't see all of the Supervisor's conversation, only its own task. This saves tokens and focuses attention.
 
-**Пример:**
+**Example:**
 
 ```
-Supervisor получает: "Проверь, доступен ли сервер БД, и если да — узнай версию"
+Supervisor receives: "Check if DB server is accessible, and if yes — find out the version"
 
-Supervisor думает:
-- Сначала нужно проверить сеть → делегирую Network Specialist
-- Потом нужно проверить БД → делегирую DB Specialist
+Supervisor thinks:
+- First need to check network → delegate to Network Specialist
+- Then need to check DB → delegate to DB Specialist
 
-Network Specialist получает: "Проверь доступность db-host.example.com"
-→ Вызывает ping("db-host.example.com")
-→ Возвращает: "Host is reachable"
+Network Specialist receives: "Check accessibility of db-host.example.com"
+→ Calls ping("db-host.example.com")
+→ Returns: "Host is reachable"
 
-DB Specialist получает: "Какая версия PostgreSQL на db-host?"
-→ Вызывает sql_query("SELECT version()")
-→ Возвращает: "PostgreSQL 15.2"
+DB Specialist receives: "What PostgreSQL version on db-host?"
+→ Calls sql_query("SELECT version()")
+→ Returns: "PostgreSQL 15.2"
 
-Supervisor собирает результаты и отвечает пользователю
+Supervisor collects results and responds to user
 ```
 
-## Задание
+## Assignment
 
-В `main.go` реализуйте Multi-Agent систему.
+In `main.go`, implement a Multi-Agent system.
 
-### Часть 1: Определение инструментов для Supervisor
+### Part 1: Define Tools for Supervisor
 
-Supervisor имеет инструменты для вызова специалистов:
+The Supervisor has tools for calling specialists:
 
 ```go
 supervisorTools := []openai.Tool{
@@ -69,7 +69,7 @@ supervisorTools := []openai.Tool{
 }
 ```
 
-### Часть 2: Определение инструментов для Workers
+### Part 2: Define Tools for Workers
 
 ```go
 netTools := []openai.Tool{
@@ -81,52 +81,52 @@ dbTools := []openai.Tool{
 }
 ```
 
-### Часть 3: Функция запуска Worker-а
+### Part 3: Worker Launch Function
 
-Реализуйте функцию `runWorkerAgent`, которая:
-- Создает **новый** контекст диалога для работника (изоляция!)
-- Запускает простой цикл агента (1-2 шага обычно)
-- Возвращает финальный ответ работника
+Implement the `runWorkerAgent` function that:
+- Creates a **new** dialogue context for the worker (isolation!)
+- Runs a simple agent loop (usually 1-2 steps)
+- Returns the worker's final answer
 
-### Часть 4: Цикл Supervisor-а
+### Part 4: Supervisor Loop
 
-Реализуйте цикл Supervisor-а, который:
-- Получает задачу от пользователя
-- Решает, какому специалисту делегировать
-- Вызывает соответствующего Worker-а
-- Получает ответ и добавляет его в свою историю
-- Собирает результаты и отвечает пользователю
+Implement the Supervisor loop that:
+- Receives a task from the user
+- Decides which specialist to delegate to
+- Calls the corresponding Worker
+- Receives the answer and adds it to its history
+- Collects results and responds to the user
 
-### Сценарий тестирования
+### Testing Scenario
 
-Запустите систему с промптом: *"Проверь, доступен ли сервер БД db-host.example.com, и если да — узнай версию PostgreSQL"*
+Run the system with the prompt: *"Check if DB server db-host.example.com is accessible, and if yes — find out PostgreSQL version"*
 
-**Ожидание:**
-- Supervisor делегирует Network Specialist → проверяет доступность
-- Supervisor делегирует DB Specialist → узнает версию
-- Supervisor собирает результаты и отвечает пользователю
+**Expected:**
+- Supervisor delegates to Network Specialist → checks accessibility
+- Supervisor delegates to DB Specialist → finds out version
+- Supervisor collects results and responds to user
 
-## Важно
+## Important
 
-- **Изоляция контекста:** Worker не должен видеть контекст Supervisor-а
-- **Возврат результатов:** Ответы Workers должны быть добавлены в историю Supervisor-а (role: "tool")
-- **Лимиты:** Установите лимит итераций для Workers (обычно 3-5)
+- **Context isolation:** Worker should not see Supervisor's context
+- **Returning results:** Worker responses should be added to Supervisor's history (role: "tool")
+- **Limits:** Set iteration limits for Workers (usually 3-5)
 
-## Критерии сдачи
+## Completion Criteria
 
-✅ **Сдано:**
-- Supervisor делегирует задачи Workers
-- Workers работают изолированно (не видят контекст Supervisor-а)
-- Ответы Workers возвращаются Supervisor-у
-- Supervisor собирает результаты и отвечает пользователю
-- Код компилируется и работает
+✅ **Completed:**
+- Supervisor delegates tasks to Workers
+- Workers work in isolation (don't see Supervisor's context)
+- Worker responses are returned to Supervisor
+- Supervisor collects results and responds to user
+- Code compiles and works
 
-❌ **Не сдано:**
-- Supervisor не делегирует задачи
-- Workers видят контекст Supervisor-а
-- Ответы Workers не возвращаются
-- Система зацикливается
+❌ **Not completed:**
+- Supervisor doesn't delegate tasks
+- Workers see Supervisor's context
+- Worker responses aren't returned
+- System loops infinitely
 
 ---
 
-**Поздравляем!** Вы завершили курс. Теперь вы умеете строить промышленных AI-агентов.
+**Congratulations!** You've completed the course. Now you can build production AI agents.

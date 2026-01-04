@@ -1,127 +1,125 @@
-# 00. Предисловие
+# 00. Preface
 
-## Зачем это нужно?
+## Why This Course?
 
-В классическом программировании вы пишете алгоритм: `if A then B`. Вы точно знаете, что произойдет.  
-В AI Engineering вы описываете **Цель** и даете **Инструменты**. Агент сам строит алгоритм достижения цели в реальном времени.
+In classical programming, you write an algorithm: `if A then B`. You know exactly what will happen.  
+In AI Engineering, you describe a **Goal** and provide **Tools**. The agent builds the algorithm to achieve the goal in real-time.
 
-Этот учебник научит вас создавать автономных AI-агентов на Go — системы, которые могут самостоятельно решать сложные задачи, взаимодействовать с реальным миром и учиться на результатах своих действий.
+This textbook will teach you to create autonomous AI agents in Go — systems that can independently solve complex problems, interact with the real world, and learn from the results of their actions.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Вы создали чат-бота для DevOps. Пользователь пишет: "У нас проблемы с базой, разберись"
+**Situation:** You've created a chatbot for DevOps. A user writes: "We have database issues, investigate"
 
-**Проблема:** Обычный чат-бот может только отвечать текстом. Он не может реально проверить метрики, прочитать логи или применить фикс.
+**Problem:** A regular chatbot can only respond with text. It cannot actually check metrics, read logs, or apply fixes.
 
-**Решение:** AI-агент с инструментами может самостоятельно проверить метрики → прочитать логи → выдвинуть гипотезу → применить фикс → верифицировать результат.
+**Solution:** An AI agent with tools can independently check metrics → read logs → form hypotheses → apply fixes → verify results.
 
-## Что такое AI Agent?
+## What is an AI Agent?
 
-**Агент** — это система, использующая LLM в качестве "движка рассуждений" (Reasoning Engine) для восприятия окружения, принятия решений и выполнения действий.
+**An Agent** is a system that uses an LLM as a "reasoning engine" to perceive the environment, make decisions, and execute actions.
 
-### Отличие от ChatGPT
+### Difference from ChatGPT
 
 | ChatGPT (Chatbot) | AI Agent |
 |------------------|----------|
-| Пассивен. Отвечает на вопрос и ждет. | Активен. Имеет цикл (Loop). |
-| Один запрос → один ответ. | Может выполнить 10 действий подряд для решения одной задачи. |
-| Не имеет доступа к реальному миру. | Имеет инструменты (Tools) для взаимодействия с системами. |
+| Passive. Answers a question and waits. | Active. Has a loop. |
+| One request → one response. | Can execute 10 actions in a row to solve one task. |
+| No access to the real world. | Has tools for interacting with systems. |
 
-**Пример:**
-- **ChatGPT:** "Как перезагрузить сервер?" → Ответ: "Используйте команду `systemctl restart nginx`"
-- **Agent:** "Перезагрузи сервер" → Агент сам вызывает `systemctl restart nginx`, проверяет статус, сообщает результат.
+**Example:**
+- **ChatGPT:** "How do I restart the server?" → Answer: "Use the command `systemctl restart nginx`"
+- **Agent:** "Restart the server" → The agent itself calls `systemctl restart nginx`, checks status, reports the result.
 
-## Уравнение Агента
+## The Agent Equation
 
 ```
 Agent = Brain (LLM) + Tools (Hands) + Memory (Context) + Planning (Process)
 ```
 
-### Компоненты
+### Components
 
-- **🧠 Brain (LLM):** "Мозг" агента. Принимает решения на основе контекста.
-- **🛠 Tools:** "Руки" агента. Позволяют взаимодействовать с реальным миром.
-- **📝 Memory:** История диалога и долгосрочная память (RAG).
-- **📋 Planning:** Способность разбить задачу на шаги.
+- **🧠 Brain (LLM):** The agent's "brain". Makes decisions based on context.
+- **🛠 Tools:** The agent's "hands". Allow interaction with the real world.
+- **📝 Memory:** Dialogue history and long-term memory (RAG).
+- **📋 Planning:** The ability to break down a task into steps.
 
-## Примеры агентов в разных доменах
+## Agent Examples in Different Domains
 
-### DevOps (наш основной фокус)
-- **Задача:** "У нас проблемы с базой, разберись"
-- **Действия агента:** Проверяет метрики → Читает логи → Выдвигает гипотезы → Применяет фиксы → Верифицирует
+### DevOps (our main focus)
+- **Task:** "We have database issues, investigate"
+- **Agent actions:** Checks metrics → Reads logs → Forms hypotheses → Applies fixes → Verifies
 
 ### Customer Support
-- **Задача:** "Пользователь жалуется на медленную загрузку"
-- **Действия агента:** Получает тикет → Ищет в базе знаний → Собирает контекст (версия браузера, ОС) → Формулирует ответ → Эскалирует при необходимости
+- **Task:** "User complains about slow loading"
+- **Agent actions:** Receives ticket → Searches knowledge base → Gathers context (browser version, OS) → Formulates response → Escalates if needed
 
 ### Data Analytics
-- **Задача:** "Почему упали продажи в регионе X?"
-- **Действия агента:** Формулирует SQL-запрос → Проверяет качество данных → Анализирует тренды → Генерирует отчет
+- **Task:** "Why did sales drop in region X?"
+- **Agent actions:** Formulates SQL query → Checks data quality → Analyzes trends → Generates report
 
 ### Security (SOC)
-- **Задача:** "Алерт: подозрительная активность на хосте 192.168.1.10"
-- **Действия агента:** Триажирует алерт → Собирает доказательства (логи, метрики) → Определяет severity → Изолирует хост (с подтверждением) → Генерирует отчет
+- **Task:** "Alert: suspicious activity on host 192.168.1.10"
+- **Agent actions:** Triages alert → Gathers evidence (logs, metrics) → Determines severity → Isolates host (with confirmation) → Generates report
 
 ### Product Operations
-- **Задача:** "Подготовь план релиза фичи X"
-- **Действия агента:** Собирает требования → Проверяет зависимости → Создает документы → Отправляет на согласование
+- **Task:** "Prepare release plan for feature X"
+- **Agent actions:** Gathers requirements → Checks dependencies → Creates documents → Sends for approval
 
-## Уровни автономности
+## Autonomy Levels
 
-1. **Level 0: Scripting.** Bash/Python скрипты. Жесткая логика. Любое отклонение — crash.
-2. **Level 1: Copilot.** "Напиши мне конфиг nginx". Человек валидирует и применяет.
-3. **Level 2: Chain.** "Выполни деплой": pull -> build -> restart. Агент идет по рельсам, но может (например) сам пофиксить ошибку компиляции.
-4. **Level 3: Autonomous Agent.** "У нас проблемы с базой, разберись". Агент сам ищет логи, проверяет метрики, строит гипотезы и (если разрешено) применяет фиксы.
+1. **Level 0: Scripting.** Bash/Python scripts. Rigid logic. Any deviation → crash.
+2. **Level 1: Copilot.** "Write me an nginx config". Human validates and applies.
+3. **Level 2: Chain.** "Deploy": pull -> build -> restart. The agent follows rails but can (e.g.) fix compilation errors itself.
+4. **Level 3: Autonomous Agent.** "We have database issues, investigate". The agent itself searches logs, checks metrics, builds hypotheses, and (if permitted) applies fixes.
 
-**Этот курс:** Мы пройдем путь от Level 1 до Level 3, создавая своего AI агента на Go (в качестве основного примера используем DevOps агента).
+**This course:** We'll progress from Level 1 to Level 3, building our AI agent in Go (using a DevOps agent as the main example).
 
-## Как читать этот учебник
+## How to Read This Textbook
 
-### Рекомендуемый путь
+### Recommended Path
 
-1. **Читайте последовательно** — каждая глава опирается на предыдущие
-2. **Практикуйтесь параллельно** — после каждой главы выполняйте соответствующую лабораторную работу
-3. **Используйте как справочник** — возвращайтесь к нужным разделам при работе над проектами
-4. **Изучайте примеры** — в каждой главе есть примеры из разных доменов
+1. **Read sequentially** — each chapter builds on previous ones
+2. **Practice in parallel** — after each chapter, complete the corresponding laboratory assignment
+3. **Use as a reference** — return to relevant sections when working on projects
+4. **Study examples** — each chapter has examples from different domains
 
-### Структура глав
+### Chapter Structure
 
-Каждая глава следует единому шаблону:
-- **Зачем это нужно?** — мотивация и практическая ценность
-- **Реальный кейс** — пример из практики
-- **Теория простыми словами** — интуитивное объяснение
-- **Как это работает** — пошаговый алгоритм с примерами кода
-- **Типовые ошибки** — что может пойти не так и как это исправить
-- **Мини-упражнения** — практические задания для закрепления
-- **Чек-лист** — критерии понимания материала
-- **Для любопытных** — формализация и глубокие детали (опционально)
+Each chapter follows a unified template:
+- **Why is this needed?** — motivation and practical value
+- **Real-world case** — practical example
+- **Theory in simple terms** — intuitive explanation
+- **How it works** — step-by-step algorithm with code examples
+- **Common mistakes** — what can go wrong and how to fix it
+- **Mini-exercises** — practical assignments for reinforcement
+- **Checklist** — criteria for understanding the material
+- **For the curious** — formalization and deep details (optional)
 
-## Требования
+## Requirements
 
-- **Go 1.21+** — для выполнения лабораторных работ
-- **Локальная LLM** (рекомендуется) или OpenAI API Key
-  - Установите [LM Studio](https://lmstudio.ai/) или [Ollama](https://ollama.com/)
-  - Запустите локальный сервер (обычно на порту 1234 или 11434)
-- **Базовые знания программирования** — курс рассчитан на программистов
-- **Понимание основ DevOps** (желательно, но не обязательно)
+- **Go 1.21+** — for completing laboratory assignments
+- **Local LLM** (recommended) or OpenAI API Key
+  - Install [LM Studio](https://lmstudio.ai/) or [Ollama](https://ollama.com/)
+  - Start a local server (usually on port 1234 or 11434)
+- **Basic programming knowledge** — the course is designed for programmers
+- **Understanding of DevOps basics** (desirable but not required)
 
-## Настройка окружения
+## Environment Setup
 
-Для работы с локальной моделью (например, в LM Studio):
-
+To work with a local model (e.g., in LM Studio):
 ```bash
 export OPENAI_BASE_URL="http://localhost:1234/v1"
-export OPENAI_API_KEY="any-string" # Локальным моделям ключ обычно не важен
+export OPENAI_API_KEY="any-string" # Local models usually don't need a key
 ```
 
-## Что дальше?
+## What's Next?
 
-После прочтения предисловия переходите к:
-- **[01. Физика LLM](../01-llm-fundamentals/README.md)** — фундамент для понимания всего остального
+After reading the preface, proceed to:
+- **[01. LLM Physics](../01-llm-fundamentals/README.md)** — the foundation for understanding everything else
 
 ---
 
-**Навигация:** [Оглавление](../README.md) | [Физика LLM →](../01-llm-fundamentals/README.md)
+**Navigation:** [Table of Contents](../README.md) | [LLM Physics →](../01-llm-fundamentals/README.md)
 
-**Удачного обучения! 🚀**
-
+**Happy Learning! 🚀**

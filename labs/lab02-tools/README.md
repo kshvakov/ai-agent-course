@@ -1,32 +1,32 @@
 # Lab 02: Function Calling (Tools)
 
-## Цель
-Понять механизм Function Calling. Научиться описывать функции Go так, чтобы LLM могла их вызывать.
+## Goal
+Understand the Function Calling mechanism. Learn to describe Go functions so that an LLM can call them.
 
-## Важно для локальных моделей ⚠️
-Не все локальные модели поддерживают **Function Calling**.
-Если вы используете **LM Studio** или **Ollama**, выбирайте модели с тегами `function-calling`, `tool-use` или `agent`.
-Хорошие варианты:
+## Important for Local Models ⚠️
+Not all local models support **Function Calling**.
+If you're using **LM Studio** or **Ollama**, choose models with tags `function-calling`, `tool-use`, or `agent`.
+Good options:
 *   `Mistral 7B Instruct`
 *   `Hermes 2 Pro`
-*   `Llama 3 (некоторые тюны)`
+*   `Llama 3 (some tunes)`
 *   `Gorilla OpenFunctions`
 
-Если модель не поддерживает тулы, она может просто продолжать разговор текстом, игнорируя ваши инструкции `Tools`.
+If the model doesn't support tools, it may simply continue the conversation with text, ignoring your `Tools` instructions.
 
-## Теория
-Обычная LLM возвращает текст. Но если описать ей "Инструменты" (Tools) в формате JSON Schema, она может вернуть структурированный запрос на вызов функции.
+## Theory
+A regular LLM returns text. But if you describe "Tools" to it in JSON Schema format, it can return a structured function call request.
 
-Процесс:
-1.  **Request:** Вы шлете историю + описание функций (Tools Definitions).
-2.  **Decision:** Модель решает: "Нужно вызвать функцию".
-3.  **Response:** Модель возвращает флаг `ToolCalls` (вместо текста).
-4.  **Execution:** Ваш код видит этот флаг и выполняет функцию.
+Process:
+1.  **Request:** You send history + function descriptions (Tools Definitions).
+2.  **Decision:** Model decides: "Need to call a function".
+3.  **Response:** Model returns `ToolCalls` flag (instead of text).
+4.  **Execution:** Your code sees this flag and executes the function.
 
-## Задание
-У нас есть заглушка функции `GetServerStatus(ip string)`.
+## Assignment
+We have a stub function `GetServerStatus(ip string)`.
 
-1.  **Настройка:** Инициализируйте клиента с `NewClientWithConfig` (как в Lab 01), чтобы работать локально.
-2.  **Определение:** Опишите функцию `get_server_status` в `openai.Tool`.
-3.  **Запрос:** Отправьте запрос: "Проверь статус сервера 192.168.1.10".
-4.  **Обработка:** Проверьте `msg.ToolCalls`. Если не пусто — распечатайте имя функции и аргументы.
+1.  **Setup:** Initialize the client with `NewClientWithConfig` (like in Lab 01) to work locally.
+2.  **Definition:** Describe the function `get_server_status` in `openai.Tool`.
+3.  **Request:** Send a request: "Check server status 192.168.1.10".
+4.  **Processing:** Check `msg.ToolCalls`. If not empty — print the function name and arguments.

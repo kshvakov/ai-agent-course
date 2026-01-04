@@ -1,43 +1,42 @@
 # Lab 05: Human-in-the-Loop (Clarification & Safety)
 
-## Цель
-Научить агента не быть "слепым исполнителем". Агент должен уметь:
-1.  **Задавать вопросы**, если не хватает информации (Slot Filling).
-2.  **Просить подтверждение** перед опасными действиями (Safety check).
+## Goal
+Teach the agent not to be a "blind executor". The agent should be able to:
+1.  **Ask questions** if information is missing (Slot Filling).
+2.  **Request confirmation** before dangerous actions (Safety check).
 
-## Теория
-В Lab 04 наш цикл работал так: `User -> Loop(Think->Act->Think) -> Answer`.
-Но что, если Агент в фазе `Think` поймет, что не может вызвать инструмент, потому что не знает аргументов? Или инструмент слишком опасен?
+## Theory
+In Lab 04, our loop worked like: `User -> Loop(Think->Act->Think) -> Answer`.
+But what if the Agent in the `Think` phase realizes it can't call a tool because it doesn't know the arguments? Or the tool is too dangerous?
 
-В этом случае Агент должен сгенерировать **Текстовый ответ** (Вопрос), и цикл должен прерваться, чтобы дать слово Пользователю.
+In this case, the Agent should generate a **Text response** (Question), and the loop should break to give the User a turn.
 
-**Схема интерактивного цикла:**
+**Interactive loop diagram:**
 ```mermaid
 sequenceDiagram
     participant User
     participant Agent
     participant Tool
 
-    User->>Agent: "Удали базу данных"
+    User->>Agent: "Delete database"
     Note over Agent: System Prompt: "Ask confirm before delete!"
-    Agent->>User: "Вы уверены? Это опасно."
-    User->>Agent: "Да, удаляй."
+    Agent->>User: "Are you sure? This is dangerous."
+    User->>Agent: "Yes, delete."
     Agent->>Tool: delete_database()
     Tool->>Agent: "Success"
-    Agent->>User: "База удалена."
+    Agent->>User: "Database deleted."
 ```
 
-## Задание
-У вас есть набор инструментов: `delete_db(name)` и `send_email(to, subject, body)`.
+## Assignment
+You have a set of tools: `delete_db(name)` and `send_email(to, subject, body)`.
 
-1.  **System Prompt:** Настройте промпт так, чтобы агент:
-    *   Всегда спрашивал подтверждение перед `delete_db`.
-    *   Всегда уточнял тему письма, если пользователь её не указал.
-2.  **Main Loop:** Используйте код из Lab 04, но оберните его в бесконечный цикл ввода (`while true`), как в Lab 01.
-    *   Если агент возвращает `ToolCall` -> выполняем, продолжаем цикл агента.
-    *   Если агент возвращает `Text` -> выводим пользователю, ждем ввода, продолжаем цикл чата.
+1.  **System Prompt:** Configure the prompt so that the agent:
+    *   Always asks for confirmation before `delete_db`.
+    *   Always clarifies email subject if user didn't specify it.
+2.  **Main Loop:** Use code from Lab 04, but wrap it in an infinite input loop (`while true`), like in Lab 01.
+    *   If agent returns `ToolCall` -> execute, continue agent loop.
+    *   If agent returns `Text` -> output to user, wait for input, continue chat loop.
 
-## Сценарии для проверки
-1.  `"Удали базу test_db"` -> Агент должен спросить "Are you sure?". -> Вы отвечаете "Yes". -> Агент удаляет.
-2.  `"Отправь письмо боссу"` -> Агент должен спросить "Какая тема и текст?". -> Вы отвечаете. -> Агент отправляет.
-
+## Testing Scenarios
+1.  `"Delete database test_db"` -> Agent should ask "Are you sure?". -> You answer "Yes". -> Agent deletes.
+2.  `"Send email to boss"` -> Agent should ask "What subject and text?". -> You answer. -> Agent sends.

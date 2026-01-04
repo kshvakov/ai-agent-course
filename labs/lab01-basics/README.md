@@ -1,31 +1,31 @@
 # Lab 01: Hello, LLM! (Basics & Memory)
 
-## Цель
-Научиться работать с OpenAI API (или совместимым локальным API) на Go, реализовать базовый цикл чата и механизм памяти (History).
+## Goal
+Learn to work with OpenAI API (or compatible local API) in Go, implement a basic chat loop and memory mechanism (History).
 
-## Теория
-Любое общение с LLM (ChatGPT, Llama 3) — это stateless процесс. Модель не помнит, что вы писали секунду назад. Чтобы создать иллюзию диалога, мы каждый раз отправляем **весь** список предыдущих сообщений (историю).
+## Theory
+Any communication with an LLM (ChatGPT, Llama 3) is a stateless process. The model doesn't remember what you wrote a second ago. To create the illusion of dialogue, we send the **entire** list of previous messages (history) every time.
 
-Структура сообщения обычно такая:
-*   `System`: Инструкция для роли ("Ты DevOps инженер...").
-*   `User`: Вопрос пользователя ("Как дела?").
-*   `Assistant`: Ответ модели.
+Message structure is usually:
+*   `System`: Role instruction ("You are a DevOps engineer...").
+*   `User`: User's question ("How are you?").
+*   `Assistant`: Model's response.
 
-## Задание
-В файле `main.go` вы найдете заготовку консольного чата.
+## Assignment
+In the `main.go` file, you'll find a console chat skeleton.
 
-1.  **Инициализация:** Создайте клиент OpenAI. Если задана переменная `OPENAI_BASE_URL` (для LM Studio/Ollama), используйте её.
-2.  **Memory Loop:** Реализуйте цикл:
-    *   Считать ввод пользователя.
-    *   Добавить сообщение пользователя в историю (`messages`).
-    *   Отправить ВСЮ историю в API.
-    *   Получить ответ, вывести на экран.
-    *   Добавить ответ ассистента в историю.
-3.  **System Prompt:** Добавьте в начало истории системное сообщение, которое задает роль: *"Ты опытный Linux администратор. Отвечай кратко и по делу."*
+1.  **Initialization:** Create an OpenAI client. If `OPENAI_BASE_URL` variable is set (for LM Studio/Ollama), use it.
+2.  **Memory Loop:** Implement the loop:
+    *   Read user input.
+    *   Add user message to history (`messages`).
+    *   Send ENTIRE history to API.
+    *   Get response, print to screen.
+    *   Add assistant's response to history.
+3.  **System Prompt:** Add a system message at the start of history that sets the role: *"You are an experienced Linux administrator. Answer briefly and to the point."*
 
-## Запуск с локальной моделью (LM Studio)
-1.  Запустите LM Studio -> Start Server (Port 1234).
-2.  В терминале:
+## Running with Local Model (LM Studio)
+1.  Start LM Studio -> Start Server (Port 1234).
+2.  In terminal:
 ```bash
 export OPENAI_BASE_URL="http://localhost:1234/v1"
 export OPENAI_API_KEY="lm-studio"

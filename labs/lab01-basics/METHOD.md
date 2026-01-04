@@ -1,96 +1,96 @@
-# Методическое пособие: Lab 01 — Hello, LLM!
+# Study Guide: Lab 01 — Hello, LLM!
 
-## Зачем это нужно?
+## Why This Lab?
 
-В этой лабораторной работе вы научитесь основам взаимодействия с LLM: отправке запросов, получению ответов и, самое главное, **управлению контекстом**. Без сохранения контекста (истории сообщений) невозможно построить диалог.
+In this laboratory assignment, you'll learn the basics of interacting with LLMs: sending requests, receiving responses, and most importantly, **context management**. Without saving context (message history), it's impossible to build a dialogue.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Вы создали чат-бота для поддержки клиентов. Пользователь пишет:
-- "У меня проблема с входом"
-- Бот отвечает: "Опишите проблему подробнее"
-- Пользователь: "Я забыл пароль"
-- Бот: "Опишите проблему подробнее" (снова!)
+**Situation:** You've created a chatbot for customer support. User writes:
+- "I have a login problem"
+- Bot responds: "Describe the problem in detail"
+- User: "I forgot my password"
+- Bot: "Describe the problem in detail" (again!)
 
-**Проблема:** Бот не помнит предыдущие сообщения.
+**Problem:** Bot doesn't remember previous messages.
 
-**Решение:** Передавать всю историю диалога в каждый запрос.
+**Solution:** Send the entire dialogue history in each request.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### LLM — это Stateless система
+### LLM is a Stateless System
 
-**Stateless** означает "без состояния". Каждый запрос для модели — это новый запрос. Она не помнит, что вы писали секунду назад.
+**Stateless** means "without state". Each request to the model is a new request. It doesn't remember what you wrote a second ago.
 
-Чтобы создать иллюзию диалога, мы каждый раз отправляем **весь** список предыдущих сообщений (историю).
+To create the illusion of dialogue, we send the **entire** list of previous messages (history) every time.
 
-### Структура сообщения
+### Message Structure
 
-Сообщение состоит из:
-- **Role (Роль):** `system`, `user`, `assistant`
-- **Content (Содержимое):** Текст сообщения
+A message consists of:
+- **Role:** `system`, `user`, `assistant`
+- **Content:** Message text
 
-**Пример:**
+**Example:**
 
 ```go
 messages := []ChatCompletionMessage{
-    {Role: "system", Content: "Ты опытный Linux администратор"},
-    {Role: "user", Content: "Как проверить статус сервиса?"},
-    {Role: "assistant", Content: "Используйте команду systemctl status nginx"},
-    {Role: "user", Content: "А как его перезапустить?"},
+    {Role: "system", Content: "You are an experienced Linux administrator"},
+    {Role: "user", Content: "How to check service status?"},
+    {Role: "assistant", Content: "Use command systemctl status nginx"},
+    {Role: "user", Content: "How to restart it?"},
 }
 ```
 
-Модель видит всю историю и понимает контекст ("его" = nginx).
+The model sees the full history and understands context ("it" = nginx).
 
-## Алгоритм выполнения
+## Execution Algorithm
 
-### Шаг 1: Инициализация клиента
+### Step 1: Client Initialization
 
 ```go
 config := openai.DefaultConfig(token)
 if baseURL != "" {
-    config.BaseURL = baseURL  // Для локальных моделей
+    config.BaseURL = baseURL  // For local models
 }
 client := openai.NewClientWithConfig(config)
 ```
 
-### Шаг 2: Создание истории
+### Step 2: Creating History
 
 ```go
 messages := []openai.ChatCompletionMessage{
     {
         Role:    openai.ChatMessageRoleSystem,
-        Content: "Ты опытный Linux администратор. Отвечай кратко и по делу.",
+        Content: "You are an experienced Linux administrator. Answer briefly and to the point.",
     },
 }
 ```
 
-**Важно:** System Prompt задает роль агента. Это влияет на стиль ответов.
+**Important:** System Prompt sets the agent's role. This affects response style.
 
-### Шаг 3: Цикл чата
+### Step 3: Chat Loop
 
 ```go
 for {
-    // 1. Читаем ввод пользователя
+    // 1. Read user input
     input := readUserInput()
     
-    // 2. Добавляем в историю
+    // 2. Add to history
     messages = append(messages, openai.ChatCompletionMessage{
         Role:    openai.ChatMessageRoleUser,
         Content: input,
     })
     
-    // 3. Отправляем ВСЮ историю в API
+    // 3. Send ENTIRE history to API
     resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
         Model:    openai.GPT3Dot5Turbo,
-        Messages: messages,  // Вся история!
+        Messages: messages,  // Full history!
     })
     
-    // 4. Получаем ответ
+    // 4. Get response
     answer := resp.Choices[0].Message.Content
     
-    // 5. Сохраняем ответ в историю
+    // 5. Save response to history
     messages = append(messages, openai.ChatCompletionMessage{
         Role:    openai.ChatMessageRoleAssistant,
         Content: answer,
@@ -98,80 +98,80 @@ for {
 }
 ```
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: История не сохраняется
+### Mistake 1: History Not Saved
 
-**Симптом:** Агент не помнит предыдущие сообщения.
+**Symptom:** Agent doesn't remember previous messages.
 
-**Причина:** Вы не добавляете ответ ассистента в историю.
+**Cause:** You're not adding the assistant's response to history.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
+// BAD
 messages = append(messages, userMessage)
 resp := client.CreateChatCompletion(...)
 answer := resp.Choices[0].Message.Content
-// История не обновлена!
+// History not updated!
 
-// ХОРОШО
+// GOOD
 messages = append(messages, userMessage)
 resp := client.CreateChatCompletion(...)
-messages = append(messages, resp.Choices[0].Message)  // Сохраняем ответ!
+messages = append(messages, resp.Choices[0].Message)  // Save response!
 ```
 
-### Ошибка 2: System Prompt не работает
+### Mistake 2: System Prompt Doesn't Work
 
-**Симптом:** Агент отвечает не в нужном стиле.
+**Symptom:** Agent responds in wrong style.
 
-**Причина:** System Prompt не добавлен или добавлен не в начало.
+**Cause:** System Prompt not added or not added at the start.
 
-**Решение:**
+**Solution:**
 ```go
-// System Prompt должен быть ПЕРВЫМ сообщением
+// System Prompt must be FIRST message
 messages := []openai.ChatCompletionMessage{
-    {Role: "system", Content: "Ты DevOps инженер"},  // Первое!
+    {Role: "system", Content: "You are a DevOps engineer"},  // First!
     {Role: "user", Content: "..."},
 }
 ```
 
-### Ошибка 3: Контекст переполняется
+### Mistake 3: Context Overflow
 
-**Симптом:** После N сообщений агент "забывает" начало разговора.
+**Symptom:** After N messages, agent "forgets" the start of conversation.
 
-**Причина:** История слишком длинная, не влезает в контекстное окно.
+**Cause:** History too long, doesn't fit in context window.
 
-**Решение:**
+**Solution:**
 ```go
-// Обрезка истории (оставляем только последние N сообщений)
+// History truncation (keep only last N messages)
 if len(messages) > maxHistoryLength {
-    // Оставляем System Prompt + последние N-1 сообщений
+    // Keep System Prompt + last N-1 messages
     messages = append(
         []openai.ChatCompletionMessage{messages[0]},  // System
-        messages[len(messages)-maxHistoryLength+1:]...,  // Последние
+        messages[len(messages)-maxHistoryLength+1:]...,  // Last ones
     )
 }
 ```
 
-## Мини-упражнения
+## Mini-Exercises
 
-### Упражнение 1: Измените роль
+### Exercise 1: Change Role
 
-Попробуйте разные System Prompts:
-- "Ты вежливый помощник"
-- "Ты строгий учитель"
-- "Ты дружелюбный коллега"
+Try different System Prompts:
+- "You are a polite assistant"
+- "You are a strict teacher"
+- "You are a friendly colleague"
 
-Наблюдайте, как меняется стиль ответов.
+Observe how response style changes.
 
-### Упражнение 2: Добавьте счетчик токенов
+### Exercise 2: Add Token Counter
 
-Подсчитайте, сколько токенов используется в истории:
+Count how many tokens are used in history:
 
 ```go
 import "github.com/sashabaranov/go-openai"
 
-// Примерная оценка (1 токен ≈ 4 символа)
+// Approximate estimate (1 token ≈ 4 characters)
 tokenCount := 0
 for _, msg := range messages {
     tokenCount += len(msg.Content) / 4
@@ -179,19 +179,18 @@ for _, msg := range messages {
 fmt.Printf("Tokens used: %d\n", tokenCount)
 ```
 
-## Критерии сдачи
+## Completion Criteria
 
-✅ **Сдано:**
-- Агент помнит предыдущие сообщения
-- System Prompt влияет на стиль ответов
-- Код компилируется и работает
+✅ **Completed:**
+- Agent remembers previous messages
+- System Prompt affects response style
+- Code compiles and works
 
-❌ **Не сдано:**
-- Агент не помнит контекст
-- System Prompt игнорируется
-- Код не компилируется
+❌ **Not completed:**
+- Agent doesn't remember context
+- System Prompt is ignored
+- Code doesn't compile
 
 ---
 
-**Следующий шаг:** После успешного прохождения Lab 01 переходите к [Lab 02: Tools](../lab02-tools/README.md)
-
+**Next step:** After successfully completing Lab 01, proceed to [Lab 02: Tools](../lab02-tools/README.md)

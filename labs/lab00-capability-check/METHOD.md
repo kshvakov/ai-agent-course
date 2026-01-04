@@ -1,55 +1,55 @@
-# Методическое пособие: Lab 00 — Model Capability Benchmark
+# Study Guide: Lab 00 — Model Capability Benchmark
 
-## Зачем это нужно?
+## Why This Lab?
 
-Перед тем как строить сложных агентов, мы должны **научно подтвердить**, что наша модель (особенно локальная) обладает необходимыми способностями. В инженерии это называется **Characterization** (характеризация).
+Before building complex agents, we must **scientifically confirm** that our model (especially a local one) possesses the necessary abilities. In engineering, this is called **Characterization**.
 
-Мы не верим этикеткам ("Super-Pro-Max Model"). Мы верим тестам.
+We don't trust labels ("Super-Pro-Max Model"). We trust tests.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Вы скачали модель "Llama-3-8B-Instruct" и начали строить агента. Через час работы обнаружили, что модель не вызывает инструменты, а только пишет текст.
+**Situation:** You downloaded the "Llama-3-8B-Instruct" model and started building an agent. After an hour of work, discovered that the model doesn't call tools, only writes text.
 
-**Проблема:** Вы потратили время на отладку кода, хотя проблема была в модели.
+**Problem:** You spent time debugging code, although the problem was in the model.
 
-**Решение:** Запустите Lab 00 **перед** началом работы. Это сэкономит часы.
+**Solution:** Run Lab 00 **before** starting work. This will save hours.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### Что мы проверяем?
+### What Do We Check?
 
-1. **Basic Sanity (Базовая работоспособность)**
-   - Модель отвечает на запросы
-   - Нет критических ошибок API
+1. **Basic Sanity**
+   - Model responds to requests
+   - No critical API errors
 
-2. **Instruction Following (Следование инструкциям)**
-   - Модель может жестко придерживаться ограничений
-   - Важно для агентов: они должны возвращать строго определенные форматы
+2. **Instruction Following**
+   - Model can strictly adhere to constraints
+   - Important for agents: they must return strictly defined formats
 
-3. **JSON Generation (Генерация JSON)**
-   - Модель может генерировать валидный синтаксис
-   - Все взаимодействие с инструментами строится на JSON
+3. **JSON Generation**
+   - Model can generate valid syntax
+   - All interaction with tools is built on JSON
 
-4. **Function Calling (Использование инструментов)**
-   - Специфический навык модели распознавать определение функций
-   - Без этого невозможны Lab 02 и дальше
+4. **Function Calling**
+   - Specific skill of the model to recognize function definitions
+   - Without this, Lab 02 and beyond are impossible
 
-### Почему не все модели умеют Tools?
+### Why Don't All Models Support Tools?
 
-LLM (Large Language Model) — это вероятностный генератор текста. Она не "знает" про функции.
+LLM (Large Language Model) is a probabilistic text generator. It doesn't "know" about functions.
 
-Механизм **Function Calling** — это результат специальной тренировки (Fine-Tuning). Разработчики модели добавляют в обучающую выборку тысячи примеров вида:
+The **Function Calling** mechanism is the result of special training (Fine-Tuning). Model developers add thousands of examples to the training dataset like:
 
 ```
 User: "Check weather"
 Assistant: <special_token>call_tool{"name": "weather"}<end_token>
 ```
 
-Если вы скачали "голую" Llama 3 (Base model), она не видела этих примеров. Она просто продолжит диалог текстом.
+If you downloaded a "bare" Llama 3 (Base model), it hasn't seen these examples. It will simply continue the dialogue with text.
 
-## Алгоритм выполнения
+## Execution Algorithm
 
-### Шаг 1: Запуск тестов
+### Step 1: Running Tests
 
 ```bash
 cd labs/lab00-capability-check
@@ -58,9 +58,9 @@ export OPENAI_API_KEY="lm-studio"
 go run main.go
 ```
 
-### Шаг 2: Анализ результатов
+### Step 2: Analyzing Results
 
-Тесты выдадут отчет:
+Tests will output a report:
 
 ```
 ✅ 1. Basic Sanity - PASSED
@@ -69,46 +69,46 @@ go run main.go
 ❌ 4. Function Calling - FAILED
 ```
 
-### Шаг 3: Интерпретация
+### Step 3: Interpretation
 
-- **Если все тесты прошли:** Модель готова для курса. Можно продолжать.
-- **Если Function Calling провален:** Модель не подходит для Lab 02-08. Нужна другая модель.
+- **If all tests passed:** Model is ready for the course. Can continue.
+- **If Function Calling failed:** Model is not suitable for Lab 02-08. Need a different model.
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: "API Error: connection refused"
+### Mistake 1: "API Error: connection refused"
 
-**Причина:** Локальный сервер (LM Studio/Ollama) не запущен.
+**Cause:** Local server (LM Studio/Ollama) is not running.
 
-**Решение:**
-1. Запустите LM Studio
-2. Нажмите "Start Server" (обычно порт 1234)
-3. Проверьте, что `OPENAI_BASE_URL` указывает на правильный порт
+**Solution:**
+1. Start LM Studio
+2. Click "Start Server" (usually port 1234)
+3. Check that `OPENAI_BASE_URL` points to the correct port
 
-### Ошибка 2: "Function Calling - FAILED"
+### Mistake 2: "Function Calling - FAILED"
 
-**Причина:** Модель не обучена на Function Calling.
+**Cause:** Model is not trained on Function Calling.
 
-**Решение:**
-1. Скачайте модель с поддержкой tools:
+**Solution:**
+1. Download a model with tool support:
    - `Hermes-2-Pro-Llama-3-8B`
    - `Mistral-7B-Instruct-v0.2`
-   - `Llama-3-8B-Instruct` (некоторые версии)
-2. Перезапустите тесты
+   - `Llama-3-8B-Instruct` (some versions)
+2. Restart tests
 
-### Ошибка 3: "JSON Generation - FAILED"
+### Mistake 3: "JSON Generation - FAILED"
 
-**Причина:** Модель генерирует сломанный JSON (пропущенные скобки, кавычки).
+**Cause:** Model generates broken JSON (missing brackets, quotes).
 
-**Решение:**
-1. Попробуйте другую модель
-2. Или используйте `Temperature = 0` (но это не всегда помогает)
+**Solution:**
+1. Try a different model
+2. Or use `Temperature = 0` (but this doesn't always help)
 
-## Мини-упражнения
+## Mini-Exercises
 
-### Упражнение 1: Добавьте свой тест
+### Exercise 1: Add Your Own Test
 
-Добавьте тест на проверку "модель не должна использовать запрещенные слова":
+Add a test to check "model should not use forbidden words":
 
 ```go
 runTest(ctx, client, "5. Safety Check",
@@ -119,9 +119,9 @@ runTest(ctx, client, "5. Safety Check",
 )
 ```
 
-### Упражнение 2: Измерьте latency
+### Exercise 2: Measure Latency
 
-Добавьте измерение времени ответа:
+Add response time measurement:
 
 ```go
 start := time.Now()
@@ -130,13 +130,12 @@ latency := time.Since(start)
 fmt.Printf("Latency: %v\n", latency)
 ```
 
-## Критерии сдачи
+## Completion Criteria
 
-✅ **Сдано:** Все 4 теста прошли успешно  
-⚠️ **Частично:** 3 из 4 тестов прошли (можно продолжать, но с осторожностью)  
-❌ **Не сдано:** Function Calling провален (нужна другая модель)
+✅ **Completed:** All 4 tests passed successfully  
+⚠️ **Partially:** 3 out of 4 tests passed (can continue, but with caution)  
+❌ **Not completed:** Function Calling failed (need a different model)
 
 ---
 
-**Следующий шаг:** После успешного прохождения Lab 00 переходите к [Lab 01: Basics](../lab01-basics/README.md)
-
+**Next step:** After successfully completing Lab 00, proceed to [Lab 01: Basics](../lab01-basics/README.md)

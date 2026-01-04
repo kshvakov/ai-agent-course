@@ -1,103 +1,102 @@
-# Lab 09: Context Optimization (Оптимизация контекста)
+# Lab 09: Context Optimization
 
-## Цель
-Научиться управлять контекстным окном LLM: подсчитывать токены, применять техники оптимизации (обрезка, саммаризация) и реализовать адаптивное управление контекстом.
+## Goal
+Learn to manage LLM context window: count tokens, apply optimization techniques (truncation, summarization), and implement adaptive context management.
 
-## Теория
+## Theory
 
-### Проблема переполнения контекста
+### Context Overflow Problem
 
-Когда агент работает в длинном диалоге или выполняет много шагов в автономном цикле, история сообщений растет. Рано или поздно она не влезает в контекстное окно модели (например, 4k токенов для GPT-3.5-turbo).
+When an agent works in a long dialogue or executes many steps in an autonomous loop, message history grows. Sooner or later, it doesn't fit in the model's context window (e.g., 4k tokens for GPT-3.5-turbo).
 
-**Что происходит:**
-- Модель не видит начало разговора
-- Модель "забывает" важные детали
-- API возвращает ошибку "context length exceeded"
+**What happens:**
+- Model doesn't see the start of conversation
+- Model "forgets" important details
+- API returns error "context length exceeded"
 
-### Техники оптимизации
+### Optimization Techniques
 
-1. **Подсчет токенов** — всегда знать, сколько токенов используется
-2. **Обрезка (Truncation)** — оставляем только последние N сообщений
-3. **Саммаризация (Summarization)** — сжимаем старые сообщения через LLM
-4. **Адаптивное управление** — выбираем технику в зависимости от заполненности
+1. **Token counting** — always know how many tokens are used
+2. **Truncation** — keep only last N messages
+3. **Summarization** — compress old messages via LLM
+4. **Adaptive management** — choose technique based on fill level
 
-См. подробнее: [Глава 03: Оптимизация контекста](../../docs/book/03-agent-architecture/README.md#оптимизация-контекста-context-optimization)
+See more: [Chapter 03: Context Optimization](../../docs/book/03-agent-architecture/README.md#оптимизация-контекста-context-optimization)
 
-## Задание
+## Assignment
 
-В файле `main.go` реализуйте систему оптимизации контекста для длинного диалога.
+In the `main.go` file, implement a context optimization system for long dialogue.
 
-### Часть 1: Подсчет токенов
+### Part 1: Token Counting
 
-Реализуйте функции:
-- `estimateTokens(text string) int` — приблизительная оценка (1 токен ≈ 4 символа)
-- `countTokensInMessages(messages []openai.ChatCompletionMessage) int` — подсчет токенов во всей истории
+Implement functions:
+- `estimateTokens(text string) int` — approximate estimate (1 token ≈ 4 characters)
+- `countTokensInMessages(messages []openai.ChatCompletionMessage) int` — count tokens in entire history
 
-### Часть 2: Обрезка истории
+### Part 2: History Truncation
 
-Реализуйте функцию `truncateHistory(messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage`:
-- Всегда сохраняйте System Prompt
-- Оставляйте последние сообщения, пока не достигнете лимита
+Implement function `truncateHistory(messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage`:
+- Always preserve System Prompt
+- Keep last messages until limit is reached
 
-### Часть 3: Саммаризация
+### Part 3: Summarization
 
-Реализуйте функцию `summarizeMessages(messages []openai.ChatCompletionMessage) string`:
-- Используйте LLM для создания краткого резюме старых сообщений
-- Сохраняйте важные факты, решения, текущее состояние задачи
+Implement function `summarizeMessages(messages []openai.ChatCompletionMessage) string`:
+- Use LLM to create brief summary of old messages
+- Preserve important facts, decisions, current task state
 
-### Часть 4: Адаптивное управление
+### Part 4: Adaptive Management
 
-Реализуйте функцию `adaptiveContextManagement(messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage`:
-- Если контекст < 80% — ничего не делаем
-- Если 80-90% — применяем приоритизацию (сохраняем важные сообщения)
-- Если > 90% — применяем саммаризацию
+Implement function `adaptiveContextManagement(messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage`:
+- If context < 80% — do nothing
+- If 80-90% — apply prioritization (preserve important messages)
+- If > 90% — apply summarization
 
-### Сценарий тестирования
+### Testing Scenario
 
-Запустите длинный диалог (20+ сообщений) и убедитесь, что:
-1. Агент продолжает помнить начало разговора (через саммаризацию)
-2. Контекст не переполняется
-3. Агент корректно отвечает на вопросы о ранних сообщениях
+Run a long dialogue (20+ messages) and ensure that:
+1. Agent continues to remember the start of conversation (via summarization)
+2. Context doesn't overflow
+3. Agent correctly answers questions about early messages
 
-## Пример работы
+## Example
 
 ```
-User: Привет! Меня зовут Иван, я работаю DevOps инженером.
-Assistant: Привет, Иван! Чем могу помочь?
+User: Hello! My name is Ivan, I work as a DevOps engineer.
+Assistant: Hello, Ivan! How can I help?
 
-... (много сообщений) ...
+... (many messages) ...
 
-User: Помнишь, как меня зовут?
-Assistant: Да, конечно! Вас зовут Иван, вы DevOps инженер.
+User: Do you remember my name?
+Assistant: Yes, of course! Your name is Ivan, you're a DevOps engineer.
 ```
 
-**Без оптимизации:** После 20 сообщений контекст переполнится, агент забудет имя.
+**Without optimization:** After 20 messages, context will overflow, agent will forget the name.
 
-**С оптимизацией:** Старые сообщения сжаты в саммари, но важная информация (имя, роль) сохранена.
+**With optimization:** Old messages are compressed into summary, but important information (name, role) is preserved.
 
-## Важно
+## Important
 
-- Используйте `OPENAI_BASE_URL` для локальных моделей
-- Для саммаризации можно использовать ту же модель или более дешевую/быструю
-- Тестируйте на реальных длинных диалогах (20+ сообщений)
+- Use `OPENAI_BASE_URL` for local models
+- For summarization, you can use the same model or a cheaper/faster one
+- Test on real long dialogues (20+ messages)
 
-## Критерии сдачи
+## Completion Criteria
 
-✅ **Сдано:**
-- Реализован подсчет токенов
-- Реализована обрезка истории
-- Реализована саммаризация через LLM
-- Реализовано адаптивное управление
-- Агент помнит начало разговора после оптимизации
-- Контекст не переполняется
+✅ **Completed:**
+- Token counting implemented
+- History truncation implemented
+- Summarization via LLM implemented
+- Adaptive management implemented
+- Agent remembers start of conversation after optimization
+- Context doesn't overflow
 
-❌ **Не сдано:**
-- Контекст переполняется
-- Агент забывает важную информацию после оптимизации
-- Саммаризация не работает
-- Код не компилируется
+❌ **Not completed:**
+- Context overflows
+- Agent forgets important information after optimization
+- Summarization doesn't work
+- Code doesn't compile
 
 ---
 
-**Следующий шаг:** После успешного прохождения Lab 09 вы освоили все ключевые техники работы с агентами! Можете перейти к изучению [Multi-Agent Systems](../lab08-multi-agent/README.md) или [RAG](../lab07-rag/README.md).
-
+**Next step:** After successfully completing Lab 09, you've mastered all key agent techniques! You can proceed to study [Multi-Agent Systems](../lab08-multi-agent/README.md) or [RAG](../lab07-rag/README.md).

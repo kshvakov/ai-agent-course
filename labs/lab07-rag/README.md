@@ -1,35 +1,35 @@
 # Lab 07: RAG & Knowledge Base
 
-## Цель
-Научить агента работать с внутренней документацией (Wiki, Man pages, регламенты) перед выполнением действий. Реализовать простой поиск по базе знаний (RAG).
+## Goal
+Teach the agent to work with internal documentation (Wiki, Man pages, regulations) before executing actions. Implement simple knowledge base search (RAG).
 
-## Теория
+## Theory
 
-### Проблема: Агент не знает локальные инструкции
+### Problem: Agent Doesn't Know Local Instructions
 
-Обычный агент знает только то, чему его научили при тренировке (до даты cut-off). Он не знает ваши локальные инструкции типа "Как перезагружать сервер Phoenix согласно регламенту №5".
+A regular agent only knows what it was taught during training (before cut-off date). It doesn't know your local instructions like "How to restart Phoenix server according to regulation #5".
 
-**RAG (Retrieval Augmented Generation)** — это механизм "подглядывания в шпаргалку". Агент сначала ищет информацию в базе знаний, а потом действует.
+**RAG (Retrieval Augmented Generation)** is a mechanism of "peeking at a cheat sheet". The agent first searches for information in the knowledge base, then acts.
 
-### Как работает RAG?
+### How Does RAG Work?
 
-1. **Задача:** "Перезагрузи сервер Phoenix согласно регламенту"
-2. **Мысль агента:** "Я не знаю регламент. Надо поискать"
-3. **Действие:** `search_knowledge_base("Phoenix restart protocol")`
-4. **Результат:** "Файл `protocols.txt`: ...сначала выключить балансировщик, потом сервер..."
-5. **Мысль агента:** "Ага, понял. Сначала выключаю балансировщик..."
+1. **Task:** "Restart Phoenix server according to regulation"
+2. **Agent's thought:** "I don't know the regulation. Need to search"
+3. **Action:** `search_knowledge_base("Phoenix restart protocol")`
+4. **Result:** "File `protocols.txt`: ...first turn off load balancer, then server..."
+5. **Agent's thought:** "Got it. First I'll turn off the load balancer..."
 
-### Простой RAG vs Векторный поиск
+### Simple RAG vs Vector Search
 
-В этой лабе мы реализуем **простой RAG** (поиск по ключевым словам). В продакшене используется **векторный поиск** (Semantic Search), который ищет по смыслу, а не по словам.
+In this lab, we implement **simple RAG** (keyword search). In production, **vector search** (Semantic Search) is used, which searches by meaning, not by words.
 
-## Задание
+## Assignment
 
-В `main.go` реализуйте систему RAG для агента.
+In `main.go`, implement a RAG system for the agent.
 
-### Часть 1: База знаний
+### Part 1: Knowledge Base
 
-Создайте простую базу знаний (map[string]string):
+Create a simple knowledge base (map[string]string):
 
 ```go
 var knowledgeBase = map[string]string{
@@ -38,47 +38,47 @@ var knowledgeBase = map[string]string{
 }
 ```
 
-### Часть 2: Инструмент поиска
+### Part 2: Search Tool
 
-Реализуйте функцию `searchKnowledgeBase(query string) string`, которая:
-- Ищет документы по ключевым словам (простой поиск по подстроке)
-- Возвращает найденные документы или "No documents found"
+Implement the `searchKnowledgeBase(query string) string` function that:
+- Searches documents by keywords (simple substring search)
+- Returns found documents or "No documents found"
 
-### Часть 3: Интеграция в агента
+### Part 3: Integration into Agent
 
-1. Добавьте инструмент `search_knowledge_base` в список tools агента
-2. Настройте System Prompt так, чтобы агент **всегда** искал в базе знаний перед действиями, связанными с регламентами
-3. Реализуйте цикл агента (как в Lab 04)
+1. Add the `search_knowledge_base` tool to the agent's tools list
+2. Configure System Prompt so that the agent **always** searches the knowledge base before actions related to regulations
+3. Implement agent loop (like in Lab 04)
 
-### Сценарий тестирования
+### Testing Scenario
 
-Запустите агента с промптом: *"Перезагрузи сервер Phoenix согласно регламенту"*
+Run the agent with prompt: *"Restart Phoenix server according to regulation"*
 
-**Ожидание:**
-- Агент вызывает `search_knowledge_base("Phoenix restart")`
-- Находит документ с регламентом
-- Следует инструкциям из документа (например, сначала делает backup)
-- Выполняет перезагрузку
+**Expected:**
+- Agent calls `search_knowledge_base("Phoenix restart")`
+- Finds document with regulation
+- Follows instructions from document (e.g., first does backup)
+- Executes restart
 
-## Важно
+## Important
 
-- System Prompt должен быть строгим: "BEFORE any action, you MUST search knowledge base"
-- Результат поиска должен быть добавлен в историю сообщений (role: "tool")
-- Агент должен следовать найденным инструкциям
+- System Prompt must be strict: "BEFORE any action, you MUST search knowledge base"
+- Search result must be added to message history (role: "tool")
+- Agent must follow found instructions
 
-## Критерии сдачи
+## Completion Criteria
 
-✅ **Сдано:**
-- Агент ищет в базе знаний перед действием
-- Поиск находит релевантные документы
-- Агент следует найденным инструкциям
-- Код компилируется и работает
+✅ **Completed:**
+- Agent searches knowledge base before action
+- Search finds relevant documents
+- Agent follows found instructions
+- Code compiles and works
 
-❌ **Не сдано:**
-- Агент не ищет в базе знаний
-- Поиск не работает
-- Агент игнорирует найденную информацию
+❌ **Not completed:**
+- Agent doesn't search knowledge base
+- Search doesn't work
+- Agent ignores found information
 
 ---
 
-**Следующий шаг:** После успешного прохождения Lab 07 переходите к [Lab 08: Multi-Agent](../lab08-multi-agent/README.md)
+**Next step:** After successfully completing Lab 07, proceed to [Lab 08: Multi-Agent](../lab08-multi-agent/README.md)

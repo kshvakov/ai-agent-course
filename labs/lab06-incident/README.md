@@ -1,98 +1,98 @@
-# Lab 06: Инцидент-Менеджмент (Advanced Planning)
+# Lab 06: Incident Management (Advanced Planning)
 
-## Цель
-Создать агента уровня SRE, способного самостоятельно расследовать и устранять сбои, используя **явное планирование** (Plan-and-Solve) и SOP (Standard Operating Procedure).
+## Goal
+Create an SRE-level agent capable of independently investigating and resolving failures using **explicit planning** (Plan-and-Solve) and SOP (Standard Operating Procedure).
 
-## Теория
+## Theory
 
-### Planning (Планирование) — разбиение задачи на шаги
+### Planning — Breaking Down Tasks into Steps
 
-В этой лабе мы используем **явное планирование** (Plan-and-Solve), в отличие от имплицитного планирования (ReAct) из Lab 04.
+In this lab, we use **explicit planning** (Plan-and-Solve), unlike implicit planning (ReAct) from Lab 04.
 
-**Разница:**
+**Difference:**
 
-**Имплицитное планирование (ReAct) — Lab 04:**
-- Агент планирует "на лету"
-- Подходит для простых задач (2-4 шага)
-- Пример: "Проверь диск" → "Очисти логи" → "Проверь снова"
+**Implicit planning (ReAct) — Lab 04:**
+- Agent plans "on the fly"
+- Suitable for simple tasks (2-4 steps)
+- Example: "Check disk" → "Clean logs" → "Check again"
 
-**Явное планирование (Plan-and-Solve) — Lab 06:**
-- Агент сначала создает полный план
-- Затем выполняет план по пунктам
-- Подходит для сложных задач (5+ шагов)
-- Пример: "План: 1. Проверить HTTP 2. Читать логи 3. Анализировать 4. Фиксить 5. Верифицировать"
+**Explicit planning (Plan-and-Solve) — Lab 06:**
+- Agent first creates a full plan
+- Then executes plan step by step
+- Suitable for complex tasks (5+ steps)
+- Example: "Plan: 1. Check HTTP 2. Read logs 3. Analyze 4. Fix 5. Verify"
 
 ### SOP (Standard Operating Procedure)
 
-**SOP** — это алгоритм действий, закодированный в промпте. Это как устав для солдата: четкие инструкции, что делать в каждой ситуации.
+**SOP** is an action algorithm encoded in the prompt. It's like a manual for a soldier: clear instructions on what to do in each situation.
 
-**Пример SOP для инцидента:**
+**Example SOP for incident:**
 ```
-SOP для падения сервиса:
-1. Check Status: Проверь HTTP код ответа
-2. Check Logs: Если 500/502 — читай последние 20 строк логов
-3. Analyze: Найди ключевые слова:
+SOP for service failure:
+1. Check Status: Check HTTP response code
+2. Check Logs: If 500/502 — read last 20 lines of logs
+3. Analyze: Find keywords:
    - "Syntax error" → Rollback
    - "Connection refused" → Check Database
    - "Out of memory" → Restart
-4. Action: Примени фикс согласно анализу
-5. Verify: Проверь HTTP статус снова
+4. Action: Apply fix according to analysis
+5. Verify: Check HTTP status again
 ```
 
-**Почему SOP важен?**
+**Why is SOP important?**
 
-Без SOP модель видит: `User: Fix it`. Ее вероятностный механизм может выдать: `Call: restart_service`. Это самое "популярное" действие.
+Without SOP, the model sees: `User: Fix it`. Its probabilistic mechanism may output: `Call: restart_service`. This is the most "popular" action.
 
-С SOP модель вынуждена сгенерировать текст:
-- "Step 1: I need to check HTTP status." → Это повышает вероятность вызова `check_http`
-- "HTTP is 502. Step 2: I need to check logs." → Это повышает вероятность вызова `read_logs`
+With SOP, the model is forced to generate text:
+- "Step 1: I need to check HTTP status." → This increases probability of calling `check_http`
+- "HTTP is 502. Step 2: I need to check logs." → This increases probability of calling `read_logs`
 
-Мы **направляем внимание** модели по нужному руслу.
+We **direct the model's attention** along the right path.
 
-### Декомпозиция задачи
+### Task Decomposition
 
-Задача "Разберись с инцидентом" разбивается на подзадачи:
+The task "Investigate the incident" is broken down into subtasks:
 
-1. **Диагностика:** Что случилось?
-   - Проверить статус сервиса
-   - Прочитать логи
-   - Проанализировать ошибки
+1. **Diagnostics:** What happened?
+   - Check service status
+   - Read logs
+   - Analyze errors
 
-2. **Решение:** Как исправить?
-   - Определить причину
-   - Выбрать правильное действие (rollback/restart/scale)
-   - Применить фикс
+2. **Solution:** How to fix?
+   - Determine cause
+   - Choose correct action (rollback/restart/scale)
+   - Apply fix
 
-3. **Верификация:** Помогло ли решение?
-   - Проверить статус снова
-   - Убедиться, что проблема решена
+3. **Verification:** Did the solution help?
+   - Check status again
+   - Ensure problem is resolved
 
-**Принципы декомпозиции:**
-- **Атомарность:** Каждый шаг выполним одним действием
-- **Зависимости:** Шаги выполняются в правильном порядке
-- **Проверяемость:** Каждый шаг имеет четкий критерий успеха
+**Decomposition principles:**
+- **Atomicity:** Each step is executable with one action
+- **Dependencies:** Steps execute in correct order
+- **Verifiability:** Each step has a clear success criterion
 
-## Задание
-В `main.go` — большой каркас.
+## Assignment
+In `main.go` — large skeleton.
 
-1. **Tools:** У вас есть 4 инструмента:
-   - `check_http` — проверка HTTP статуса
-   - `read_logs` — чтение логов сервиса
-   - `restart_service` — перезапуск сервиса
-   - `rollback_deploy` — откат к предыдущей версии
+1. **Tools:** You have 4 tools:
+   - `check_http` — HTTP status check
+   - `read_logs` — service log reading
+   - `restart_service` — service restart
+   - `rollback_deploy` — rollback to previous version
 
-2. **SOP в промпте:** Добавьте в System Prompt детальный SOP для обработки инцидента.
+2. **SOP in prompt:** Add detailed SOP for incident handling to System Prompt.
 
-3. **The Loop:** Реализуйте цикл агента, который следует SOP строго.
+3. **The Loop:** Implement agent loop that strictly follows SOP.
 
-4. **Scenario:** Запустите агента с промптом: *"Payment Service is down (502). Fix it."*
-   - Ожидание: Агент следует SOP:
-     - Проверяет HTTP → 502
-     - Читает логи → "Syntax error"
-     - Делает rollback (не restart!)
-     - Верифицирует → 200 OK
+4. **Scenario:** Run the agent with prompt: *"Payment Service is down (502). Fix it."*
+   - Expected: Agent follows SOP:
+     - Checks HTTP → 502
+     - Reads logs → "Syntax error"
+     - Does rollback (not restart!)
+     - Verifies → 200 OK
 
-## Важно
-- Агент должен **следовать SOP строго**, а не гадать
-- Агент должен **читать логи перед действием**, а не сразу рестартить
-- Агент должен **верифицировать результат** после фикса
+## Important
+- Agent must **strictly follow SOP**, not guess
+- Agent must **read logs before action**, not immediately restart
+- Agent must **verify result** after fix

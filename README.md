@@ -1,171 +1,171 @@
 # AI Agent Course 🤖
 
-## Зачем это нужно?
+## Why This Course?
 
-Добро пожаловать в практический курс по созданию автономных AI агентов на Go!
+Welcome to a practical course on building autonomous AI agents in Go!
 
-Этот курс предназначен для программистов, которые хотят понять, как работают современные LLM-агенты "под капотом", и научиться применять их для решения реальных задач.
+This course is designed for programmers who want to understand how modern LLM agents work "under the hood" and learn to apply them to solve real-world problems.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Вы создали чат-бота для DevOps. Пользователь пишет: "У нас проблемы с базой, разберись"
+**Situation:** You've created a chatbot for DevOps. A user writes: "We have database issues, investigate"
 
-**Проблема:** Обычный чат-бот может только отвечать текстом. Он не может реально проверить метрики, прочитать логи или применить фикс.
+**Problem:** A regular chatbot can only respond with text. It cannot actually check metrics, read logs, or apply fixes.
 
-**Решение:** AI-агент с инструментами может самостоятельно проверить метрики → прочитать логи → выдвинуть гипотезу → применить фикс → верифицировать результат. Этот курс научит вас создавать таких агентов.
+**Solution:** An AI agent with tools can independently check metrics → read logs → form hypotheses → apply fixes → verify results. This course will teach you to build such agents.
 
-## Структура курса
+## Course Structure
 
-Курс состоит из подготовительного этапа (Lab 00) и 9 основных лабораторных работ (Lab 01-09).
+The course consists of a preparatory stage (Lab 00) and 9 main laboratory assignments (Lab 01-09).
 
 ### 🔬 [Lab 00: Model Benchmark](./labs/lab00-capability-check)
-**Диагностика.** Прежде чем начинать, мы проверим, годится ли ваша модель (особенно локальная) для курса. Мы запустим серию тестов на JSON, Instruction Following и Function Calling.
+**Diagnostics.** Before starting, we'll verify whether your model (especially a local one) is suitable for the course. We'll run a series of tests on JSON, Instruction Following, and Function Calling.
 
 ### [Lab 01: Hello, LLM!](./labs/lab01-basics)
-**Основы и Память.** Вы научитесь программно общаться с LLM, управлять контекстом (памятью) и настраивать роль агента через системные промпты.
+**Basics and Memory.** You'll learn to programmatically communicate with LLMs, manage context (memory), and configure the agent's role through system prompts.
 
-### [Lab 02: Руки Агента](./labs/lab02-tools)
-**Function Calling.** Узнаете, как превратить функции Go в инструменты, которые может вызывать LLM. Реализуете механизм Tool Execution.
+### [Lab 02: Agent's Hands](./labs/lab02-tools)
+**Function Calling.** Learn how to turn Go functions into tools that an LLM can call. Implement the Tool Execution mechanism.
 
-### [Lab 03: Реальные Инструменты](./labs/lab03-real-world)
-**Интеграция с Infrastructure as Code.** Подключим реальные API (Proxmox, Ansible) к нашему агенту.
+### [Lab 03: Real-World Tools](./labs/lab03-real-world)
+**Infrastructure as Code Integration.** We'll connect real APIs (Proxmox, Ansible) to our agent.
 
-### [Lab 04: Цикл Автономности](./labs/lab04-autonomy)
-**The Agent Loop.** Реализуем паттерн ReAct (Reason + Act). Агент научится самостоятельно принимать решения, выполнять действия и анализировать результаты в цикле.
+### [Lab 04: Autonomy Loop](./labs/lab04-autonomy)
+**The Agent Loop.** We'll implement the ReAct pattern (Reason + Act). The agent will learn to independently make decisions, execute actions, and analyze results in a loop.
 
 ### [Lab 05: Human-in-the-Loop](./labs/lab05-human-interaction)
-**Диалог и Безопасность.** Агент научится задавать уточняющие вопросы ("В каком регионе создать сервер?") и запрашивать подтверждение перед опасными действиями ("Вы уверены, что хотите удалить базу?").
+**Dialogue and Safety.** The agent will learn to ask clarifying questions ("In which region should I create the server?") and request confirmation before dangerous actions ("Are you sure you want to delete the database?").
 
-### [Lab 06: Инцидент-Менеджмент](./labs/lab06-incident)
-**Сложные сценарии.** Создадим агента, способного самостоятельно расследовать и устранять сбои (например, падение сервиса), используя арсенал инструментов.
+### [Lab 06: Incident Management](./labs/lab06-incident)
+**Complex Scenarios.** We'll create an agent capable of independently investigating and resolving failures (e.g., service crashes) using a toolkit of tools.
 
 ### [Lab 07: RAG & Knowledge Base](./labs/lab07-rag)
-**Работа со знаниями.** Агент научится читать внутреннюю документацию (Wiki/Man pages) перед выполнением действий. Реализуем простой поиск по документам.
+**Working with Knowledge.** The agent will learn to read internal documentation (Wiki/Man pages) before executing actions. We'll implement simple document search.
 
-### [Lab 08: Команда Агентов (Multi-Agent)](./labs/lab08-multi-agent)
-**Supervisor Pattern.** Создадим систему, где главный агент (Orchestrator) управляет узкоспециализированными субагентами (Network Admin, DB Admin).
+### [Lab 08: Agent Team (Multi-Agent)](./labs/lab08-multi-agent)
+**Supervisor Pattern.** We'll create a system where a main agent (Orchestrator) manages highly specialized sub-agents (Network Admin, DB Admin).
 
-### [Lab 09: Оптимизация Контекста (Context Optimization)](./labs/lab09-context-optimization)
-**Управление контекстным окном.** Научимся подсчитывать токены, применять техники оптимизации (обрезка, саммаризация) и реализовать адаптивное управление контекстом для долгоживущих агентов.
+### [Lab 09: Context Optimization](./labs/lab09-context-optimization)
+**Context Window Management.** Learn to count tokens, apply optimization techniques (truncation, summarization), and implement adaptive context management for long-lived agents.
 
-### 📋 Таблица лабораторных работ
+### 📋 Laboratory Assignments Table
 
-| Lab | Тема | Ключевые навыки | Методичка |
+| Lab | Topic | Key Skills | Study Guide |
 | :--- | :--- | :--- | :--- |
-| **Lab 00** | **Capability Check** | Проверка модели. Unit-тесты для LLM. | [METHOD.md](./labs/lab00-capability-check/METHOD.md) |
+| **Lab 00** | **Capability Check** | Model testing. Unit tests for LLMs. | [METHOD.md](./labs/lab00-capability-check/METHOD.md) |
 | **Lab 01** | **Basics** | OpenAI API, Chat Loop, Memory Management. | [METHOD.md](./labs/lab01-basics/METHOD.md) |
-| **Lab 02** | **Tools** | Определение функций (JSON Schema), парсинг ToolCalls. | [METHOD.md](./labs/lab02-tools/METHOD.md) |
-| **Lab 03** | **Architecture** | Интерфейсы Go, паттерн Registry, Mocking. | [METHOD.md](./labs/lab03-real-world/METHOD.md) |
-| **Lab 04** | **Autonomy (ReAct)** | Цикл `Think-Act-Observe`. Обработка результатов. | [METHOD.md](./labs/lab04-autonomy/METHOD.md) |
-| **Lab 05** | **Human-in-the-Loop** | Интерактивность. Уточняющие вопросы. Safety. | [METHOD.md](./labs/lab05-human-interaction/METHOD.md) |
-| **Lab 06** | **Incident (SOP)** | Сложное планирование. Внедрение SOP в промпт. | [METHOD.md](./labs/lab06-incident/METHOD.md) |
-| **Lab 07** | **RAG** | Работа с документацией. Поиск знаний перед действием. | [METHOD.md](./labs/lab07-rag/METHOD.md) |
-| **Lab 08** | **Multi-Agent** | Оркестрация. Делегирование задач. Изоляция контекста. | [METHOD.md](./labs/lab08-multi-agent/METHOD.md) |
-| **Lab 09** | **Context Optimization** | Подсчет токенов, саммаризация, адаптивное управление контекстом. | [METHOD.md](./labs/lab09-context-optimization/METHOD.md) |
+| **Lab 02** | **Tools** | Function definitions (JSON Schema), parsing ToolCalls. | [METHOD.md](./labs/lab02-tools/METHOD.md) |
+| **Lab 03** | **Architecture** | Go interfaces, Registry pattern, Mocking. | [METHOD.md](./labs/lab03-real-world/METHOD.md) |
+| **Lab 04** | **Autonomy (ReAct)** | `Think-Act-Observe` loop. Result processing. | [METHOD.md](./labs/lab04-autonomy/METHOD.md) |
+| **Lab 05** | **Human-in-the-Loop** | Interactivity. Clarifying questions. Safety. | [METHOD.md](./labs/lab05-human-interaction/METHOD.md) |
+| **Lab 06** | **Incident (SOP)** | Advanced planning. SOP integration in prompts. | [METHOD.md](./labs/lab06-incident/METHOD.md) |
+| **Lab 07** | **RAG** | Working with documentation. Knowledge search before action. | [METHOD.md](./labs/lab07-rag/METHOD.md) |
+| **Lab 08** | **Multi-Agent** | Orchestration. Task delegation. Context isolation. | [METHOD.md](./labs/lab08-multi-agent/METHOD.md) |
+| **Lab 09** | **Context Optimization** | Token counting, summarization, adaptive context management. | [METHOD.md](./labs/lab09-context-optimization/METHOD.md) |
 
-## Теория
+## Theory
 
-**📚 Обязательно к прочтению перед началом:**
+**📚 Required Reading Before Starting:**
 
-👉 **[УЧЕБНИК: Проектирование Автономных AI Агентов](./docs/book/README.md)**  
-Полный учебник с теорией, примерами из разных доменов (DevOps, Support, Data, Security, Product), диаграммами и практическими советами. Учебник разбит на главы для удобного изучения.
+👉 **[TEXTBOOK: Designing Autonomous AI Agents](./docs/book/README.md)**  
+A complete textbook with theory, examples from different domains (DevOps, Support, Data, Security, Product), diagrams, and practical advice. The textbook is divided into chapters for easy study.
 
-**Что вы найдете в учебнике:**
-- Физика LLM — как работает "мозг" агента
-- Промптинг как программирование — управление поведением через промпты
-- Архитектура агента — компоненты и их взаимодействие
-- Инструменты и Function Calling — "руки" агента
-- Автономность и циклы — ReAct Loop
-- Безопасность и Human-in-the-Loop — защита от опасных действий
-- RAG и база знаний — работа с документацией
-- Multi-Agent Systems — команда специализированных агентов
-- Evals и надежность — тестирование агентов
-- Кейсы из реальной практики — примеры успешных агентов
-- Best Practices — лучшие практики создания и поддержки агентов
+**What You'll Find in the Textbook:**
+- LLM Physics — how the agent's "brain" works
+- Prompting as Programming — controlling behavior through prompts
+- Agent Architecture — components and their interactions
+- Tools and Function Calling — the agent's "hands"
+- Autonomy and Loops — ReAct Loop
+- Safety and Human-in-the-Loop — protection from dangerous actions
+- RAG and Knowledge Base — working with documentation
+- Multi-Agent Systems — a team of specialized agents
+- Evals and Reliability — testing agents
+- Real-World Case Studies — examples of successful agents
+- Best Practices — best practices for creating and maintaining agents
 
-## Углублённое изучение
+## Advanced Study
 
-Если вы хотите перейти от "учебного агента" к "прод-агенту", изучите **[Главу 12: Углублённое изучение](./docs/book/12-advanced-study/README.md)** в учебнике.
+If you want to transition from a "learning agent" to a "production agent," study **[Chapter 12: Advanced Study](./docs/book/12-advanced-study/README.md)** in the textbook.
 
-Там вы найдёте практическое руководство по прод-готовности: observability и tracing, cost & latency engineering, workflow и state management, безопасность и governance, prompt management, data/privacy, RAG в проде, evals в CI/CD и другие практические темы с пошаговыми рецептами внедрения, привязанными к вашему коду из лабораторных работ.
+There you'll find a practical guide to production readiness: observability and tracing, cost & latency engineering, workflow and state management, security and governance, prompt management, data/privacy, RAG in production, evals in CI/CD, and other practical topics with step-by-step implementation recipes tied to your code from the laboratory assignments.
 
-## Как проходить курс
+## How to Take the Course
 
-**Рекомендуемый путь:**
+**Recommended Path:**
 
-1. **Прочитайте учебник:** Откройте [`docs/book/README.md`](./docs/book/README.md) и изучите теорию. Это займет 1-2 часа, но даст вам фундаментальное понимание.
+1. **Read the textbook:** Open [`docs/book/README.md`](./docs/book/README.md) and study the theory. This will take 1-2 hours but will give you a fundamental understanding.
 
-2. **Начните с Lab 00:** Проверьте, подходит ли ваша модель для курса.
+2. **Start with Lab 00:** Check if your model is suitable for the course.
    ```bash
    cd labs/lab00-capability-check
-   # Прочитайте METHOD.md перед выполнением
+   # Read METHOD.md before starting
    go run main.go
    ```
 
-3. **Проходите лабораторные по порядку:**
-   - Переходите в папку лабораторной (например, `cd labs/lab01-basics`)
-   - **Читайте `METHOD.md`** — это методическое пособие с теорией, алгоритмами и типовыми ошибками
-   - Читайте `README.md` с заданием
-   - Открывайте `main.go`, где уже написан каркас кода
-   - Реализуйте недостающие части, отмеченные комментариями `// TODO`
-   - Если застряли — загляните в `SOLUTION.md` (но сначала попробуйте сами!)
+3. **Complete labs in order:**
+   - Navigate to the lab folder (e.g., `cd labs/lab01-basics`)
+   - **Read `METHOD.md`** — this is a study guide with theory, algorithms, and common mistakes
+   - Read `README.md` with the assignment
+   - Open `main.go`, where the code skeleton is already written
+   - Implement missing parts marked with `// TODO` comments
+   - If stuck — check `SOLUTION.md` (but try yourself first!)
 
-4. **Запускайте и тестируйте:** После каждой лабы запускайте код и проверяйте работу.
+4. **Run and test:** After each lab, run the code and verify it works.
 
-**Важно:** Каждая лабораторная работа имеет свой `METHOD.md` — методическое пособие, которое нужно прочитать перед выполнением. Оно содержит:
-- Зачем это нужно (реальный кейс)
-- Теорию простыми словами
-- Алгоритм выполнения
-- Типовые ошибки и их решение
-- Мини-упражнения
-- Критерии сдачи
+**Important:** Each laboratory assignment has its own `METHOD.md` — a study guide that must be read before starting. It contains:
+- Why this is needed (real-world case)
+- Theory in simple terms
+- Execution algorithm
+- Common mistakes and solutions
+- Mini-exercises
+- Completion criteria
 
-**Связь теории и практики:**
-- После каждой главы учебника выполняйте соответствующую лабораторную работу
-- Используйте учебник как справочник при работе над проектами
-- Возвращайтесь к нужным разделам при возникновении вопросов
+**Theory and Practice Connection:**
+- After each textbook chapter, complete the corresponding laboratory assignment
+- Use the textbook as a reference when working on projects
+- Return to relevant sections when questions arise
 
-## Требования
+## Requirements
 
 *   Go 1.21+
-*   **Локальная LLM** (рекомендуется) или OpenAI API Key.
-    *   Установите [LM Studio](https://lmstudio.ai/) или [Ollama](https://ollama.com/).
-    *   Запустите локальный сервер (обычно на порту 1234 или 11434).
-*   Docker (опционально)
+*   **Local LLM** (recommended) or OpenAI API Key.
+    *   Install [LM Studio](https://lmstudio.ai/) or [Ollama](https://ollama.com/).
+    *   Start a local server (usually on port 1234 or 11434).
+*   Docker (optional)
 
-## Настройка окружения
+## Environment Setup
 
-Для работы с локальной моделью (например, в LM Studio):
+To work with a local model (e.g., in LM Studio):
 ```bash
 export OPENAI_BASE_URL="http://localhost:1234/v1"
-export OPENAI_API_KEY="any-string" # Локальным моделям ключ обычно не важен, но он не должен быть пустым
+export OPENAI_API_KEY="any-string" # Local models usually don't need a key, but it shouldn't be empty
 ```
 
-## Структура проекта
+## Project Structure
 
 ```
 ai-agent-course/
-├── docs/book/          # Учебник по проектированию агентов
+├── docs/book/          # Textbook on agent design
 │   ├── 01-llm-fundamentals/
 │   ├── 02-prompt-engineering/
-│   ├── ...             # Остальные главы
-│   └── STYLE.md        # Руководство по стилю документации
-├── labs/               # Лабораторные работы
+│   ├── ...             # Other chapters
+│   └── STYLE.md        # Documentation style guide
+├── labs/               # Laboratory assignments
 │   ├── lab00-capability-check/
 │   ├── lab01-basics/
-│   └── ...             # Остальные лабораторные
-└── README.md           # Этот файл
+│   └── ...             # Other labs
+└── README.md           # This file
 ```
 
-## Что дальше?
+## What's Next?
 
-После завершения курса вы сможете:
-- ✅ Создавать автономных AI-агентов на Go
-- ✅ Управлять контекстом и памятью агента
-- ✅ Реализовывать Function Calling и инструменты
-- ✅ Создавать безопасных агентов с Human-in-the-Loop
-- ✅ Применять RAG для работы с документацией
-- ✅ Создавать Multi-Agent системы
-- ✅ Тестировать и оптимизировать агентов
+After completing the course, you'll be able to:
+- ✅ Create autonomous AI agents in Go
+- ✅ Manage agent context and memory
+- ✅ Implement Function Calling and tools
+- ✅ Create safe agents with Human-in-the-Loop
+- ✅ Apply RAG for working with documentation
+- ✅ Create Multi-Agent systems
+- ✅ Test and optimize agents
 
-**Удачного обучения! 🚀**
+**Happy Learning! 🚀**

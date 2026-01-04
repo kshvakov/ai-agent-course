@@ -1,58 +1,57 @@
 # Lab 04: The Agent Loop (Autonomy)
 
-## Цель
-Собрать всё вместе: Мозг + Инструменты + Память. Реализовать паттерн **ReAct** (Reason + Act). Агент должен автономно решать задачу в цикле.
+## Goal
+Put it all together: Brain + Tools + Memory. Implement the **ReAct** pattern (Reason + Act). The agent should autonomously solve a task in a loop.
 
-## Теория
+## Theory
 
-### Planning (Планирование) — способность разбить задачу на шаги
+### Planning — Ability to Break Down Tasks into Steps
 
-**Planning** — это способность агента разбить сложную задачу на последовательность простых шагов и выполнить их в правильном порядке.
+**Planning** is the agent's ability to break down a complex task into a sequence of simple steps and execute them in the correct order.
 
-**Пример:**
-- **Без планирования:** Агент получает "Кончилось место" и может сразу попытаться удалить файлы, не проверив, сколько места занято.
-- **С планированием:** Агент сначала проверяет использование диска → видит 95% → решает очистить логи → проверяет снова → сообщает результат.
+**Example:**
+- **Without planning:** Agent receives "Out of space" and may immediately try to delete files without checking how much space is used.
+- **With planning:** Agent first checks disk usage → sees 95% → decides to clean logs → checks again → reports result.
 
-### ReAct (Reason + Act) — имплицитное планирование
+### ReAct (Reason + Act) — Implicit Planning
 
-В этой лабе мы реализуем **имплицитное планирование** через паттерн ReAct. Агент не создает явный план, а планирует "на лету" в процессе выполнения.
+In this lab, we implement **implicit planning** through the ReAct pattern. The agent doesn't create an explicit plan, but plans "on the fly" during execution.
 
-Автономный агент работает в цикле:
+An autonomous agent works in a loop:
 ```
-While (Задача не решена):
-  1. Отправить историю в LLM.
-  2. Получить ответ.
-  3. ЕСЛИ это текст -> Показать пользователю и ждать нового ввода.
-  4. ЕСЛИ это вызов инструмента -> 
-       a. Выполнить инструмент.
-       b. Добавить результат в историю.
-       c. GOTO 1 (ничего не спрашивая у пользователя!).
+While (Task not solved):
+  1. Send history to LLM.
+  2. Get response.
+  3. IF it's text -> Show to user and wait for new input.
+  4. IF it's a tool call -> 
+       a. Execute tool.
+       b. Add result to history.
+       c. GOTO 1 (without asking user!).
 ```
-Именно пункт 4.c дает "магию" — агент сам смотрит на результат и решает, что делать дальше.
+Point 4.c provides the "magic" — the agent itself looks at the result and decides what to do next.
 
-**Как это работает:**
-1. Агент получает задачу: "Кончилось место"
-2. Агент думает: "Что мне нужно сделать первым? Проверить использование диска"
-3. Агент выполняет: `check_disk_usage()`
-4. Агент видит результат: "95%"
-5. Агент думает: "Диск переполнен. Что делать дальше? Очистить логи"
-6. Агент выполняет: `clean_logs()`
-7. Агент видит результат: "Освобождено 20GB"
-8. Агент думает: "Проверю снова, чтобы убедиться"
-9. Агент выполняет: `check_disk_usage()`
-10. Агент видит результат: "40%"
-11. Агент думает: "Задача решена. Сообщу пользователю"
+**How it works:**
+1. Agent receives task: "Out of space"
+2. Agent thinks: "What do I need to do first? Check disk usage"
+3. Agent executes: `check_disk_usage()`
+4. Agent sees result: "95%"
+5. Agent thinks: "Disk is full. What to do next? Clean logs"
+6. Agent executes: `clean_logs()`
+7. Agent sees result: "Freed 20GB"
+8. Agent thinks: "I'll check again to make sure"
+9. Agent executes: `check_disk_usage()`
+10. Agent sees result: "40%"
+11. Agent thinks: "Task solved. I'll inform the user"
 
-**Примечание:** Для более сложных задач (5+ шагов) используется **явное планирование** (Plan-and-Solve), которое мы изучим в Lab 06.
+**Note:** For more complex tasks (5+ steps), **explicit planning** (Plan-and-Solve) is used, which we'll study in Lab 06.
 
-## Задание
-В `main.go` — большой каркас.
+## Assignment
+In `main.go` — large skeleton.
 
-1.  **Tools:** У вас есть 2 инструмента: `check_disk_usage` (возвращает 95%) и `clean_logs` (освобождает место).
-2.  **The Loop:** Реализуйте функцию `RunAgentLoop`. Она должна крутиться до тех пор, пока LLM не ответит обычным текстом.
-3.  **Scenario:** Запустите агента с промптом: *"У меня кончилось место на сервере. Разберись."*
-    *   Ожидание: Агент вызовет `check_disk_usage` -> увидит 95% -> сам решит вызвать `clean_logs` -> проверит снова -> скажет "Готово".
+1.  **Tools:** You have 2 tools: `check_disk_usage` (returns 95%) and `clean_logs` (frees space).
+2.  **The Loop:** Implement the `RunAgentLoop` function. It should loop until the LLM responds with regular text.
+3.  **Scenario:** Run the agent with prompt: *"I'm out of space on the server. Fix it."*
+    *   Expected: Agent calls `check_disk_usage` -> sees 95% -> decides to call `clean_logs` -> checks again -> says "Done".
 
-## Важно
-Не забудьте обрабатывать ошибки и добавлять их в историю! Если инструмент упал, LLM должна это узнать и попробовать что-то другое.
-
+## Important
+Don't forget to handle errors and add them to history! If a tool fails, the LLM should know and try something else.

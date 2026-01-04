@@ -1,12 +1,12 @@
 # Lab 03: Real World (Interfaces & Infrastructure)
 
-## Цель
-Научиться интегрировать реальные инфраструктурные инструменты (API Proxmox, CLI Ansible) в код агента. Использовать интерфейсы для абстракции.
+## Goal
+Learn to integrate real infrastructure tools (Proxmox API, Ansible CLI) into agent code. Use interfaces for abstraction.
 
-## Теория
-Чтобы агент был расширяемым, мы не должны хардкодить логику инструментов в `main.go`. Нам нужен паттерн **Registry**.
+## Theory
+To make the agent extensible, we shouldn't hardcode tool logic in `main.go`. We need the **Registry** pattern.
 
-Мы определим интерфейс `Tool`:
+We'll define a `Tool` interface:
 ```go
 type Tool interface {
     Name() string
@@ -15,16 +15,15 @@ type Tool interface {
     Execute(args string) (string, error)
 }
 ```
-Любой инструмент (Proxmox, Ansible, SSH) должен реализовывать этот интерфейс.
+Any tool (Proxmox, Ansible, SSH) must implement this interface.
 
-## Задание
-В `main.go` вы найдете структуру реестра и заглушки для Proxmox/Ansible.
+## Assignment
+In `main.go`, you'll find a registry structure and stubs for Proxmox/Ansible.
 
-1.  **Интерфейс:** Изучите интерфейс `Tool`.
-2.  **Proxmox Tool:** Реализуйте метод `Execute` для `ProxmoxListVMsTool`. Он должен (понарошку или реально) возвращать список VM.
-3.  **Ansible Tool:** Реализуйте `Execute` для `AnsibleRunPlaybookTool`. Он должен запускать команду `ansible-playbook`.
-4.  **Реестр:** Зарегистрируйте эти инструменты в `ToolRegistry`.
-5.  **CLI:** Реализуйте простой парсер команд: если пользователь пишет "list vms", найдите нужный инструмент в реестре и запустите его.
+1.  **Interface:** Study the `Tool` interface.
+2.  **Proxmox Tool:** Implement the `Execute` method for `ProxmoxListVMsTool`. It should (mock or real) return a list of VMs.
+3.  **Ansible Tool:** Implement `Execute` for `AnsibleRunPlaybookTool`. It should run the `ansible-playbook` command.
+4.  **Registry:** Register these tools in `ToolRegistry`.
+5.  **CLI:** Implement a simple command parser: if user writes "list vms", find the needed tool in the registry and run it.
 
-*(Здесь мы пока работаем БЕЗ LLM, проверяем только "руки")*.
-
+*(Here we're working WITHOUT LLM, only checking "hands")*.
