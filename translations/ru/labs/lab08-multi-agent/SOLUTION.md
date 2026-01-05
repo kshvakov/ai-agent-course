@@ -259,4 +259,4 @@ Collect results and provide a final answer to the user.`
 
 ---
 
-**Подробнее:** См. [Главу 08: Multi-Agent Systems](../../book/08-multi-agent/README.md) для расширенного описания Multi-Agent систем.
+**Подробнее:** См. [Главу 07: Multi-Agent Systems](../../book/07-multi-agent/README.md) для расширенного описания Multi-Agent систем.

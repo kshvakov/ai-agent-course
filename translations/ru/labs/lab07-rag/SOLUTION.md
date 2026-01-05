@@ -184,4 +184,4 @@ If you don't know the procedure, search first. Always follow the policies you fi
 
 ---
 
-**Подробнее:** См. [Главу 07: RAG и База Знаний](../../book/07-rag/README.md) для расширенного описания RAG.
+**Подробнее:** См. [Главу 06: RAG и База Знаний](../../book/06-rag/README.md) для расширенного описания RAG.

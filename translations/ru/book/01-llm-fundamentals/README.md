@@ -726,7 +726,7 @@ compressed = append(compressed, recentMessages...)
 - **Обрезка:** Быстрые одноразовые задачи, неважна история
 - **Саммаризация:** Долгие сессии, важна контекстная информация, автономные агенты
 
-См. подробнее: раздел "Оптимизация контекста" в [Главе 03: Анатомия Агента](../03-agent-architecture/README.md#оптимизация-контекста-context-optimization) и [Lab 09: Context Optimization](../../labs/lab09-context-optimization/README.md)
+См. подробнее: раздел "Оптимизация контекста" в [Главе 09: Анатомия Агента](../09-agent-architecture/README.md#оптимизация-контекста-context-optimization) и [Lab 09: Context Optimization](../../labs/lab09-context-optimization/README.md)
 
 ### Ошибка 3: Галлюцинации
 
@@ -825,9 +825,9 @@ $$P(x_{t+1} | x_1, ..., x_t)$$
 
 ## Связь с другими главами
 
-- **Function Calling:** Подробнее о том, как модель генерирует tool calls, см. [Главу 04: Инструменты](../04-tools-and-function-calling/README.md)
-- **Контекстное окно:** Как управлять историей сообщений, см. [Главу 03: Анатомия Агента](../03-agent-architecture/README.md#оптимизация-контекста-context-optimization)
-- **Temperature:** Почему для агентов используется `Temperature = 0`, см. [Главу 04: Инструменты](../04-tools-and-function-calling/README.md)
+- **Function Calling:** Подробнее о том, как модель генерирует tool calls, см. [Главу 03: Инструменты](../03-tools-and-function-calling/README.md)
+- **Контекстное окно:** Как управлять историей сообщений, см. [Главу 09: Анатомия Агента](../09-agent-architecture/README.md#оптимизация-контекста-context-optimization)
+- **Temperature:** Почему для агентов используется `Temperature = 0`, см. [Главу 03: Инструменты](../03-tools-and-function-calling/README.md)
 
 ## Что дальше?
 

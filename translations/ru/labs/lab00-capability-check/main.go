@@ -45,7 +45,7 @@ func main() {
 	results = append(results, runTest(ctx, client, "3. JSON Generation", 
 		"Generate a JSON object with field 'status' set to 'ok'. Do not use markdown blocks.", 
 		func(response string) bool {
-			var js map[string]interface{}
+			var js map[string]any
 			// Try to find JSON if wrapped in markdown
 			clean := strings.Trim(response, "`json \n")
 			return json.Unmarshal([]byte(clean), &js) == nil && js["status"] == "ok"
