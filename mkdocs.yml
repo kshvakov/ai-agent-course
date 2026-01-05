@@ -43,7 +43,6 @@ plugins:
   - search:
       lang: en
   - i18n:
-      default_language: en
       docs_structure: folder
       fallback_to_default: false
       languages:
@@ -52,6 +51,7 @@ plugins:
           build: true
           default: true
           nav:
+            - "Home": index.md
             - "Part I: Fundamentals":
               - "Preface": 00-preface/index.md
               - "LLM Physics — How the Agent's \"Brain\" Works": 01-llm-fundamentals/index.md
@@ -90,6 +90,7 @@ plugins:
           name: Русский
           build: true
           nav:
+            - "Оглавление": index.md
             - "Часть I: Основы":
               - "Предисловие": 00-preface/index.md
               - "Физика LLM — как работает \"мозг\" агента": 01-llm-fundamentals/index.md

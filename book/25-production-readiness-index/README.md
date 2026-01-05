@@ -23,9 +23,9 @@ This chapter is a **prioritization guide** and quick reference to production top
 
 If you need to launch an agent to production **right now**, start with these three topics:
 
-1. **[19. Observability and Tracing](./19-observability-and-tracing/README.md)** — Without this you're blind. Needed immediately.
-2. **[20. Cost & Latency Engineering](./20-cost-latency-engineering/README.md)** — Critical for budget control.
-3. **[17. Security and Governance](./17-security-and-governance/README.md)** — Mandatory production block.
+1. **[19. Observability and Tracing](../19-observability-and-tracing/README.md)** — Without this you're blind. Needed immediately.
+2. **[20. Cost & Latency Engineering](../20-cost-latency-engineering/README.md)** — Critical for budget control.
+3. **[17. Security and Governance](../17-security-and-governance/README.md)** — Mandatory production block.
 
 These three topics give you basic production readiness: you'll see what's happening, control costs, and protect the system.
 
@@ -34,52 +34,52 @@ These three topics give you basic production readiness: you'll see what's happen
 If you have time for planned refinement, add topics as you grow:
 
 **Week 1:**
-- **[21. Workflow and State Management](./21-workflow-state-management/README.md)** — When agents execute long tasks
-- **[22. Prompt and Program Management](./22-prompt-program-management/README.md)** — When prompts change frequently
-- **[23. Evals in CI/CD](./23-evals-in-cicd/README.md)** — Automatic quality checking
+- **[21. Workflow and State Management](../21-workflow-state-management/README.md)** — When agents execute long tasks
+- **[22. Prompt and Program Management](../22-prompt-program-management/README.md)** — When prompts change frequently
+- **[23. Evals in CI/CD](../23-evals-in-cicd/README.md)** — Automatic quality checking
 
 **Week 2:**
-- **[24. Data and Privacy](./24-data-and-privacy/README.md)** — If working with personal data
+- **[24. Data and Privacy](../24-data-and-privacy/README.md)** — If working with personal data
 
 ## Production Topics Overview
 
 ### Mandatory Production Blocks (Needed Immediately)
 
-#### [19. Observability and Tracing](./19-observability-and-tracing/README.md)
+#### [19. Observability and Tracing](../19-observability-and-tracing/README.md)
 **When needed:** Immediately, as soon as agent goes to production.
 
 **What's inside:** Structured logging, tracing agent runs and tool calls, metrics (latency, token usage, error rate), log correlation via `run_id`.
 
-#### [20. Cost & Latency Engineering](./20-cost-latency-engineering/README.md)
+#### [20. Cost & Latency Engineering](../20-cost-latency-engineering/README.md)
 **When needed:** When agent is used actively or works with large contexts.
 
 **What's inside:** Token budgets, iteration limits, caching, fallback models, batching, timeouts.
 
-#### [17. Security and Governance](./17-security-and-governance/README.md)
+#### [17. Security and Governance](../17-security-and-governance/README.md)
 **When needed:** Immediately, as soon as agent goes to production.
 
 **What's inside:** Threat modeling for tool agents, risk scoring, prompt injection protection, RBAC for tools, dry-run modes, audit.
 
 ### Topics as You Grow
 
-#### [21. Workflow and State Management in Production](./21-workflow-state-management/README.md)
+#### [21. Workflow and State Management in Production](../21-workflow-state-management/README.md)
 **When needed:** When agents execute long tasks (minutes or hours), need idempotency or error handling with retry.
 
 **What's inside:** Queues and asynchrony, scaling, distributed state. Basic concepts (idempotency, retries, deadlines) described in [Chapter 11: State Management](../11-state-management/README.md).
 
-#### [22. Prompt and Program Management](./22-prompt-program-management/README.md)
+#### [22. Prompt and Program Management](../22-prompt-program-management/README.md)
 **When needed:** When prompts change frequently, there are multiple versions, or need A/B testing.
 
 **What's inside:** Prompt versioning, prompt regressions via evals, configs and feature flags, A/B testing.
 
-#### [23. Evals in CI/CD](./23-evals-in-cicd/README.md)
+#### [23. Evals in CI/CD](../23-evals-in-cicd/README.md)
 **When needed:** When prompts or code change frequently and need automatic quality checking.
 
 **What's inside:** Quality gates in CI/CD, dataset versioning, handling flaky cases, security tests.
 
 ### Specialized Topics
 
-#### [24. Data and Privacy](./24-data-and-privacy/README.md)
+#### [24. Data and Privacy](../24-data-and-privacy/README.md)
 **When needed:** When agent works with personal data (PII) or secrets.
 
 **What's inside:** PII detection and masking, secret protection, log redaction, log storage and TTL.

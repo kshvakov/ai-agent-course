@@ -23,9 +23,9 @@
 
 Если вам нужно запустить агента в прод **прямо сейчас**, начните с этих трёх тем:
 
-1. **[19. Observability и Tracing](./19-observability-and-tracing/README.md)** — Без этого вы слепы. Нужно сразу.
-2. **[20. Cost & Latency Engineering](./20-cost-latency-engineering/README.md)** — Критично для контроля бюджета.
-3. **[17. Security и Governance](./17-security-and-governance/README.md)** — Обязательный прод-блок.
+1. **[19. Observability и Tracing](../19-observability-and-tracing/README.md)** — Без этого вы слепы. Нужно сразу.
+2. **[20. Cost & Latency Engineering](../20-cost-latency-engineering/README.md)** — Критично для контроля бюджета.
+3. **[17. Security и Governance](../17-security-and-governance/README.md)** — Обязательный прод-блок.
 
 Эти три темы дадут вам базовую прод-готовность: вы будете видеть, что происходит, контролировать стоимость и защищать систему.
 
@@ -34,52 +34,52 @@
 Если у вас есть время на плановую доработку, добавьте темы по мере роста:
 
 **Неделя 1:**
-- **[21. Workflow и State Management](./21-workflow-state-management/README.md)** — Когда агенты выполняют долгие задачи
-- **[22. Prompt и Program Management](./22-prompt-program-management/README.md)** — Когда промпты меняются часто
-- **[23. Evals в CI/CD](./23-evals-in-cicd/README.md)** — Автоматическая проверка качества
+- **[21. Workflow и State Management](../21-workflow-state-management/README.md)** — Когда агенты выполняют долгие задачи
+- **[22. Prompt и Program Management](../22-prompt-program-management/README.md)** — Когда промпты меняются часто
+- **[23. Evals в CI/CD](../23-evals-in-cicd/README.md)** — Автоматическая проверка качества
 
 **Неделя 2:**
-- **[24. Data и Privacy](./24-data-and-privacy/README.md)** — Если работаете с персональными данными
+- **[24. Data и Privacy](../24-data-and-privacy/README.md)** — Если работаете с персональными данными
 
 ## Обзор прод-тем
 
 ### Обязательные прод-блоки (нужны сразу)
 
-#### [19. Observability и Tracing](./19-observability-and-tracing/README.md)
+#### [19. Observability и Tracing](../19-observability-and-tracing/README.md)
 **Когда нужно:** Сразу, как только агент выходит в прод.
 
 **Что внутри:** Структурированное логирование, трейсинг agent runs и tool calls, метрики (latency, token usage, error rate), кореляция логов через `run_id`.
 
-#### [20. Cost & Latency Engineering](./20-cost-latency-engineering/README.md)
+#### [20. Cost & Latency Engineering](../20-cost-latency-engineering/README.md)
 **Когда нужно:** Когда агент используется активно или работает с большими контекстами.
 
 **Что внутри:** Бюджеты токенов, лимиты итераций, кэширование, fallback-модели, батчинг, таймауты.
 
-#### [17. Security и Governance](./17-security-and-governance/README.md)
+#### [17. Security и Governance](../17-security-and-governance/README.md)
 **Когда нужно:** Сразу, как только агент выходит в прод.
 
 **Что внутри:** Threat modeling для tool-агентов, risk scoring, защита от prompt injection, RBAC к инструментам, dry-run режимы, аудит.
 
 ### Темы по мере роста
 
-#### [21. Workflow и State Management в продакшене](./21-workflow-state-management/README.md)
+#### [21. Workflow и State Management в продакшене](../21-workflow-state-management/README.md)
 **Когда нужно:** Когда агенты выполняют долгие задачи (минуты или часы), нужна идемпотентность или обработка ошибок с retry.
 
 **Что внутри:** Очереди и асинхронность, масштабирование, распределённое состояние. Базовые концепции (идемпотентность, retries, дедлайны) описаны в [Главе 11: State Management](../11-state-management/README.md).
 
-#### [22. Prompt и Program Management](./22-prompt-program-management/README.md)
+#### [22. Prompt и Program Management](../22-prompt-program-management/README.md)
 **Когда нужно:** Когда промпты меняются часто, есть несколько версий или нужен A/B тестинг.
 
 **Что внутри:** Версионирование промптов, промпт-регрессии через evals, конфиги и feature flags, A/B тестинг.
 
-#### [23. Evals в CI/CD](./23-evals-in-cicd/README.md)
+#### [23. Evals в CI/CD](../23-evals-in-cicd/README.md)
 **Когда нужно:** Когда промпты или код меняются часто и нужна автоматическая проверка качества.
 
 **Что внутри:** Quality gates в CI/CD, версионирование датасетов, обработка flaky-кейсов, тесты на безопасность.
 
 ### Специализированные темы
 
-#### [24. Data и Privacy](./24-data-and-privacy/README.md)
+#### [24. Data и Privacy](../24-data-and-privacy/README.md)
 **Когда нужно:** Когда агент работает с персональными данными (PII) или секретами.
 
 **Что внутри:** Обнаружение и маскирование PII, защита секретов, redaction логов, хранение и TTL логов.
