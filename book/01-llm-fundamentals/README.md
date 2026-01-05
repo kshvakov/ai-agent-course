@@ -552,7 +552,7 @@ Remaining space: 300 tokens
 
 > **Note:** This is an approximate estimate. Exact token counting depends on the model and library used (e.g., `tiktoken` for OpenAI models).
 
-If history overflows, the agent "forgets" the beginning of the conversation.
+If history overflows, the agent "forgets" the beginning of the conversation. In practice, this happens either because your runtime trims/summarizes old messages to fit the limit (the model can't see them), or because the API rejects the request with a context-length error if you don't handle overflow.
 
 **Model is Stateless:** It doesn't remember your previous request if you don't pass it again in `messages`.
 
