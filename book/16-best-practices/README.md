@@ -268,7 +268,7 @@ tests = append(tests, newTest)
 ## Known Issues
 
 ### Issue: Agent doesn't request confirmation
-**Date:** 2024-01-15
+**Date:** 2026-01-06
 **Symptoms:** Agent performs critical actions without confirmation
 **Solution:** Added explicit confirmation check in System Prompt
 **Status:** Fixed in version 1.2

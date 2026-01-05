@@ -96,7 +96,7 @@ This section contains reference information: glossary of terms, checklists, SOP 
 
 **See also:** [Chapter 12: Agent Memory Systems](../12-agent-memory/README.md#long-term-memory)
 
-**Episodic Memory** — memory of specific events: "User asked about disk space on 2024-01-15". Useful for debugging and learning.
+**Episodic Memory** — memory of specific events: "User asked about disk space on 2026-01-06". Useful for debugging and learning.
 
 **See also:** [Chapter 12: Agent Memory Systems](../12-agent-memory/README.md#episodic-memory)
 

@@ -30,7 +30,7 @@ This chapter covers memory systems that help agents remember, retrieve, and forg
 - Persists between conversations
 
 **Episodic memory:**
-- Specific events: "User asked about disk space on 2024-01-15"
+- Specific events: "User asked about disk space on 2026-01-06"
 - Useful for debugging and learning
 
 **Semantic memory:**
