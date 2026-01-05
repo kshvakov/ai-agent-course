@@ -1,0 +1,165 @@
+site_name: AI Agent Course
+site_description: A practical course on building autonomous AI agents in Go
+site_author: kshvakov
+
+# Repository info for edit links
+repo_name: kshvakov/ai-agent-course
+repo_url: https://github.com/kshvakov/ai-agent-course
+edit_uri: edit/main/
+
+# Theme configuration
+theme:
+  name: material
+  language: en
+  palette:
+    # Light mode
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.annotate
+    - content.code.copy
+    - content.code.select
+
+# Plugins
+plugins:
+  - search:
+      lang: en
+  - i18n:
+      default_language: en
+      docs_structure: folder
+      fallback_to_default: false
+      languages:
+        - locale: en
+          name: English
+          build: true
+          default: true
+          nav:
+            - "Part I: Fundamentals":
+              - "Preface": 00-preface/index.md
+              - "LLM Physics — How the Agent's \"Brain\" Works": 01-llm-fundamentals/index.md
+              - "Prompting as an Engineering Discipline": 02-prompt-engineering/index.md
+            - "Part II: Practice-first":
+              - "Tools and Function Calling — The Agent's \"Hands\"": 03-tools-and-function-calling/index.md
+              - "Autonomy and Loops — ReAct Loop": 04-autonomy-and-loops/index.md
+              - "Safety and Human-in-the-Loop": 05-safety-and-hitl/index.md
+              - "RAG and Knowledge Base": 06-rag/index.md
+              - "Multi-Agent Systems": 07-multi-agent/index.md
+              - "Evals and Reliability": 08-evals-and-reliability/index.md
+            - "Part III: Architecture":
+              - "Agent Anatomy — Components and Their Interaction": 09-agent-architecture/index.md
+              - "Planning and Workflow Patterns": 10-planning-and-workflows/index.md
+              - "State Management": 11-state-management/index.md
+              - "Agent Memory Systems": 12-agent-memory/index.md
+              - "Context Engineering": 13-context-engineering/index.md
+              - "Ecosystem and Frameworks": 14-ecosystem-and-frameworks/index.md
+            - "Part IV: Practice":
+              - "Real-World Case Studies": 15-case-studies/index.md
+              - "Best Practices and Application Areas": 16-best-practices/index.md
+            - "Part V: Platform Infrastructure":
+              - "Security and Governance": 17-security-and-governance/index.md
+              - "Tool Protocols and Tool Servers": 18-tool-protocols-and-servers/index.md
+            - "Part VI: Production":
+              - "Observability and Tracing": 19-observability-and-tracing/index.md
+              - "Cost & Latency Engineering": 20-cost-latency-engineering/index.md
+              - "Workflow and State Management in Production": 21-workflow-state-management/index.md
+              - "Prompt and Program Management": 22-prompt-program-management/index.md
+              - "Evals in CI/CD": 23-evals-in-cicd/index.md
+              - "Data and Privacy": 24-data-and-privacy/index.md
+              - "Production Readiness Index": 25-production-readiness-index/index.md
+            - "Appendices":
+              - "Appendix: Reference Guides": appendix/index.md
+        - locale: ru
+          name: Русский
+          build: true
+          nav:
+            - "Часть I: Основы":
+              - "Предисловие": 00-preface/index.md
+              - "Физика LLM — как работает \"мозг\" агента": 01-llm-fundamentals/index.md
+              - "Промптинг как инженерная дисциплина": 02-prompt-engineering/index.md
+            - "Часть II: Practice-first":
+              - "Инструменты и Function Calling — \"руки\" агента": 03-tools-and-function-calling/index.md
+              - "Автономность и Циклы — ReAct Loop": 04-autonomy-and-loops/index.md
+              - "Безопасность и Human-in-the-Loop": 05-safety-and-hitl/index.md
+              - "RAG и База Знаний": 06-rag/index.md
+              - "Multi-Agent Systems": 07-multi-agent/index.md
+              - "Evals и Надежность": 08-evals-and-reliability/index.md
+            - "Часть III: Архитектура":
+              - "Анатомия агента — компоненты и их взаимодействие": 09-agent-architecture/index.md
+              - "Planning и Workflow-паттерны": 10-planning-and-workflows/index.md
+              - "State Management": 11-state-management/index.md
+              - "Системы Памяти Агента": 12-agent-memory/index.md
+              - "Context Engineering": 13-context-engineering/index.md
+              - "Экосистема и Фреймворки": 14-ecosystem-and-frameworks/index.md
+            - "Часть IV: Практика":
+              - "Кейсы из Реальной Практики": 15-case-studies/index.md
+              - "Best Practices и Области Применения": 16-best-practices/index.md
+            - "Часть V: Платформа":
+              - "Security и Governance": 17-security-and-governance/index.md
+              - "Протоколы Инструментов и Tool Servers": 18-tool-protocols-and-servers/index.md
+            - "Часть VI: Продакшн":
+              - "Observability и Tracing": 19-observability-and-tracing/index.md
+              - "Cost & Latency Engineering": 20-cost-latency-engineering/index.md
+              - "Workflow и State Management в продакшене": 21-workflow-state-management/index.md
+              - "Prompt и Program Management": 22-prompt-program-management/index.md
+              - "Evals в CI/CD": 23-evals-in-cicd/index.md
+              - "Data и Privacy": 24-data-and-privacy/index.md
+              - "Индекс Прод-готовности": 25-production-readiness-index/index.md
+            - "Приложения":
+              - "Приложение: Справочники": appendix/index.md
+
+# Markdown extensions
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - admonition
+  - pymdownx.details
+  - pymdownx.mark
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      toc_depth: 3
+
+# Use directory URLs (clean URLs)
+use_directory_urls: true
+
+# Site URL (will be set by GitHub Pages)
+site_url: https://kshvakov.github.io/ai-agent-course/
+
+# Copyright
+copyright: Copyright &copy; 2026 kshvakov
+

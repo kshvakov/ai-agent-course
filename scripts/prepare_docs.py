@@ -1,0 +1,283 @@
+#!/usr/bin/env python3
+"""
+Prepare documentation structure for MkDocs build.
+
+This script:
+1. Copies README.md files to index.md (for clean URLs)
+2. Copies METHOD.md and SOLUTION.md files as-is
+3. Copies STYLE.md to style.md
+4. Fixes internal links (README.md -> index.md or remove README.md)
+5. Creates structure for both EN and RU versions
+"""
+
+import os
+import re
+import shutil
+from pathlib import Path
+
+# Base paths
+REPO_ROOT = Path(__file__).parent.parent
+DOCS_DIR = REPO_ROOT / "docs"
+DOCS_RU_DIR = DOCS_DIR / "ru"
+
+# Source paths
+BOOK_DIR = REPO_ROOT / "book"
+LABS_DIR = REPO_ROOT / "labs"
+TRANSLATIONS_RU_DIR = REPO_ROOT / "translations" / "ru"
+README_FILE = REPO_ROOT / "README.md"
+
+# GitHub repository info
+GITHUB_REPO = "kshvakov/ai-agent-course"
+GITHUB_BASE_URL = f"https://github.com/{GITHUB_REPO}/blob/main"
+SITE_BASE_PATH = "/ai-agent-course"
+
+
+def fix_links(content: str, is_ru: bool = False) -> str:
+    """
+    Fix internal markdown links:
+    - Replace README.md with index.md or remove README.md from paths
+    - Fix relative paths for docs structure
+    - Handle translation links (translations/ru/... -> ru/...)
+    - Convert labs links to GitHub links
+    - Fix Translations section links to point to site language versions
+    """
+    # Fix Translations section - replace GitHub branch links with site links
+    if is_ru:
+        # Russian version: replace GitHub main branch link with site root (default language)
+        content = re.sub(
+            r'(\*\*English \(EN\)\*\* — )\[`main` branch\]\(https://github\.com/[^)]+\)',
+            f'\\1[English version]({SITE_BASE_PATH}/)',
+            content
+        )
+        content = re.sub(
+            r'(\*\*English \(EN\)\*\* — )\[`main` branch\]\([^)]+\)',
+            f'\\1[English version]({SITE_BASE_PATH}/)',
+            content
+        )
+        # Remove "ru (эта ветка)" reference
+        content = re.sub(
+            r'(\*\*Русский \(RU\)\*\* — )`ru` \(эта ветка\)',
+            f'\\1[Русская версия]({SITE_BASE_PATH}/ru/)',
+            content
+        )
+    else:
+        # English version: replace Russian version link with site /ru/ link
+        content = re.sub(
+            r'(\*\*Русский \(RU\)\*\* — )\[Russian version\]\(\./translations/ru/README\.md\)',
+            f'\\1[Russian version]({SITE_BASE_PATH}/ru/)',
+            content
+        )
+        content = re.sub(
+            r'(\*\*Русский \(RU\)\*\* — )\[Russian version\]\([^)]+\)',
+            f'\\1[Russian version]({SITE_BASE_PATH}/ru/)',
+            content
+        )
+        # Remove "main (this branch)" reference
+        content = re.sub(
+            r'(\*\*English \(EN\)\*\* — )`main` \(this branch\)',
+            f'\\1[English version]({SITE_BASE_PATH}/)',
+            content
+        )
+    
+    # Pattern to match markdown links: [text](path/to/file.md)
+    link_pattern = r'\[([^\]]+)\]\(([^)]+)\)'
+    
+    def replace_link(match):
+        text = match.group(1)
+        link_path = match.group(2)
+        
+        # Skip external links (http/https) - but we already processed Translations section above
+        if link_path.startswith(('http://', 'https://', 'mailto:')):
+            return match.group(0)
+        
+        # Skip anchor-only links (#section)
+        if link_path.startswith('#'):
+            return match.group(0)
+        
+        # Convert labs links to GitHub links
+        # Match patterns like: ./labs/lab00-capability-check, labs/lab01-basics, ../labs/lab02-tools
+        if 'labs/lab' in link_path or './labs/' in link_path or '../labs/' in link_path:
+            # Extract lab name from path
+            lab_match = re.search(r'labs/(lab\d+[^/\)]+)', link_path)
+            if lab_match:
+                lab_name = lab_match.group(1)
+                # Convert to GitHub link
+                # For RU version, use translations/ru/labs path
+                if is_ru:
+                    github_path = f"{GITHUB_BASE_URL}/translations/ru/labs/{lab_name}/README.md"
+                else:
+                    github_path = f"{GITHUB_BASE_URL}/labs/{lab_name}/README.md"
+                return f'[{text}]({github_path})'
+        
+        # Remove book/ prefix from links (since book is now root)
+        if '/book/' in link_path:
+            new_path = link_path.replace('/book/', '/')
+            new_path = new_path.replace('./book/', './')
+            new_path = new_path.replace('../book/', '../')
+        elif link_path.startswith('book/'):
+            new_path = link_path.replace('book/', '')
+        else:
+            new_path = link_path
+        
+        # Handle translation links
+        # For EN: translations/ru/book/README.md -> ../ru/
+        # For RU: ../translations/ru/book/README.md -> ../ (already handled above)
+        if 'translations/ru/' in new_path:
+            if is_ru:
+                # In RU version, remove translations/ru/ prefix
+                new_path = new_path.replace('translations/ru/', '')
+                new_path = new_path.replace('../translations/ru/', '../')
+            else:
+                # In EN version, convert to ../ru/...
+                new_path = new_path.replace('translations/ru/', '../ru/')
+                new_path = new_path.replace('../translations/ru/', '../ru/')
+        
+        # Replace README.md with directory URLs (for use_directory_urls: true)
+        # Convert ../dir/README.md -> ../dir/ (preferred by MkDocs)
+        if new_path.endswith('/README.md'):
+            # Convert /README.md to /
+            new_path = new_path[:-10] + '/'
+        elif new_path.endswith('README.md'):
+            # For relative paths like ../dir/README.md, convert to ../dir/
+            if '/' in new_path and not new_path.startswith('http'):
+                # Check if it's a directory reference (has ../ or ./)
+                if '../' in new_path or './' in new_path:
+                    new_path = new_path.replace('README.md', '')
+                    # Ensure it ends with /
+                    if not new_path.endswith('/'):
+                        new_path += '/'
+                else:
+                    # Same directory reference
+                    new_path = new_path.replace('README.md', '')
+                    if not new_path.endswith('/'):
+                        new_path += '/'
+            else:
+                # Root level README.md -> index.md
+                new_path = 'index.md'
+        elif '/README.md' in new_path:
+            # Replace /README.md in the middle of path with /
+            new_path = new_path.replace('/README.md', '/')
+        
+        # Clean up relative paths
+        # Remove leading ./ if present
+        if new_path.startswith('./'):
+            new_path = new_path[2:]
+        
+        # Fix directory links that don't end with / or .md
+        # Links like "labs/lab00-capability-check" should be "labs/lab00-capability-check/"
+        # But skip if it's already a file reference (.md, .html, etc.) or has anchor (#)
+        if (not new_path.startswith(('http://', 'https://', 'mailto:', '#')) and
+            not new_path.endswith(('.md', '.html', '.pdf', '.png', '.jpg', '.jpeg', '.gif', '.svg', '/')) and
+            '/' in new_path):
+            # It's likely a directory reference, add trailing /
+            new_path += '/'
+        
+        return f'[{text}]({new_path})'
+    
+    return re.sub(link_pattern, replace_link, content)
+
+
+def copy_readme_to_index(src_dir: Path, dst_dir: Path, is_ru: bool = False):
+    """Copy README.md to index.md and fix links."""
+    readme_file = src_dir / "README.md"
+    if not readme_file.exists():
+        return
+    
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    index_file = dst_dir / "index.md"
+    
+    content = readme_file.read_text(encoding='utf-8')
+    content = fix_links(content, is_ru)
+    
+    index_file.write_text(content, encoding='utf-8')
+    print(f"  ✓ {src_dir.name}/README.md -> {dst_dir.name}/index.md")
+
+
+def copy_other_files(src_dir: Path, dst_dir: Path):
+    """Copy METHOD.md and SOLUTION.md files."""
+    for filename in ['METHOD.md', 'SOLUTION.md']:
+        src_file = src_dir / filename
+        if src_file.exists():
+            dst_dir.mkdir(parents=True, exist_ok=True)
+            dst_file = dst_dir / filename
+            
+            content = src_file.read_text(encoding='utf-8')
+            content = fix_links(content)
+            
+            dst_file.write_text(content, encoding='utf-8')
+            print(f"  ✓ {src_dir.name}/{filename} -> {dst_dir.name}/{filename}")
+
+
+def process_directory(src_base: Path, dst_base: Path, is_ru: bool = False):
+    """Process a directory tree recursively."""
+    if not src_base.exists():
+        return
+    
+    # Process current directory
+    copy_readme_to_index(src_base, dst_base, is_ru)
+    
+    # Process subdirectories
+    for item in src_base.iterdir():
+        if item.is_dir() and not item.name.startswith('.'):
+            dst_subdir = dst_base / item.name
+            process_directory(item, dst_subdir, is_ru)
+            
+            # Copy other files from subdirectories
+            copy_other_files(item, dst_subdir)
+
+
+def main():
+    """Main function to prepare docs structure."""
+    print("Preparing documentation structure for MkDocs...")
+    
+    # Clean existing docs directory
+    if DOCS_DIR.exists():
+        shutil.rmtree(DOCS_DIR)
+    DOCS_DIR.mkdir(parents=True)
+    
+    # Copy book/README.md as index.md (EN)
+    print("\n[EN] Processing book/ directory...")
+    book_readme = BOOK_DIR / "README.md"
+    if book_readme.exists():
+        content = book_readme.read_text(encoding='utf-8')
+        content = fix_links(content, is_ru=False)
+        (DOCS_DIR / "index.md").write_text(content, encoding='utf-8')
+        print("  ✓ book/README.md -> index.md")
+    
+    # Process book chapters directly in docs/ (EN)
+    print("\n[EN] Processing book chapters...")
+    for item in BOOK_DIR.iterdir():
+        if item.is_dir() and not item.name.startswith('.'):
+            process_directory(item, DOCS_DIR / item.name, is_ru=False)
+    
+    # Labs are not copied - links will point to GitHub
+    
+    # Process Russian translation
+    print("\n[RU] Processing Russian translation...")
+    
+    # Copy translations/ru/book/README.md as ru/index.md
+    print("\n[RU] Processing translations/ru/book/ directory...")
+    DOCS_RU_DIR.mkdir(parents=True, exist_ok=True)
+    ru_book_dir = TRANSLATIONS_RU_DIR / "book"
+    ru_book_readme = ru_book_dir / "README.md"
+    if ru_book_readme.exists():
+        content = ru_book_readme.read_text(encoding='utf-8')
+        content = fix_links(content, is_ru=True)
+        (DOCS_RU_DIR / "index.md").write_text(content, encoding='utf-8')
+        print("  ✓ translations/ru/book/README.md -> ru/index.md")
+    
+    # Process book chapters directly in docs/ru/ (RU)
+    print("\n[RU] Processing book chapters...")
+    for item in ru_book_dir.iterdir():
+        if item.is_dir() and not item.name.startswith('.'):
+            process_directory(item, DOCS_RU_DIR / item.name, is_ru=True)
+    
+    # Labs are not copied - links will point to GitHub
+    
+    print("\n✓ Documentation structure prepared successfully!")
+    print(f"  Output directory: {DOCS_DIR}")
+
+
+if __name__ == "__main__":
+    main()
+

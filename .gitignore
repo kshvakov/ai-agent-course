@@ -36,3 +36,9 @@ go.work
 # Config files with secrets
 config.local.yaml
 config.local.yml
+
+# MkDocs generated files
+docs/
+site/
+.cache/
+.venv/
