@@ -1,6 +1,6 @@
 # Documentation Style Guide
 
-This document describes a unified style for all textbook chapters `docs/book/*`. The goal is to make documentation as simple and educational through practice as lab assignments `labs/*/METHOD.md`.
+This document describes a unified style for all textbook chapters `book/*`. The goal is to make documentation as simple and educational through practice as lab assignments `labs/*/METHOD.md`.
 
 ## Philosophy
 
@@ -13,7 +13,7 @@ This document describes a unified style for all textbook chapters `docs/book/*`.
 
 ## Unified Chapter Template
 
-Each chapter `docs/book/*/README.md` should follow this structure:
+Each chapter `book/*/README.md` should follow this structure:
 
 ### 1. Why This Chapter? (required)
 

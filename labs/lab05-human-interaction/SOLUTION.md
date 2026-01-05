@@ -135,7 +135,7 @@ In a real application, instead of text confirmation, you can use UI:
 - ✅ User sees action preview before confirmation
 - ✅ Can add additional checks (allowlist, argument validation)
 
-**More details:** See [Chapter 06: Safety and Human-in-the-Loop](../../docs/book/06-safety-and-hitl/README.md) for extended description of this approach.
+**More details:** See [Chapter 06: Safety and Human-in-the-Loop](../../book/06-safety-and-hitl/README.md) for extended description of this approach.
 
 ### 🔍 Complete Solution Code
 

@@ -1,33 +1,33 @@
 # Lab 02 Solution: Function Calling
 
-## 📝 Solution Breakdown
+## 📝 Разбор решения
 
-### Initialization for Local Model
-Note the use of `NewClientWithConfig`. This is a standard pattern for all labs.
+### Инициализация для Локальной модели
+Обратите внимание на использование `NewClientWithConfig`. Это стандартный паттерн для всех лабораторных.
 
-### How to Determine if Model Supports Function Calling?
+### Как определить, умеет ли модель Function Calling?
 
-**Before starting this lab, be sure to run Lab 00!** It will check if your model supports Function Calling.
+**Перед началом этой лабы обязательно запустите Lab 00!** Он проверит, поддерживает ли ваша модель Function Calling.
 
-**If Lab 00 failed:**
-- Model is not trained on Function Calling
-- Need a different model (e.g., `Hermes-2-Pro-Llama-3`, `Mistral-7B-Instruct-v0.2`)
+**Если Lab 00 не прошел:**
+- Модель не обучена на Function Calling
+- Нужна другая модель (например, `Hermes-2-Pro-Llama-3`, `Mistral-7B-Instruct-v0.2`)
 
-**If Lab 00 passed, but model doesn't call functions in this lab:**
+**Если Lab 00 прошел, но в этой лабе модель не вызывает функции:**
 
-1. **Check tool description (`Description`):**
+1. **Проверьте описание инструмента (`Description`):**
    ```go
-   Description: "Get the status of a server by IP"  // ✅ Good: specific
-   Description: "Server stuff"  // ❌ Bad: too general
+   Description: "Get the status of a server by IP"  // ✅ Хорошо: конкретно
+   Description: "Server stuff"  // ❌ Плохо: слишком общее
    ```
 
-2. **Check Temperature:**
+2. **Проверьте Temperature:**
    ```go
-   Temperature: 0,  // ✅ For agents always 0
-   Temperature: 0.7,  // ❌ May cause instability
+   Temperature: 0,  // ✅ Для агентов всегда 0
+   Temperature: 0.7,  // ❌ Может вызвать нестабильность
    ```
 
-3. **Add Few-Shot examples to prompt:**
+3. **Добавьте Few-Shot примеры в промпт:**
    ```go
    systemPrompt := `You are a DevOps assistant.
    Example:
@@ -35,14 +35,14 @@ Note the use of `NewClientWithConfig`. This is a standard pattern for all labs.
    Assistant: {"tool": "get_server_status", "args": {"ip": "192.168.1.1"}}
    `
    ```
-   > **Note:** This is an educational demonstration of format in prompt text. With real Function Calling, model returns call in `tool_calls` field (see [Chapter 04: Tools](../../book/04-tools-and-function-calling/README.md)).
+   > **Примечание:** Это учебная демонстрация формата в тексте промпта. При реальном Function Calling модель возвращает вызов в поле `tool_calls` (см. [Главу 04: Инструменты](../../book/04-tools-and-function-calling/README.md)).
 
-### Tool Call Validation
+### Валидация вызова инструментов
 
-**Important:** Always validate arguments before execution!
+**Важно:** Всегда валидируйте аргументы перед выполнением!
 
 ```go
-// 1. Function name check
+// 1. Проверка имени функции
 allowedTools := map[string]bool{
     "get_server_status": true,
 }
@@ -50,12 +50,12 @@ if !allowedTools[call.Function.Name] {
     return fmt.Errorf("unknown tool: %s", call.Function.Name)
 }
 
-// 2. JSON validation
+// 2. Валидация JSON
 if !json.Valid([]byte(call.Function.Arguments)) {
     return fmt.Errorf("invalid JSON in arguments")
 }
 
-// 3. Parse and check required fields
+// 3. Парсинг и проверка обязательных полей
 var args struct {
     IP string `json:"ip"`
 }
@@ -67,61 +67,61 @@ if args.IP == "" {
 }
 ```
 
-### Common Problems and Solutions
+### Типовые проблемы и их решение
 
-#### Problem 1: Model Doesn't Call Function
+#### Проблема 1: Модель не вызывает функцию
 
-**Symptom:** `len(msg.ToolCalls) == 0`, model responds with text.
+**Симптом:** `len(msg.ToolCalls) == 0`, модель отвечает текстом.
 
-**Diagnosis:**
-1. Run Lab 00 — if failed, model is not suitable
-2. Check `Description` — make it specific
-3. Set `Temperature = 0`
+**Диагностика:**
+1. Запустите Lab 00 — если провален, модель не подходит
+2. Проверьте `Description` — сделайте его конкретным
+3. Установите `Temperature = 0`
 
-**Solution:**
+**Решение:**
 ```go
-// Improve description:
+// Улучшите описание:
 Description: "Get the status of a server by IP address. Use this when user asks about server status or connectivity."
 
-// Add to System Prompt:
+// Добавьте в System Prompt:
 systemPrompt := `You are a DevOps assistant. When user asks about server status, you MUST call get_server_status tool.`
 ```
 
-#### Problem 2: Broken JSON in Arguments
+#### Проблема 2: Сломанный JSON в аргументах
 
-**Symptom:** `json.Unmarshal` returns error.
+**Симптом:** `json.Unmarshal` возвращает ошибку.
 
-**Example:**
+**Пример:**
 ```json
-{"ip": "192.168.1.10"  // Missing closing brace
+{"ip": "192.168.1.10"  // Пропущена закрывающая скобка
 ```
 
-**Solution:**
+**Решение:**
 ```go
-// Validate before parsing
+// Валидация перед парсингом
 if !json.Valid([]byte(call.Function.Arguments)) {
     return fmt.Errorf("invalid JSON: %s", call.Function.Arguments)
 }
 ```
 
-#### Problem 3: Wrong Function Name
+#### Проблема 3: Неправильное имя функции
 
-**Symptom:** Model calls function with different name.
+**Симптом:** Модель вызывает функцию с другим именем.
 
-**Example:**
+**Пример:**
 ```json
-{"name": "check_server"}  // But function is called "get_server_status"
+{"name": "check_server"}  // Но функция называется "get_server_status"
 ```
 
-**Solution:**
+**Решение:**
 ```go
-// Validate name
+// Валидация имени
 if call.Function.Name != "get_server_status" {
     return fmt.Errorf("unknown function: %s. Available: get_server_status", call.Function.Name)
 }
 ```
 
-### 🔍 Complete Solution Code
+### 🔍 Полный код решения
 
 ```go
 package main

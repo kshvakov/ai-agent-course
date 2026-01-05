@@ -3,7 +3,7 @@
 ## Translations
 
 - **English (EN)** — `main` (this branch)
-- **Русский (RU)** — [`ru` branch](https://github.com/kshvakov/ai-agent-course/tree/ru)
+- **Русский (RU)** — [Russian version](./translations/ru/README.md)
 
 ## Why This Course?
 
@@ -23,7 +23,7 @@ This course is designed for programmers who want to understand how modern LLM ag
 
 **📚 Required Reading Before Starting:**
 
-👉 **[TEXTBOOK: Designing Autonomous AI Agents](./docs/book/README.md)**  
+👉 **[TEXTBOOK: Designing Autonomous AI Agents](./book/README.md)**  
 A complete textbook with theory, examples from different domains (DevOps, Support, Data, Security, Product), diagrams, and practical advice. The textbook is divided into chapters for easy study.
 
 **What You'll Find in the Textbook:**
@@ -41,7 +41,7 @@ A complete textbook with theory, examples from different domains (DevOps, Suppor
 
 ## Advanced Study
 
-If you want to transition from a "learning agent" to a "production agent," study **[Chapter 12: Advanced Study](./docs/book/12-advanced-study/README.md)** in the textbook.
+If you want to transition from a "learning agent" to a "production agent," study **[Chapter 12: Advanced Study](./book/12-advanced-study/README.md)** in the textbook.
 
 There you'll find a practical guide to production readiness: observability and tracing, cost & latency engineering, workflow and state management, security and governance, prompt management, data/privacy, RAG in production, evals in CI/CD, and other practical topics with step-by-step implementation recipes tied to your code from the laboratory assignments.
 
@@ -49,7 +49,7 @@ There you'll find a practical guide to production readiness: observability and t
 
 **Recommended Path:**
 
-1. **Read the textbook:** Open [`docs/book/README.md`](./docs/book/README.md) and study the theory. This will take 1-2 hours but will give you a fundamental understanding.
+1. **Read the textbook:** Open [`book/README.md`](./book/README.md) and study the theory. This will take 1-2 hours but will give you a fundamental understanding.
 
 2. **Start with Lab 00:** Check if your model is suitable for the course.
    ```bash
@@ -150,12 +150,17 @@ export OPENAI_API_KEY="any-string" # Local models usually don't need a key, but 
 
 ```
 ai-agent-course/
-├── docs/book/          # Textbook on agent design
+├── book/               # Textbook on agent design (English)
 │   ├── 01-llm-fundamentals/
 │   ├── 02-prompt-engineering/
 │   ├── ...             # Other chapters
-│   └── STYLE.md        # Documentation style guide
-├── labs/               # Laboratory assignments
+│   └── README.md
+├── translations/       # Translations
+│   └── ru/             # Russian translation
+│       ├── README.md   # Russian README
+│       ├── book/       # Russian textbook
+│       └── labs/       # Russian labs
+├── labs/               # Laboratory assignments (English)
 │   ├── lab00-capability-check/
 │   ├── lab01-basics/
 │   └── ...             # Other labs
