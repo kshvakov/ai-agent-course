@@ -1,321 +1,321 @@
-# 02. Prompting as an Engineering Discipline
+# 02. Промптинг как инженерная дисциплина
 
-## Why This Chapter?
+## Зачем это нужно?
 
-A prompt is code for a neural network. But unlike regular code, a prompt works through probability management.
+Промпт — это код для нейросети. Но в отличие от обычного кода, промпт работает через управление вероятностями.
 
-Without proper prompting, the agent will:
-- Execute actions randomly, without logic
-- Skip important analysis steps
-- Perform dangerous actions without confirmation
-- Respond in the wrong format
+Без правильного промптинга агент будет:
+- Выполнять действия случайно, без логики
+- Пропускать важные шаги анализа
+- Делать опасные действия без подтверждения
+- Отвечать в неправильном формате
 
-This chapter will teach you to create effective prompts that control agent behavior.
+Эта глава научит вас создавать эффективные промпты, которые управляют поведением агента.
 
-### Real-World Case Study
+### Реальный кейс
 
-**Situation:** You've created an agent for incident handling. User writes: "Service is down, fix it"
+**Ситуация:** Вы создали агента для обработки инцидентов. Пользователь пишет: "Упал сервис, почини"
 
-**Problem:** Agent immediately restarts the service without checking logs. Or vice versa, will analyze for a long time without applying a fix.
+**Проблема:** Агент сразу рестартит сервис, не проверив логи. Или наоборот, будет долго анализировать, не применяя фикс.
 
-**Solution:** A proper System Prompt with SOP (Standard Operating Procedure) sets the sequence of actions: first check status, then logs, then analysis, then fix, then verification.
+**Решение:** Правильный System Prompt с SOP (Standard Operating Procedure) задает последовательность действий: сначала проверка статуса, потом логи, потом анализ, потом фикс, потом верификация.
 
-## TL;DR: What to Remember
+## TL;DR: Что нужно запомнить
 
-- **System Prompt** is the specification of agent behavior. Consists of: Role, Goal, Constraints, Format, SOP.
-- **Instruction vs Demonstration**: instruction is compact, demonstration is more accurate for complex formats. In practice — combination.
-- **Zero-shot vs Few-shot**: zero-shot — only instruction, few-shot — instruction + examples. Few-shot needed for complex response formats.
-- **CoT (Chain-of-Thought)**: forces the model to think step by step. Critical for agents.
-- **SOP**: action algorithm encoded in the prompt. Sets the process, CoT helps follow it.
-- **Task Decomposition**: complex tasks are broken down into subtasks.
-- **Tools Schema** is passed as a separate `tools[]` field, not inside System Prompt.
-- **Few-shot examples** must be consistent — one format, otherwise the model gets confused.
+- **System Prompt** — это спецификация поведения агента. Состоит из: Role, Goal, Constraints, Format, SOP.
+- **Инструкция vs Демонстрация**: инструкция компактна, демонстрация точнее для сложных форматов. На практике — комбинация.
+- **Zero-shot vs Few-shot**: zero-shot — только инструкция, few-shot — инструкция + примеры. Few-shot нужен для сложных форматов ответа.
+- **CoT (Chain-of-Thought)**: заставляет модель думать по шагам. Критичен для агентов.
+- **SOP**: алгоритм действий, закодированный в промпте. Задает процесс, CoT помогает следовать ему.
+- **Task Decomposition**: сложные задачи разбиваем на подзадачи.
+- **Tools Schema** передается отдельным полем `tools[]`, не внутри System Prompt.
+- **Few-shot примеры** должны быть согласованными — один формат, иначе модель запутается.
 
-## System Prompt Structure
+## Структура System Prompt
 
-A good System Prompt consists of five blocks:
+Хороший System Prompt состоит из пяти блоков:
 
 ```text
-1. Role (Persona)      — who you are
-2. Goal                — what needs to be achieved
-3. Constraints         — what not to do
-4. Format              — response format
-5. SOP                 — action algorithm
+1. Role (Persona)      — кто ты
+2. Goal (Цель)         — что нужно достичь
+3. Constraints         — что нельзя делать
+4. Format              — в каком формате отвечать
+5. SOP                 — алгоритм действий
 ```
 
-### System Prompt Template
+### Шаблон System Prompt
 
 ```text
-You are [Role] with [experience/qualification].
+Ты [Role] с [опыт/квалификация].
 
-Your goal is [Goal].
+Твоя цель — [Goal].
 
-Constraints:
+Ограничения:
 - [Constraint 1]
 - [Constraint 2]
 
-Response format:
+Формат ответа:
 - [Format rule 1]
 - [Format rule 2]
 
-SOP for [task type]:
-1. [Step 1]
-2. [Step 2]
-3. [Step 3]
+SOP для [тип задачи]:
+1. [Шаг 1]
+2. [Шаг 2]
+3. [Шаг 3]
 ```
 
-### Example for DevOps
+### Пример для DevOps
 
 ```text
-You are a Senior DevOps Engineer with 10 years of experience.
+Ты Senior DevOps Engineer с 10-летним опытом.
 
-Your goal is to restore service functionality as quickly as possible.
+Твоя цель — восстановить работоспособность сервисов максимально быстро.
 
-Constraints:
-- Never use commands like `rm -rf /`
-- Always ask for confirmation before deleting data
-- If unsure about an action — ask the user
+Ограничения:
+- Никогда не используй команды типа `rm -rf /`
+- Всегда спрашивай подтверждение перед удалением данных
+- Если не уверен в действии — спроси у пользователя
 
-Response format:
-- If you need to call a tool — use Tool Calling
-- If you need to clarify — respond with text
+Формат ответа:
+- Если нужно вызвать инструмент — используй Tool Calling
+- Если нужно уточнить — отвечай текстом
 
-SOP for incidents:
-1. Check service status (check_http)
-2. If not 200 — read logs (read_logs)
-3. Analyze errors
-4. Apply fix (restart/rollback)
-5. Verify (check_http again)
+SOP для инцидентов:
+1. Проверь статус сервиса (check_http)
+2. Если не 200 — читай логи (read_logs)
+3. Анализируй ошибки
+4. Применяй фикс (restart/rollback)
+5. Верифицируй (check_http снова)
 ```
 
-### Example for Support
+### Пример для Support
 
 ```text
-You are a Customer Support Agent level Tier 2.
+Ты Customer Support Agent уровня Tier 2.
 
-Your goal is to solve the user's problem quickly and politely.
+Твоя цель — решить проблему пользователя быстро и вежливо.
 
-Constraints:
-- Always be polite
-- If the problem is complex — escalate
-- Don't give technical details if the user is not technical
+Ограничения:
+- Всегда будь вежлив
+- Если проблема сложная — эскалируй
+- Не давай технических деталей, если пользователь не технарь
 
-Response format:
-- Use structured format: {"action": "...", "user_id": "..."}
+Формат ответа:
+- Используй структурированный формат: {"action": "...", "user_id": "..."}
 
-SOP for ticket handling:
-1. Read ticket completely (get_ticket)
-2. Gather context (software version, OS, browser)
-3. Search knowledge base (search_kb)
-4. If solution found — formulate response
-5. If not — escalate (escalate_ticket)
+SOP для обработки тикета:
+1. Прочитай тикет полностью (get_ticket)
+2. Собери контекст (версия ПО, ОС, браузер)
+3. Поищи в базе знаний (search_kb)
+4. Если решение найдено — сформулируй ответ
+5. Если нет — эскалируй (escalate_ticket)
 ```
 
-### Example for Data Analytics
+### Пример для Data Analytics
 
 ```text
-You are a Data Analyst with experience in SQL and BI tools.
+Ты Data Analyst с опытом работы с SQL и BI-инструментами.
 
-Your goal is to provide accurate data and analytics.
+Твоя цель — предоставить точные данные и аналитику.
 
-Constraints:
-- Use ONLY read-only SQL (SELECT)
-- Always check data quality before analysis
-- If data is incorrect — report it
+Ограничения:
+- Используй ТОЛЬКО read-only SQL (SELECT)
+- Всегда проверяй качество данных перед анализом
+- Если данные некорректны — сообщи об этом
 
-Response format:
-- First show SQL query
-- Then results and analysis
+Формат ответа:
+- Сначала покажи SQL-запрос
+- Затем результаты и анализ
 
-SOP for analysis:
-1. Understand user's question
-2. Formulate SQL query
-3. Check table schema (describe_table)
-4. Execute query (sql_select)
-5. Analyze results
-6. Generate report
+SOP для анализа:
+1. Понять вопрос пользователя
+2. Сформулировать SQL-запрос
+3. Проверить схему таблицы (describe_table)
+4. Выполнить запрос (sql_select)
+5. Проанализировать результаты
+6. Сгенерировать отчет
 ```
 
-## Instruction vs Demonstration: How to Control Behavior
+## Инструкция vs Демонстрация: как управлять поведением
 
-After defining the System Prompt structure, the question arises: **how to best convey the desired behavior to the model?**
+После того, как мы определили структуру System Prompt, возникает вопрос: **как лучше передать модели нужное поведение?**
 
-There are two approaches:
+Есть два подхода:
 
-### 1. Instruction (Instruction-only)
+### 1. Инструкция (Instruction-only)
 
-We **describe** to the model what to do:
+Мы **описываем** модели, что делать:
 
 ```text
-You are a DevOps engineer. When the user asks to check logs, use the read_logs tool.
+Ты DevOps инженер. Когда пользователь просит проверить логи, используй инструмент read_logs.
 ```
 
-**Pros:** compact, flexible  
-**Cons:** model may misinterpret the format
+**Плюсы:** компактно, гибко  
+**Минусы:** модель может неправильно интерпретировать формат
 
-### 2. Demonstration (Demonstration / Few-shot)
+### 2. Демонстрация (Demonstration / Few-shot)
 
-We **show** the model examples of desired behavior:
+Мы **показываем** модели примеры желаемого поведения:
 
 ```text
-Example 1:
-User: "Check nginx logs"
+Пример 1:
+User: "Проверь логи nginx"
 Assistant: {"tool": "read_logs", "args": {"service": "nginx"}}
 
-Example 2:
-User: "Restart server"
+Пример 2:
+User: "Перезапусти сервер"
 Assistant: {"tool": "restart", "args": {"name": "web-01"}}
 ```
 
-**Pros:** model accurately copies the format  
-**Cons:** takes more tokens
+**Плюсы:** модель точно копирует формат  
+**Минусы:** занимает больше токенов
 
-### Which Approach to Choose?
+### Какой подход выбрать?
 
-| Situation | Approach | Why |
-|-----------|----------|-----|
-| Simple tasks, model understands instructions well | **Instruction** | Token savings, flexibility |
-| Complex response format (JSON, structured data) | **Demonstration** | Model better copies format from examples |
-| High accuracy in following format needed | **Demonstration** | Examples set a clear pattern |
-| Limited context | **Instruction** | More compact |
+| Ситуация | Подход | Почему |
+|----------|--------|--------|
+| Простые задачи, модель хорошо понимает инструкции | **Инструкция** | Экономия токенов, гибкость |
+| Сложный формат ответа (JSON, структурированные данные) | **Демонстрация** | Модель лучше копирует формат из примеров |
+| Нужна высокая точность следования формату | **Демонстрация** | Примеры задают четкий паттерн |
+| Ограниченный контекст | **Инструкция** | Компактнее |
 
-**Default rule:** Use a **combination** — instruction + 1-2 examples for complex formats or edge cases.
+**Правило по умолчанию:** Используйте **комбинацию** — инструкция + 1-2 примера для сложных форматов или краевых случаев.
 
-## In-Context Learning (ICL): Zero-shot and Few-shot
+## In-Context Learning (ICL): Zero-shot и Few-shot
 
-**In-Context Learning (ICL)** is the model's ability to adapt behavior based on examples *within the prompt*, without changing model weights.
+**In-Context Learning (ICL)** — это способность модели адаптировать поведение на основе примеров *внутри промпта*, без изменения весов модели.
 
-ICL works in two modes:
+ICL работает в двух режимах:
 
-### Zero-Shot (instruction only)
+### Zero-Shot (только инструкция)
 
-We give the model only an **instruction**, without examples:
+Даем модели только **инструкцию**, без примеров:
 
 ```text
-System Prompt: "You are a DevOps engineer. When the user asks to check logs, use the read_logs tool."
+System Prompt: "Ты DevOps инженер. Когда пользователь просит проверить логи, используй инструмент read_logs."
 
-User: "Check nginx logs"
-Assistant: [Model performs task based on instruction]
+User: "Проверь логи nginx"
+Assistant: [Модель выполняет задачу на основе инструкции]
 ```
 
-**When to use:**
-- Simple tasks where the model understands instructions well
-- Limited context (need to save tokens)
-- Model already trained on similar tasks
+**Когда использовать:**
+- Простые задачи, где модель хорошо понимает инструкции
+- Ограниченный контекст (нужно экономить токены)
+- Модель уже обучена на похожих задачах
 
-### Few-Shot (instruction + examples)
+### Few-Shot (инструкция + примеры)
 
-We give the model **instruction + examples** of desired behavior:
+Даем модели **инструкцию + примеры** желаемого поведения:
 
 ```text
-System Prompt: "You are a DevOps engineer. Examples:
+System Prompt: "Ты DevOps инженер. Примеры:
 
-Example 1:
-User: "Check nginx logs"
+Пример 1:
+User: "Проверь логи nginx"
 Assistant: {"tool": "read_logs", "args": {"service": "nginx"}}
 
-Example 2:
-User: "Restart server web-01"
+Пример 2:
+User: "Перезапусти сервер web-01"
 Assistant: {"tool": "restart", "args": {"name": "web-01"}}
 
-User: "Check server status"
+User: "Проверь статус сервера"
 Assistant: {"tool": "check_status", "args": {"hostname": "web-01"}}
 ```
 
-> **Note:** This is an educational demonstration of response format in prompt text. When actually using Function Calling (see [Chapter 04: Tools](../04-tools-and-function-calling/README.md)), the model returns a tool call in a separate `tool_calls` field, not as text in the response.
+> **Примечание:** Это учебная демонстрация формата ответа в тексте промпта. При реальном использовании Function Calling (см. [Главу 03: Инструменты](../03-tools-and-function-calling/README.md)) модель возвращает вызов инструмента в отдельном поле `tool_calls`, а не как текст в ответе.
 
-**When to use:**
-- Complex response format (JSON, structured data)
-- High accuracy in following format needed
-- Model may misinterpret instruction
+**Когда использовать:**
+- Сложный формат ответа (JSON, структурированные данные)
+- Нужна высокая точность следования формату
+- Модель может неправильно интерпретировать инструкцию
 
-### ICL Mode Selection Table
+### Таблица выбора режима ICL
 
-| Mode | What we pass to model | When to use | Example |
-|------|----------------------|-------------|---------|
-| **Zero-shot** | Only instruction | Simple tasks, token savings | "You are a DevOps engineer. Check logs via read_logs." |
-| **Few-shot** | Instruction + examples | Complex format, accuracy needed | Instruction + 2-3 examples of response format |
+| Режим | Что передаем модели | Когда использовать | Пример |
+|-------|-------------------|-------------------|--------|
+| **Zero-shot** | Только инструкция | Простые задачи, экономия токенов | "Ты DevOps инженер. Проверяй логи через read_logs." |
+| **Few-shot** | Инструкция + примеры | Сложный формат, нужна точность | Инструкция + 2-3 примера формата ответа |
 
-### Practical Example: Few-Shot for Support
+### Практический пример: Few-Shot для Support
 
 ```go
-// System Prompt with Few-Shot examples
-systemPrompt := `You are a Support agent.
+// System Prompt с Few-Shot примерами
+systemPrompt := `Ты Support агент.
 
-Response format examples:
+Примеры формата ответа:
 
-Example 1:
-User: "My account is blocked"
+Пример 1:
+User: "Мой аккаунт заблокирован"
 Assistant: {"action": "check_account", "user_id": "extract_from_ticket"}
 
-Example 2:
-User: "Can't log in"
+Пример 2:
+User: "Не могу войти в систему"
 Assistant: {"action": "check_login", "user_id": "extract_from_ticket"}`
 
 messages := []openai.ChatCompletionMessage{
     {Role: "system", Content: systemPrompt},
-    {Role: "user", Content: "Access problem"},
+    {Role: "user", Content: "Проблема с доступом"},
 }
 
-// Model sees examples in System Prompt and generates response in the same format:
+// Модель видит примеры в System Prompt и генерирует ответ в том же формате:
 // {"action": "check_account", "user_id": "..."}
 ```
 
-### Anti-example: Inconsistent Few-Shot Examples
+### Антипример: Несогласованные Few-Shot примеры
 
-❌ **Bad:** Examples in different formats
+❌ **Плохо:** Примеры в разных форматах
 
 ```text
-Example 1:
-User: "Check logs"
+Пример 1:
+User: "Проверь логи"
 Assistant: {"tool": "read_logs", "service": "nginx"}
 
-Example 2:
-User: "Restart server"
-Assistant: {"action": "restart", "target": "web-01"}  // Different format!
+Пример 2:
+User: "Перезапусти сервер"
+Assistant: {"action": "restart", "target": "web-01"}  // Разный формат!
 
-Example 3:
-User: "Status"
-Assistant: check_status("web-01")  // Another format!
+Пример 3:
+User: "Статус"
+Assistant: check_status("web-01")  // Еще один формат!
 ```
 
-**Problem:** Model sees three different formats and doesn't understand which to use. Result is unpredictable.
+**Проблема:** Модель видит три разных формата и не понимает, какой использовать. Результат непредсказуем.
 
-✅ **Good:** All examples in one format
+✅ **Хорошо:** Все примеры в одном формате
 
 ```text
-Example 1:
-User: "Check logs"
+Пример 1:
+User: "Проверь логи"
 Assistant: {"tool": "read_logs", "args": {"service": "nginx"}}
 
-Example 2:
-User: "Restart server"
-Assistant: {"tool": "restart", "args": {"name": "web-01"}}  // Same format
+Пример 2:
+User: "Перезапусти сервер"
+Assistant: {"tool": "restart", "args": {"name": "web-01"}}  // Тот же формат
 
-Example 3:
-User: "Status"
-Assistant: {"tool": "check_status", "args": {"hostname": "web-01"}}  // Same format
+Пример 3:
+User: "Статус"
+Assistant: {"tool": "check_status", "args": {"hostname": "web-01"}}  // Тот же формат
 ```
 
-**Result:** Model clearly understands the pattern and follows it.
+**Результат:** Модель четко понимает паттерн и следует ему.
 
-### Connection of ICL with Other Techniques
+### Связь ICL с другими техниками
 
-- **ICL → CoT:** Demonstrations can set not only response format, but also **reasoning format**. For example, you can show examples with "Thought: ... Action: ... Observation: ...".
-- **CoT → SOP:** SOP is a **process** fixed by instruction and/or examples. CoT helps the model follow this process step by step.
+- **ICL → CoT:** Демонстрации могут задавать не только формат ответа, но и **формат рассуждения**. Например, можно показать примеры с "Thought: ... Action: ... Observation: ...".
+- **CoT → SOP:** SOP — это **процесс**, закрепленный инструкцией и/или примерами. CoT помогает модели следовать этому процессу шаг за шагом.
 
-See more:
-- **[Lab 01: Basics](../../labs/lab01-basics/README.md)** — working with context and memory
-- **[Lab 02: Tools](../../labs/lab02-tools/README.md)** — response format via Function Calling
-- **[Lab 06: Incident (SOP)](../../labs/lab06-incident/README.md)** — SOP as action algorithm
+См. подробнее:
+- **[Lab 01: Basics](../../labs/lab01-basics/README.md)** — работа с контекстом и памятью
+- **[Lab 02: Tools](../../labs/lab02-tools/README.md)** — формат ответов через Function Calling
+- **[Lab 06: Incident (SOP)](../../labs/lab06-incident/README.md)** — SOP как алгоритм действий
 
-## End-to-End Example: What Exactly the Agent Sends to LLM
+## Сквозной пример: что именно отправляет агент в LLM
 
-> **For those who need to understand the protocol:** This section shows the technical structure of requests to LLM API. If you're just starting, you can skip and return later.
+> **Для тех, кому нужно понимать протокол:** Этот раздел показывает техническую структуру запросов к LLM API. Если вы только начинаете, можете пропустить и вернуться позже.
 
-When developing an agent, it's important to understand **where exactly** different parts of the prompt are located and how they get into the request to the LLM.
+Когда мы разрабатываем агента, важно понимать, **где именно** находятся разные части промпта и как они попадают в запрос к LLM.
 
-### Request Structure to LLM
+### Структура запроса к LLM
 
 ```mermaid
 graph LR
@@ -323,35 +323,35 @@ graph LR
     B[ToolsSchema] --> D
     C[UserInput] --> D
     D --> E[LLM API]
-    E --> F{Response}
+    E --> F{Ответ}
     F -->|Text| G[assistant content]
     F -->|Tool Call| H[tool_calls]
-    H --> I[Runtime executes]
+    H --> I[Runtime выполняет]
     I --> J[tool result]
-    J --> K[Adds to messages]
+    J --> K[Добавляет в messages]
     K --> D
 ```
 
-### Where Is What Located?
+### Где что находится?
 
-**1. System Prompt** — in field `Messages[0].Role = "system"`:
-- Instructions (Role, Goal, Constraints)
-- Few-shot examples (if used)
-- SOP (action algorithm)
+**1. System Prompt** — в поле `Messages[0].Role = "system"`:
+- Инструкции (Role, Goal, Constraints)
+- Few-shot примеры (если используются)
+- SOP (алгоритм действий)
 
-**2. Tools Schema** — in separate field `Tools` (NOT inside prompt!):
-- JSON Schema descriptions of tools
-- Separate from prompt, but model sees them together
+**2. Tools Schema** — в отдельном поле `Tools` (НЕ внутри промпта!):
+- JSON Schema описания инструментов
+- Отдельно от промпта, но модель видит их вместе
 
-**3. User Input** — in field `Messages[N].Role = "user"`:
-- Current user request
-- Dialogue history (previous user/assistant messages)
+**3. User Input** — в поле `Messages[N].Role = "user"`:
+- Текущий запрос пользователя
+- История диалога (предыдущие user/assistant сообщения)
 
-**4. Tool Results** — added by runtime to `Messages`:
-- After tool execution
-- `Role = "tool"`, `ToolCallID` links to the call
+**4. Tool Results** — добавляются runtime'ом в `Messages`:
+- После выполнения инструмента
+- `Role = "tool"`, `ToolCallID` связывает с вызовом
 
-### Example 1: Text-only Response (without tools)
+### Пример 1: Text-only ответ (без инструментов)
 
 **Request:**
 
@@ -361,20 +361,20 @@ graph LR
   "messages": [
     {
       "role": "system",
-      "content": "You are a DevOps engineer.\n\nExamples:\nUser: \"How are you?\"\nAssistant: \"All good, how can I help?\""
+      "content": "Ты DevOps инженер.\n\nПримеры:\nUser: \"Как дела?\"\nAssistant: \"Все хорошо, чем могу помочь?\""
     },
     {
       "role": "user",
-      "content": "Hello!"
+      "content": "Привет!"
     }
   ]
 }
 ```
 
-**Where is what located:**
-- **System Prompt** (instructions + few-shot examples) → `messages[0].content`
+**Где что находится:**
+- **System Prompt** (инструкции + few-shot примеры) → `messages[0].content`
 - **User Input** → `messages[1].content`
-- **Tools** → absent
+- **Tools** → отсутствует
 
 **Response:**
 
@@ -383,16 +383,16 @@ graph LR
   "choices": [{
     "message": {
       "role": "assistant",
-      "content": "Hello! How can I help?",
+      "content": "Привет! Чем могу помочь?",
       "tool_calls": null
     }
   }]
 }
 ```
 
-### Example 2: Tool-call Response (with tools, 2 moves)
+### Пример 2: Tool-call ответ (с инструментами, 2 хода)
 
-**Move 1: Request with tool call**
+**Ход 1: Request с tool call**
 
 ```json
 {
@@ -400,11 +400,11 @@ graph LR
   "messages": [
     {
       "role": "system",
-      "content": "You are a DevOps engineer. Use tools to check services."
+      "content": "Ты DevOps инженер. Используй инструменты для проверки сервисов."
     },
     {
       "role": "user",
-      "content": "Check nginx status"
+      "content": "Проверь статус nginx"
     }
   ],
   "tools": [
@@ -429,10 +429,10 @@ graph LR
 }
 ```
 
-**Where is what located:**
+**Где что находится:**
 - **System Prompt** → `messages[0].content`
 - **User Input** → `messages[1].content`
-- **Tools Schema** → separate field `tools[]` (NOT inside prompt!)
+- **Tools Schema** → отдельное поле `tools[]` (НЕ внутри промпта!)
 
 **Response #1 (tool call):**
 
@@ -457,11 +457,11 @@ graph LR
 }
 ```
 
-**Runtime executes tool:**
-- Parses `tool_calls[0].function.arguments` → `{"service": "nginx"}`
-- Calls `check_status("nginx")` → result: `"nginx is ONLINE"`
+**Runtime выполняет инструмент:**
+- Парсит `tool_calls[0].function.arguments` → `{"service": "nginx"}`
+- Вызывает `check_status("nginx")` → результат: `"nginx is ONLINE"`
 
-**Move 2: Request with tool result**
+**Ход 2: Request с tool result**
 
 ```json
 {
@@ -469,11 +469,11 @@ graph LR
   "messages": [
     {
       "role": "system",
-      "content": "You are a DevOps engineer. Use tools to check services."
+      "content": "Ты DevOps инженер. Используй инструменты для проверки сервисов."
     },
     {
       "role": "user",
-      "content": "Check nginx status"
+      "content": "Проверь статус nginx"
     },
     {
       "role": "assistant",
@@ -499,407 +499,407 @@ graph LR
 }
 ```
 
-**Response #2 (final answer):**
+**Response #2 (финальный ответ):**
 
 ```json
 {
   "choices": [{
     "message": {
       "role": "assistant",
-      "content": "nginx is working normally, service ONLINE",
+      "content": "nginx работает нормально, сервис ONLINE",
       "tool_calls": null
     }
   }]
 }
 ```
 
-**What happens:**
-- System Prompt contains instructions (may contain few-shot examples of tool selection)
-- **Tools Schema is passed as a separate field** `tools[]` (not inside prompt!)
-- User Input — current request
-- Model sees all three parts and **generates tool_call** (tool name + arguments)
-- **Runtime (agent)** validates tool_call, executes tool and adds result to `messages` with `role = "tool"`
-- Second request includes tool result, model formulates final answer
+**Что происходит:**
+- System Prompt содержит инструкции (может содержать few-shot примеры выбора инструментов)
+- **Tools Schema передается отдельным полем** `tools[]` (не внутри промпта!)
+- User Input — текущий запрос
+- Модель видит все три части и **генерирует tool_call** (имя инструмента + аргументы)
+- **Runtime (ваш код агента)** валидирует tool_call, выполняет инструмент и добавляет результат в `messages` с `role = "tool"`. Runtime — это код, который вы пишете на Go для управления циклом агента (см. [Главу 00: Предисловие](../00-preface/README.md#runtime-среда-выполнения))
+- Второй запрос включает tool result, модель формулирует финальный ответ
 
-### Key Points
+### Ключевые моменты
 
-1. **System Prompt** — text in `Messages[0].Content`. May contain instructions, few-shot examples, SOP.
+1. **System Prompt** — это текст в `Messages[0].Content`. Может содержать инструкции, few-shot примеры, SOP.
 
-2. **Tools Schema** — separate field `Tools` in request. **Not located inside prompt**, but model sees it together with prompt.
+2. **Tools Schema** — это отдельное поле `Tools` в запросе. **Не находится внутри промпта**, но модель видит его вместе с промптом.
 
-3. **Few-shot examples** — located **inside System Prompt** (text). They show the model response format or tool selection.
+3. **Few-shot примеры** — находятся **внутри System Prompt** (текст). Они показывают модели формат ответа или выбор инструментов.
 
-4. **User Input** — `Messages[N].Role = "user"`. Can be multiple messages (dialogue history).
+4. **User Input** — это `Messages[N].Role = "user"`. Может быть несколько сообщений (история диалога).
 
-5. **Tool Results** — added by runtime to `Messages` with `Role = "tool"` after tool execution.
+5. **Tool Results** — добавляются runtime'ом в `Messages` с `Role = "tool"` после выполнения инструмента.
 
-**Important:** Tools Schema and System Prompt are **different things**:
-- **System Prompt** — text for model (instructions, examples)
-- **Tools Schema** — structured description of tools (JSON Schema)
+**Важно:** Tools Schema и System Prompt — это **разные вещи**:
+- **System Prompt** — текст для модели (инструкции, примеры)
+- **Tools Schema** — структурированное описание инструментов (JSON Schema)
 
-See detailed protocol: **[Chapter 04: Tools and Function Calling](../04-tools-and-function-calling/README.md)**
+См. детальный протокол: **[Глава 03: Инструменты и Function Calling](../03-tools-and-function-calling/README.md)**
 
-## Chain-of-Thought (CoT): Think Step by Step
+## Chain-of-Thought (CoT): Думай по шагам
 
-**Chain-of-Thought (CoT)** is the "Think step by step" technique. For agents, CoT is critical.
+**Chain-of-Thought (CoT)** — это техника "Думай по шагам". Для агентов CoT критичен.
 
-### When Is CoT Needed?
+### Когда CoT нужен?
 
-❌ **Bad:** "Fix the server" (one step)  
-✅ **Good:** "Analyze the situation, form a hypothesis, check it, propose a solution" (chain)
+❌ **Плохо:** "Почини сервер" (один шаг)  
+✅ **Хорошо:** "Проанализируй ситуацию, выдвини гипотезу, проверь её, предложи решение" (цепочка)
 
-**CoT is needed for:**
-- Complex tasks requiring analysis
-- Tasks with multiple steps
-- Tasks where hypothesis needs to be checked before action
+**CoT нужен для:**
+- Сложных задач, требующих анализа
+- Задач с несколькими шагами
+- Задач, где нужно проверить гипотезу перед действием
 
-**CoT is not needed for:**
-- Simple single-step tasks
-- Tasks where response format is more important than process
+**CoT не нужен для:**
+- Простых одношаговых задач
+- Задач, где формат ответа важнее процесса
 
-### How to Set CoT?
+### Как задавать CoT?
 
-CoT can be set via **instruction** (Zero-shot) or via **examples** (Few-shot):
+CoT можно задавать через **инструкцию** (Zero-shot) или через **примеры** (Few-shot):
 
 **Zero-shot CoT:**
 ```text
-Think step by step:
-1. Analyze the situation
-2. Form a hypothesis
-3. Check the hypothesis
-4. Apply solution
+Думай по шагам:
+1. Проанализируй ситуацию
+2. Выдвини гипотезу
+3. Проверь гипотезу
+4. Примени решение
 ```
 
 **Few-shot CoT:**
 ```text
-Reasoning example (this is an example of how the agent works in a loop):
-Thought: User complains about slow performance. I'll start by checking metrics.
+Пример рассуждения (это пример того, как агент работает в цикле):
+Thought: Пользователь жалуется на медленную работу. Начну с проверки метрик.
 Action: get_cpu_metrics()
-Observation: CPU 95%, process: ffmpeg
-Thought: ffmpeg is consuming resources. I'll check what this process is.
+Observation: CPU 95%, процесс: ffmpeg
+Thought: ffmpeg жрет ресурсы. Проверю, что это за процесс.
 Action: get_process_info(pid=12345)
 ```
 
-The model sees an example of reasoning format and follows it. In practice, this happens in a loop: each `Observation` is added by runtime to history, and the model sees it on the next iteration.
+Модель видит пример формата рассуждения и следует ему. На практике это происходит в цикле: каждый `Observation` добавляется Runtime'ом (вашим кодом) в историю, и модель видит его при следующей итерации.
 
-### CoT and Agent Loop
+### CoT и Agent Loop
 
-The **"Thought-Action-Observation"** format is a formalization of the **Agent Loop** (iterative agent process).
+Формат **"Thought-Action-Observation"** — это формализация **Agent Loop** (итеративного процесса агента).
 
-**How it works:**
+**Как это работает:**
 
-1. **Thought** — model analyzes the situation and thinks what to do next
-2. **Action** — model chooses tool and parameters (generates `tool_call`)
-3. **Observation** — runtime executes tool and adds result to history (`role = "tool"`)
-4. **Loop repeats:** model sees Observation in context, thinks again (Thought), chooses next Action
+1. **Thought** — модель анализирует ситуацию и думает, что делать дальше
+2. **Action** — модель выбирает инструмент и параметры (генерирует `tool_call`)
+3. **Observation** — Runtime (ваш код) выполняет инструмент и добавляет результат в историю (`role = "tool"`)
+4. **Цикл повторяется:** модель видит Observation в контексте, снова думает (Thought), выбирает следующий Action
 
-**Iteration example:**
+**Пример итерации:**
 
 ```
-Iteration 1:
-  Thought: "Need to check CPU metrics"
+Итерация 1:
+  Thought: "Нужно проверить метрики CPU"
   Action: get_cpu_metrics()
-  Observation: "CPU 95%, process: ffmpeg"  ← runtime added to history
+  Observation: "CPU 95%, процесс: ffmpeg"  ← runtime добавил в историю
 
-Iteration 2 (model sees Observation in context):
-  Thought: "ffmpeg is consuming resources. I'll check process details"
+Итерация 2 (модель видит Observation в контексте):
+  Thought: "ffmpeg жрет ресурсы. Проверю детали процесса"
   Action: get_process_info(pid=12345)
-  Observation: "This is video conversion"  ← runtime added to history
+  Observation: "Это видео-конвертация"  ← runtime добавил в историю
 
-Iteration 3:
-  Thought: "Legitimate process, but blocking the system. I'll suggest limiting priority"
-  Action: [final answer to user]
+Итерация 3:
+  Thought: "Легитимный процесс, но блокирует систему. Предложу ограничить приоритет"
+  Action: [финальный ответ пользователю]
 ```
 
-**Important:** This isn't "magic" — the model simply sees results of previous tools in context (`messages[]`) and generates the next step based on this context.
+**Важно:** Это не "магия" — модель просто видит результаты предыдущих инструментов в контексте (`messages[]`) и генерирует следующий шаг на основе этого контекста.
 
-See more: **[Chapter 05: Autonomy and Loops](../05-autonomy-and-loops/README.md)** — how ReAct Loop and iterative agent process work.
+См. подробнее: **[Глава 04: Автономность и Циклы](../04-autonomy-and-loops/README.md)** — как работает ReAct Loop и итеративный процесс агента.
 
-### CoT Examples in Different Domains
+### Примеры CoT в разных доменах
 
 #### DevOps
 ```
-Thought: User complains about slow performance. I'll start by checking metrics.
+Thought: Пользователь жалуется на медленную работу. Начну с проверки метрик.
 Action: get_cpu_metrics()
-Observation: CPU 95%, process: ffmpeg
-Thought: ffmpeg is consuming resources. I'll check what this process is.
+Observation: CPU 95%, процесс: ffmpeg
+Thought: ffmpeg жрет ресурсы. Проверю, что это за процесс.
 Action: get_process_info(pid=12345)
-Observation: This is video conversion started by user
-Thought: This is a legitimate process, but it's blocking the system. I'll suggest the user limit priority.
+Observation: Это видео-конвертация, запущенная пользователем
+Thought: Это легитимный процесс, но он блокирует систему. Предложу пользователю ограничить приоритет.
 ```
 
 #### Security
 ```
-Thought: Received alert about suspicious activity. I'll start with triage.
+Thought: Получен алерт о подозрительной активности. Начну с триажа.
 Action: query_siem(query="host=192.168.1.10 AND time>now-1h")
-Observation: Multiple failed login attempts
-Thought: This looks like brute-force. I'll check the source.
+Observation: Множество failed login attempts
+Thought: Это похоже на brute-force. Проверю источник.
 Action: get_source_ip()
-Observation: IP from unfamiliar country
-Thought: High risk. I'll isolate the host, but first request confirmation.
+Observation: IP из незнакомой страны
+Thought: Высокий риск. Изолирую хост, но сначала запрошу подтверждение.
 ```
 
 #### Data Analytics
 ```
-Thought: User asks about sales. Need to understand what data is available.
+Thought: Пользователь спрашивает про продажи. Нужно понять, какие данные есть.
 Action: describe_table("sales")
-Observation: Table contains fields: date, region, amount
-Thought: Now I'll formulate SQL query to get sales for the last month.
+Observation: Таблица содержит поля: date, region, amount
+Thought: Теперь сформулирую SQL-запрос для получения продаж за последний месяц.
 Action: sql_select("SELECT region, SUM(amount) FROM sales WHERE date > NOW() - INTERVAL '1 month' GROUP BY region")
-Observation: Results: Region A: 100k, Region B: 150k
-Thought: I'll analyze results and formulate conclusions.
+Observation: Результаты: Region A: 100k, Region B: 150k
+Thought: Проанализирую результаты и сформулирую выводы.
 ```
 
-## SOP and Task Decomposition: Agent Process
+## SOP и декомпозиция задач: процесс агента
 
-**SOP (Standard Operating Procedure)** is an action algorithm encoded in the prompt. Sets the process, CoT helps follow it step by step.
+**SOP (Standard Operating Procedure)** — это алгоритм действий, закодированный в промпте. Задает процесс, CoT помогает следовать ему шаг за шагом.
 
-### Connection: Goal → Constraints → SOP → CoT
+### Связь: Goal → Constraints → SOP → CoT
 
-- **Goal/Constraints** set boundaries (what to achieve, what not to do)
-- **SOP** sets the process (what steps to execute)
-- **CoT** helps go step by step (think at each stage)
+- **Goal/Constraints** задают рамки (что нужно достичь, что нельзя делать)
+- **SOP** задает процесс (какие шаги выполнять)
+- **CoT** помогает идти по шагам (думать на каждом этапе)
 
-### Why Is This Needed?
+### Зачем это нужно?
 
-Without SOP, the agent may "wander": immediately restart, then read logs, then restart again.
+Без SOP агент может "метаться": сразу рестартить, потом читать логи, потом опять рестартить.
 
-**Why SOP is important: directing model attention**
+**Почему SOP важен: направление внимания модели**
 
-Without SOP, the model sees: `User: Fix it`. Its probabilistic mechanism may output: `Call: restart_service`. This is the most "popular" action.
+Без SOP модель видит: `User: Fix it`. Ее вероятностный механизм может выдать: `Call: restart_service`. Это самое "популярное" действие.
 
-With SOP, the model is forced to generate text:
-- "Step 1: I need to check HTTP status." → This increases probability of calling `check_http`
-- "HTTP is 502. Step 2: I need to check logs." → This increases probability of calling `read_logs`
+С SOP модель вынуждена сгенерировать текст:
+- "Step 1: I need to check HTTP status." → Это повышает вероятность вызова `check_http`
+- "HTTP is 502. Step 2: I need to check logs." → Это повышает вероятность вызова `read_logs`
 
-We **direct the model's attention** along the right path through explicit step indication in the prompt.
+Мы **направляем внимание** модели по нужному руслу через явное указание шагов в промпте.
 
-**Chain-of-Thought in action:**
+**Chain-of-Thought в действии:**
 
-Note the System Prompt with SOP:
+Обратите внимание на System Prompt с SOP:
 `"Think step by step following this SOP: 1. Check HTTP... 2. Check Logs..."`
 
-Why is this needed?
+Зачем это нужно?
 
-Without this prompt, the model sees: `User: Fix it`.  
-Its probabilistic mechanism may output: `Call: restart_service`. This is the most "popular" action.
+Без этого промпта модель видит: `User: Fix it`.  
+Ее вероятностный механизм может выдать: `Call: restart_service`. Это самое "популярное" действие.
 
-With this prompt, the model is forced to generate text:
-- "Step 1: I need to check HTTP status." → This increases probability of calling `check_http`
-- "HTTP is 502. Step 2: I need to check logs." → This increases probability of calling `read_logs`
+С этим промптом модель вынуждена сгенерировать текст:
+- "Step 1: I need to check HTTP status." → Это повышает вероятность вызова `check_http`
+- "HTTP is 502. Step 2: I need to check logs." → Это повышает вероятность вызова `read_logs`
 
-We **direct the model's attention** along the right path.
+Мы **направляем внимание** модели по нужному руслу.
 
-### Example SOP for Incident (DevOps)
+### Пример SOP для инцидента (DevOps)
 
 ```text
-SOP for service failure:
-1. Check Status: Check HTTP response code
-2. Check Logs: If 500/502 — read last 20 lines of logs
-3. Analyze: Find keywords:
+SOP для падения сервиса:
+1. Check Status: Проверь HTTP код ответа
+2. Check Logs: Если 500/502 — читай последние 20 строк логов
+3. Analyze: Найди ключевые слова:
    - "Syntax error" → Rollback
    - "Connection refused" → Check Database
    - "Out of memory" → Restart
-4. Action: Apply fix according to analysis
-5. Verify: Check HTTP status again
+4. Action: Примени фикс согласно анализу
+5. Verify: Проверь HTTP статус снова
 ```
 
-### Example SOP for Support
+### Пример SOP для Support
 
 ```text
-SOP for ticket handling:
-1. Read: Read ticket completely
-2. Context: Gather context (version, OS, browser)
-3. Search: Search knowledge base for similar cases
+SOP для обработки тикета:
+1. Read: Прочитай тикет полностью
+2. Context: Собери контекст (версия, ОС, браузер)
+3. Search: Поищи в базе знаний похожие случаи
 4. Decide:
-   - If solution found → Draft reply
-   - If complex problem → Escalate
-5. Respond: Send response to user
+   - Если решение найдено → Draft reply
+   - Если сложная проблема → Escalate
+5. Respond: Отправь ответ пользователю
 ```
 
-### Example SOP for Security
+### Пример SOP для Security
 
 ```text
-SOP for alert triage:
-1. Severity: Determine criticality (Low/Medium/High/Critical)
-2. Evidence: Gather evidence (logs, metrics, network traffic)
+SOP для триажа алерта:
+1. Severity: Определи критичность (Low/Medium/High/Critical)
+2. Evidence: Собери доказательства (логи, метрики, сетевой трафик)
 3. Triage:
-   - If False Positive → Close alert
-   - If True Positive → Containment (with confirmation!)
-4. Report: Generate report for SOC
+   - Если False Positive → Close alert
+   - Если True Positive → Containment (с подтверждением!)
+4. Report: Сгенерируй отчет для SOC
 ```
 
-### Task Structuring (Task Decomposition)
+### Структурирование задач (Task Decomposition)
 
-Complex tasks need to be broken down into subtasks.
+Сложные задачи нужно разбивать на подзадачи.
 
-**Without decomposition:**
+**Без декомпозиции:**
 ```
-User: "Investigate database problem"
-Assistant: [May try to do everything at once and get confused]
+User: "Разберись с проблемой базы"
+Assistant: [Может попытаться сделать всё сразу и запутаться]
 ```
 
-**With decomposition:**
+**С декомпозицией:**
 ```
-User: "Investigate database problem"
+User: "Разберись с проблемой базы"
 Assistant:
-1. Check DB availability (ping_db)
-2. Check metrics (cpu, memory, connections)
-3. Read logs (read_db_logs)
-4. Analyze errors
-5. Propose solution
+1. Проверю доступность БД (ping_db)
+2. Проверю метрики (cpu, memory, connections)
+3. Прочитаю логи (read_db_logs)
+4. Проанализирую ошибки
+5. Предложу решение
 ```
 
-## Common Prompting Mistakes
+## Типовые ошибки промптинга
 
-### Mistake 1: Too General Prompt
+### Ошибка 1: Слишком общий промпт
 
-**Symptom:** Model doesn't understand what to do, responds with general phrases.
+**Симптом:** Модель не понимает, что делать, отвечает общими фразами.
 
-**Cause:** Prompt doesn't set a specific role, goal, and action process.
+**Причина:** Промпт не задает конкретную роль, цель и процесс действий.
 
-**Solution:**
+**Решение:**
 ```text
-// BAD
-You are an assistant.
+// ПЛОХО
+Ты помощник.
 
-// GOOD
-You are a Senior DevOps Engineer with 10 years of experience.
-Your goal is to restore service functionality.
-Follow SOP: 1. Check Status 2. Check Logs 3. Analyze 4. Fix 5. Verify
+// ХОРОШО
+Ты Senior DevOps Engineer с 10-летним опытом.
+Твоя цель — восстановить работоспособность сервисов.
+Следуй SOP: 1. Check Status 2. Check Logs 3. Analyze 4. Fix 5. Verify
 ```
 
-### Mistake 2: Missing CoT
+### Ошибка 2: Отсутствие CoT
 
-**Symptom:** Model tries to do everything at once, skips analysis steps.
+**Симптом:** Модель пытается сделать всё сразу, пропускает шаги анализа.
 
-**Cause:** Prompt doesn't set reasoning format (Chain-of-Thought), model doesn't "think" step by step.
+**Причина:** Промпт не задает формат рассуждения (Chain-of-Thought), модель не "думает" по шагам.
 
-**Solution:**
+**Решение:**
 ```text
-// BAD
-Fix the server.
+// ПЛОХО
+Почини сервер.
 
-// GOOD
-Think step by step:
-1. Analyze the situation
-2. Form a hypothesis
-3. Check the hypothesis
-4. Apply solution
+// ХОРОШО
+Думай по шагам:
+1. Проанализируй ситуацию
+2. Выдвини гипотезу
+3. Проверь гипотезу
+4. Примени решение
 ```
 
-### Mistake 3: Missing Constraints
+### Ошибка 3: Отсутствие ограничений
 
-**Symptom:** Model may perform dangerous actions without confirmation.
+**Симптом:** Модель может выполнить опасные действия без подтверждения.
 
-**Cause:** Prompt doesn't set constraints on agent actions.
+**Причина:** Промпт не задает ограничения на действия агента.
 
-**Solution:**
+**Решение:**
 ```text
-// BAD
-You are a DevOps engineer. Do what's needed.
+// ПЛОХО
+Ты DevOps инженер. Делай что нужно.
 
-// GOOD
-You are a DevOps engineer.
-Constraints:
-- Never delete data without confirmation
-- Always check logs before action
+// ХОРОШО
+Ты DevOps инженер.
+Ограничения:
+- Никогда не удаляй данные без подтверждения
+- Всегда проверяй логи перед действием
 ```
 
-## Completion Criteria / Checklist
+## Критерии сдачи / Чек-лист
 
-✅ **Completed:**
-- Role (Persona) clearly defined
-- Goal specific and measurable
-- Constraints explicitly stated
-- Response format (Format) described
-- SOP (if applicable) detailed
-- CoT included for complex tasks
-- Few-Shot examples added (if complex format needed)
-- Few-Shot examples consistent (one format)
+✅ **Сдано:**
+- Роль (Persona) четко определена
+- Цель (Goal) конкретна и измерима
+- Ограничения (Constraints) явно указаны
+- Формат ответа (Format) описан
+- SOP (если применимо) детально расписан
+- CoT включен для сложных задач
+- Few-Shot примеры добавлены (если нужен сложный формат)
+- Few-Shot примеры согласованы (один формат)
 
-❌ **Not completed:**
-- Prompt too general (no specific role and goal)
-- CoT missing for complex tasks
-- No constraints on dangerous actions
-- Few-Shot examples in different formats
+❌ **Не сдано:**
+- Промпт слишком общий (нет конкретной роли и цели)
+- Отсутствует CoT для сложных задач
+- Нет ограничений на опасные действия
+- Few-Shot примеры в разных форматах
 
-## Mini-Exercises
+## Мини-упражнения
 
-### Exercise 1: Create System Prompt
+### Упражнение 1: Создайте System Prompt
 
-Create a System Prompt for an agent that handles support tickets:
+Создайте System Prompt для агента, который обрабатывает тикеты поддержки:
 
 ```go
 systemPrompt := `
-// Your code here
+// Ваш код здесь
 `
 ```
 
-**Expected result:**
-- Role: Support Agent
-- Goal: solve user's problem
-- Constraints: politeness, escalation of complex cases
-- Format: structured JSON with fields `action` and `user_id`
+**Ожидаемый результат:**
+- Роль: Support Agent
+- Цель: решить проблему пользователя
+- Ограничения: вежливость, эскалация сложных случаев
+- Формат: структурированный JSON с полями `action` и `user_id`
 - SOP: Read → Context → Search → Decide → Respond
 
-### Exercise 2: Add CoT
+### Упражнение 2: Добавьте CoT
 
-Improve the prompt from Exercise 1 by adding Chain-of-Thought:
+Улучшите промпт из упражнения 1, добавив Chain-of-Thought:
 
 ```go
 cotPrompt := `
-// Your code here
+// Ваш код здесь
 `
 ```
 
-**Expected result:**
-- Added reasoning format: "Thought: ... Action: ... Observation: ..."
-- Few-shot examples with CoT (if using few-shot)
-- Or instruction "Think step by step" (if zero-shot)
+**Ожидаемый результат:**
+- Добавлен формат рассуждения: "Thought: ... Action: ... Observation: ..."
+- Примеры few-shot с CoT (если используете few-shot)
+- Или инструкция "Думай по шагам" (если zero-shot)
 
-## For the Curious
+## Для любопытных
 
-> This section explains the mechanics of few-shot and CoT at the model level. Can be skipped if you're only interested in practice.
+> Этот раздел объясняет механику работы few-shot и CoT на уровне модели. Можно пропустить, если вас интересует только практика.
 
-### Why Does Few-Shot Work?
+### Почему Few-Shot работает?
 
-### Self-Attention Mechanism
+### Механизм Self-Attention
 
-The **Self-Attention** mechanism in the transformer allows the model to "see" connections between tokens in context. When the model sees examples:
+Механизм **Self-Attention** в трансформере позволяет модели "видеть" связи между токенами в контексте. Когда модель видит примеры:
 
-1. **Intuitively:** Model "adjusts" to the pattern it sees in context
-2. **Mechanically:** Vector representation of tokens shifts toward the needed format, because previous tokens (examples) set this context
-3. **Practically:** Result quality strongly depends on example quality and their consistency
+1. **Интуитивно:** Модель "подстраивается" под шаблон, который видит в контексте
+2. **Механически:** Векторное представление токенов смещается в сторону нужного формата, потому что предыдущие токены (примеры) задали этот контекст
+3. **Практически:** Качество результата резко зависит от качества примеров и их согласованности
 
-### Why Does CoT Work?
+### Почему CoT работает?
 
-Imagine the task: "What is 23 * 41 + 12?"
+Представьте задачу: "Сколько будет 23 * 41 + 12?"
 
-**Without CoT:**
-- Model must output answer "955" immediately
-- This requires enormous computational power in one step
-- Error probability is high (model may "guess" incorrectly)
+**Без CoT:**
+- Модель должна выдать ответ "955" сразу
+- Это требует огромной вычислительной мощности в одном шаге
+- Вероятность ошибки высока (модель может "угадать" неправильно)
 
-**With CoT:**
-- Model generates: "23 * 40 = 920... 23 * 1 = 23... sum 943... plus 12... answer 955"
-- By generating intermediate tokens ("920", "943"), the model **offloads computations to context**
-- Next token is predicted based on *extended* context containing intermediate results
-- This turns a complex task into a series of simple tasks
+**С CoT:**
+- Модель генерирует: "23 * 40 = 920... 23 * 1 = 23... сумма 943... плюс 12... ответ 955"
+- Генерируя промежуточные токены ("920", "943"), модель **выгружает вычисления в контекст**
+- Следующий токен предсказывается на основе *расширенного* контекста, содержащего промежуточные результаты
+- Это превращает сложную задачу в серию простых задач
 
-**For agents, CoT is critical**, because agents solve complex multi-step tasks where each step depends on the previous one.
+**Для агентов CoT критичен**, потому что агенты решают сложные многошаговые задачи, где каждый шаг зависит от предыдущего.
 
-## Connection with Other Chapters
+## Связь с другими главами
 
-- **LLM Physics:** Understanding the probabilistic nature of LLMs helps create effective prompts, see [Chapter 01: LLM Physics](../01-llm-fundamentals/README.md)
-- **Tools:** How prompt affects tool selection, see [Chapter 04: Tools](../04-tools-and-function-calling/README.md)
-- **Autonomy:** How SOP and CoT work in agent loop, see [Chapter 05: Autonomy](../05-autonomy-and-loops/README.md)
+- **Физика LLM:** Понимание вероятностной природы LLM помогает создавать эффективные промпты, см. [Главу 01: Физика LLM](../01-llm-fundamentals/README.md)
+- **Инструменты:** Как промпт влияет на выбор инструментов, см. [Главу 03: Инструменты](../03-tools-and-function-calling/README.md)
+- **Автономность:** Как SOP и CoT работают в цикле агента, см. [Главу 04: Автономность](../04-autonomy-and-loops/README.md)
 
-## What's Next?
+## Что дальше?
 
-After studying prompting, proceed to:
-- **[03. Agent Anatomy](../03-agent-architecture/README.md)** — how the agent is structured internally
+После изучения промптинга переходите к:
+- **[03. Инструменты и Function Calling](../03-tools-and-function-calling/README.md)** — как агент взаимодействует с реальным миром
 
 ---
 
-**Navigation:** [← LLM Physics](../01-llm-fundamentals/README.md) | [Table of Contents](../README.md) | [Agent Anatomy →](../03-agent-architecture/README.md)
+**Навигация:** [← Физика LLM](../01-llm-fundamentals/README.md) | [Оглавление](../README.md) | [Инструменты →](../03-tools-and-function-calling/README.md)

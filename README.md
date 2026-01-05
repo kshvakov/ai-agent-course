@@ -41,9 +41,9 @@ A complete textbook with theory, examples from different domains (DevOps, Suppor
 
 ## Advanced Study
 
-If you want to transition from a "learning agent" to a "production agent," study **[Chapter 12: Advanced Study](./book/12-advanced-study/README.md)** in the textbook.
+If you want to transition from a "learning agent" to a "production agent," study **[Chapter 25: Production Readiness Index](./book/25-production-readiness-index/README.md)** in the textbook.
 
-There you'll find a practical guide to production readiness: observability and tracing, cost & latency engineering, workflow and state management, security and governance, prompt management, data/privacy, RAG in production, evals in CI/CD, and other practical topics with step-by-step implementation recipes tied to your code from the laboratory assignments.
+There you'll find a practical guide to production readiness: observability and tracing, cost & latency engineering, workflow and state management, security and governance, prompt management, data/privacy, RAG in production, evals in CI/CD and other practical topics with step-by-step implementation recipes tied to your code from the laboratory assignments.
 
 ## How to Take the Course
 
@@ -83,7 +83,7 @@ There you'll find a practical guide to production readiness: observability and t
 
 ## Course Structure
 
-The course consists of a preparatory stage (Lab 00) and 9 main laboratory assignments (Lab 01-09).
+The course consists of a preparatory stage (Lab 00) and 12 main laboratory assignments (Lab 01-12), plus 2 optional labs (Lab 13-14).
 
 ### 🔬 [Lab 00: Model Benchmark](./labs/lab00-capability-check)
 **Diagnostics.** Before starting, we'll verify whether your model (especially a local one) is suitable for the course. We'll run a series of tests on JSON, Instruction Following, and Function Calling.
@@ -115,6 +115,15 @@ The course consists of a preparatory stage (Lab 00) and 9 main laboratory assign
 ### [Lab 09: Context Optimization](./labs/lab09-context-optimization)
 **Context Window Management.** Learn to count tokens, apply optimization techniques (truncation, summarization), and implement adaptive context management for long-lived agents.
 
+### [Lab 10: Planning & Workflow](./labs/lab10-planning-workflows)
+**Workflow Patterns.** Implement a simple workflow runtime: plan → steps → retries → state persistence (in-memory/file).
+
+### [Lab 11: Memory & Context Engineering](./labs/lab11-memory-context)
+**Memory Systems.** Long-term memory store + retrieval + policy (what to store/how to forget) + summarization.
+
+### [Lab 12: Tool Server Protocol](./labs/lab12-tool-server)
+**Tool Servers.** Minimal "tool server" (stdio or HTTP) + client in agent runtime + schema versioning.
+
 ### 📋 Laboratory Assignments Table
 
 | Lab | Topic | Key Skills | Study Guide |
@@ -129,6 +138,11 @@ The course consists of a preparatory stage (Lab 00) and 9 main laboratory assign
 | **Lab 07** | **RAG** | Working with documentation. Knowledge search before action. | [METHOD.md](./labs/lab07-rag/METHOD.md) |
 | **Lab 08** | **Multi-Agent** | Orchestration. Task delegation. Context isolation. | [METHOD.md](./labs/lab08-multi-agent/METHOD.md) |
 | **Lab 09** | **Context Optimization** | Token counting, summarization, adaptive context management. | [METHOD.md](./labs/lab09-context-optimization/METHOD.md) |
+| **Lab 10** | **Planning & Workflow** | Task decomposition, dependency resolution, plan execution with retries. | [METHOD.md](./labs/lab10-planning-workflows/METHOD.md) |
+| **Lab 11** | **Memory & Context Engineering** | Long-term memory, fact extraction, context layering. | [METHOD.md](./labs/lab11-memory-context/METHOD.md) |
+| **Lab 12** | **Tool Server Protocol** | stdio/HTTP protocols, schema versioning, tool server architecture. | [METHOD.md](./labs/lab12-tool-server/METHOD.md) |
+| **Lab 13** | **Agent Security Hardening** (Optional) | Allowlists, risk scoring, prompt injection protection, audit. | [METHOD.md](./labs/lab13-security-hardening/METHOD.md) |
+| **Lab 14** | **Evals in CI** (Optional) | Eval runner, golden dataset, CI pipeline integration. | [METHOD.md](./labs/lab14-evals-in-ci/METHOD.md) |
 
 ## Requirements
 
@@ -177,5 +191,8 @@ After completing the course, you'll be able to:
 - ✅ Apply RAG for working with documentation
 - ✅ Create Multi-Agent systems
 - ✅ Test and optimize agents
+- ✅ Implement planning and workflow patterns
+- ✅ Build memory systems and context engineering
+- ✅ Create tool servers with protocols
 
 **Happy Learning! 🚀**

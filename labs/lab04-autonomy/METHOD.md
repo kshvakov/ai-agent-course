@@ -1,8 +1,8 @@
-# Study Guide: Lab 04 — The Agent Loop (Autonomy)
+# Method Guide: Lab 04 — The Agent Loop (Autonomy)
 
-## Why This Lab?
+## Why Is This Needed?
 
-In this laboratory assignment, you'll implement the **ReAct (Reason + Act)** pattern — the heart of an autonomous agent. The agent will learn to independently make decisions, execute actions, and analyze results in a loop, without human intervention.
+In this lab you'll implement the **ReAct (Reason + Act)** pattern — the heart of an autonomous agent. The agent will learn to independently make decisions, execute actions, and analyze results in a loop, without human intervention.
 
 ### Real-World Case Study
 
@@ -14,15 +14,15 @@ In this laboratory assignment, you'll implement the **ReAct (Reason + Act)** pat
 
 **With autonomous loop:**
 - Agent: "I'll check disk usage" → calls `check_disk` → gets "95%"
-- Agent: "Disk is full. I'll clean logs" → calls `clean_logs` → gets "Freed 20GB"
-- Agent: "I'll check again" → calls `check_disk` → gets "40%"
+- Agent: "Disk is full. Cleaning logs" → calls `clean_logs` → gets "Freed 20GB"
+- Agent: "Checking again" → calls `check_disk` → gets "40%"
 - Agent: "Done! Freed 20GB."
 
 **Difference:** Agent decides what to do next based on results of previous actions.
 
 ## Theory in Simple Terms
 
-### ReAct Loop (Autonomy Cycle)
+### ReAct Loop (Autonomy Loop)
 
 An autonomous agent works in a loop:
 
@@ -30,25 +30,25 @@ An autonomous agent works in a loop:
 While (Task not solved):
   1. Send history to LLM
   2. Get response
-  3. IF it's text → Show to user and wait for new input
+  3. IF it's text → Show user and wait for new input
   4. IF it's a tool call →
        a. Execute tool
        b. Add result to history
        c. GOTO 1 (without asking user!)
 ```
 
-**Key point:** Point 4.c provides the "magic" — the agent itself looks at the result and decides what to do next.
+**Key point:** Point 4.c provides the "magic" — the agent looks at the result and decides what to do next.
 
 ### Closing the Loop
 
-After executing a tool, we **don't ask the user** what to do next. We send the result back to the LLM. The model sees the result of its actions and decides what to do next.
+After executing a tool, we **don't ask the user** what to do next. We send the result back to LLM. The model sees the result of its actions and decides what to do next.
 
 **Example dialogue in memory:**
 
 1. **User:** "Out of space."
 2. **Assistant (ToolCall):** `check_disk()`
 3. **Tool (Result):** "95% usage."
-4. **Assistant (ToolCall):** `clean_logs()` ← Agent decided to do this itself!
+4. **Assistant (ToolCall):** `clean_logs()` ← Agent decided this itself!
 5. **Tool (Result):** "Freed 20GB."
 6. **Assistant (Text):** "I cleaned logs, now there's enough space."
 
@@ -126,9 +126,9 @@ for i := 0; i < maxIterations; i++ {
 }
 ```
 
-## Common Mistakes
+## Common Errors
 
-### Mistake 1: Infinite Loop
+### Error 1: Infinite Loop
 
 **Symptom:** Agent repeats the same action infinitely.
 
@@ -146,7 +146,7 @@ Action: check_disk()  // And again!
 2. Detect repeating actions
 3. Improve prompt: "If action didn't help, try a different approach"
 
-### Mistake 2: Tool Result Not Added to History
+### Error 2: Tool Result Not Added to History
 
 **Symptom:** Agent doesn't see tool result and continues executing the same action.
 
@@ -162,7 +162,7 @@ messages = append(messages, openai.ChatCompletionMessage{
 })
 ```
 
-### Mistake 3: Agent Doesn't Stop
+### Error 3: Agent Doesn't Stop
 
 **Symptom:** Agent continues calling tools even when task is solved.
 
@@ -201,13 +201,13 @@ fmt.Printf("[Iteration %d] Tool result: %s\n", i, result)
 
 ✅ **Completed:**
 - Agent executes loop autonomously
-- Tool results are added to history
+- Tool results added to history
 - Agent stops when task is solved
-- Has protection against infinite loops
+- Loop protection exists
 
 ❌ **Not completed:**
-- Agent doesn't continue loop after tool execution
-- Tool results are not visible to agent
+- Agent doesn't continue loop after executing tool
+- Tool results not visible to agent
 - Agent loops infinitely
 
 ---

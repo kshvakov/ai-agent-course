@@ -1,8 +1,8 @@
-# Study Guide: Lab 06 — Incident Management (SOP)
+# Method Guide: Lab 06 — Incident Management (SOP)
 
-## Why This Lab?
+## Why Is This Needed?
 
-In this laboratory assignment, you'll create an **SRE (Site Reliability Engineer)** level agent. Unlike simple tasks, incidents require **strategic thinking** and following a strict algorithm (SOP).
+In this lab you'll create an **SRE (Site Reliability Engineer)** level agent. Unlike simple tasks, incidents require **strategic thinking** and following a strict algorithm (SOP).
 
 ### Real-World Case Study
 
@@ -25,21 +25,21 @@ In this laboratory assignment, you'll create an **SRE (Site Reliability Engineer
 
 ## Theory in Simple Terms
 
-### Planning — Breaking Down Tasks into Steps
+### Planning — breaking task into steps
 
-In this lab, we use **explicit planning** (Plan-and-Solve), unlike implicit planning (ReAct) from Lab 04.
+In this lab we use **explicit planning** (Plan-and-Solve), unlike implicit planning (ReAct) from Lab 04.
 
 **Difference:**
 
 | Implicit (ReAct) | Explicit (Plan-and-Solve) |
-|------------------|---------------------------|
+|---------------------|------------------------|
 | Plans "on the fly" | Creates plan first |
 | Suitable for simple tasks (2-4 steps) | Suitable for complex tasks (5+ steps) |
-| Flexible, adapts to results | Structured, guarantees all steps execution |
+| Flexible, adapts to results | Structured, guarantees all steps executed |
 
 **How explicit planning works:**
 
-1. **Plan generation:** Agent receives task and creates full plan
+1. **Plan generation:** Agent receives task and creates complete plan
    ```
    Plan:
    1. Check HTTP status
@@ -49,20 +49,20 @@ In this lab, we use **explicit planning** (Plan-and-Solve), unlike implicit plan
    5. Verify
    ```
 
-2. **Plan execution:** Agent executes steps in order, marking progress
+2. **Plan execution:** Agent executes steps in order, tracking progress
 
 3. **Adaptation:** If step didn't help, agent can replan
 
 ### Task Decomposition
 
-The task "Investigate incident" is broken down into subtasks:
+The task "Investigate incident" is broken into subtasks:
 
 **Decomposition principles:**
 - **Atomicity:** Each step is executable with one action
   - ❌ Bad: "Check and fix server"
   - ✅ Good: "Check status" → "Read logs" → "Apply fix"
 
-- **Dependencies:** Steps execute in correct order
+- **Dependencies:** Steps executed in correct order
   - ❌ Bad: "Apply fix" → "Read logs"
   - ✅ Good: "Read logs" → "Analyze" → "Apply fix"
 
@@ -72,14 +72,14 @@ The task "Investigate incident" is broken down into subtasks:
 
 **Example decomposition for incident:**
 ```
-Original task: "Service unavailable (502). Investigate."
+Original task: "Service unavailable (502). Fix it."
 
 Decomposition:
 1. Check service HTTP status
    - Success criterion: Got HTTP code (200/502/500)
    
 2. Read service logs
-   - Success criterion: Got last 20 lines of logs
+   - Success criterion: Got last 20 log lines
    
 3. Analyze errors in logs
    - Success criterion: Cause identified (Syntax error / Connection error / Memory)
@@ -100,7 +100,7 @@ Decomposition:
 ```
 SOP for service failure:
 1. Check Status: Check HTTP response code
-2. Check Logs: If 500/502 — read last 20 lines of logs
+2. Check Logs: If 500/502 — read last 20 log lines
 3. Analyze: Find keywords:
    - "Syntax error" → Rollback
    - "Connection refused" → Check Database
@@ -117,7 +117,7 @@ With SOP, the model is forced to generate text:
 - "Step 1: I need to check HTTP status." → This increases probability of calling `check_http`
 - "HTTP is 502. Step 2: I need to check logs." → This increases probability of calling `read_logs`
 
-We **direct the model's attention** along the right path.
+We **direct the model's attention** in the right direction.
 
 ### Chain-of-Thought in Action
 
@@ -133,7 +133,7 @@ With this prompt, the model is forced to generate text:
 - "Step 1: I need to check HTTP status." → This increases probability of calling `check_http`
 - "HTTP is 502. Step 2: I need to check logs." → This increases probability of calling `read_logs`
 
-We **direct the model's attention** along the right path.
+We **direct the model's attention** in the right direction.
 
 ## Execution Algorithm
 
@@ -148,7 +148,7 @@ tools := []openai.Tool{
 }
 ```
 
-**Important:** In `Description`, indicate when to use the tool. This helps the model choose correctly.
+**Important:** In `Description` specify when to use the tool. This helps the model choose correctly.
 
 ### Step 2: SOP in System Prompt
 
@@ -194,9 +194,9 @@ for i := 0; i < 15; i++ {
 }
 ```
 
-## Common Mistakes
+## Common Errors
 
-### Mistake 1: Agent Doesn't Follow SOP
+### Error 1: Agent Doesn't Follow SOP
 
 **Symptom:** Agent immediately restarts without reading logs.
 
@@ -207,9 +207,9 @@ for i := 0; i < 15; i++ {
 2. Add Few-Shot examples to prompt
 3. Use a stronger model (GPT-4)
 
-### Mistake 2: Agent Loops on One Step
+### Error 2: Agent Loops on One Step
 
-**Symptom:** Agent repeats `check_http` several times in a row.
+**Symptom:** Agent repeats `check_http` multiple times in a row.
 
 **Cause:** No explicit instruction to move to next step.
 
@@ -219,7 +219,7 @@ for i := 0; i < 15; i++ {
 "After checking HTTP status, move to step 2. Do not repeat step 1."
 ```
 
-### Mistake 3: Wrong Action Choice
+### Error 3: Wrong Action Choice
 
 **Symptom:** Agent does rollback instead of restart (or vice versa).
 
@@ -262,7 +262,7 @@ if verifyResult == "200 OK" {
 ## Completion Criteria
 
 ✅ **Completed:**
-- Agent follows SOP strictly
+- Agent strictly follows SOP
 - Agent reads logs before action
 - Agent chooses correct action (rollback vs restart)
 - Agent verifies result

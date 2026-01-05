@@ -1,17 +1,17 @@
-# Study Guide: Lab 08 — Multi-Agent Systems
+# Method Guide: Lab 08 — Multi-Agent Systems
 
-## Why This Lab?
+## Why Is This Needed?
 
-One agent "jack of all trades" often gets confused with tools. It's more efficient to divide responsibility: create a team of narrow specialists, managed by a main agent (Supervisor).
+One agent "jack of all trades" often gets confused with tools. It's more efficient to divide responsibilities: create a team of narrow specialists managed by a main agent (Supervisor).
 
 ### Real-World Case Study
 
-**Situation:** User asks: "Check if DB server is available, and if yes — find out database version."
+**Situation:** User asks: "Check if DB server is accessible, and if yes — find out database version."
 
 **Without Multi-Agent:**
 - One agent must know both `ping` and SQL
 - Context overflows
-- Agent may confuse tools
+- Agent may mix up tools
 
 **With Multi-Agent:**
 - Supervisor: Distributes tasks to specialists
@@ -19,7 +19,7 @@ One agent "jack of all trades" often gets confused with tools. It's more efficie
 - DB Specialist: Knows only SQL
 - Each specialist focuses on their task
 
-**Difference:** Context isolation and specialization increase reliability.
+**Difference:** Context isolation and specialization improve reliability.
 
 ## Theory in Simple Terms
 
@@ -27,21 +27,21 @@ One agent "jack of all trades" often gets confused with tools. It's more efficie
 
 **Architecture:**
 
-- **Supervisor:** Main brain. Has no tools, but knows who can do what.
+- **Supervisor:** Main brain. Doesn't have tools, but knows who can do what.
 - **Workers:** Specialized agents with narrow tool sets.
 
-**Context isolation:** Worker doesn't see all Supervisor's conversation, only their task. This saves tokens and focuses attention.
+**Context isolation:** Worker doesn't see all Supervisor conversation, only its task. This saves tokens and focuses attention.
 
 **Example:**
 
 ```
-Supervisor receives: "Check if DB server is available, and if yes — find out version"
+Supervisor receives: "Check if DB server is accessible, and if yes — find out version"
 
 Supervisor thinks:
 - First need to check network → delegate to Network Specialist
 - Then need to check DB → delegate to DB Specialist
 
-Network Specialist receives: "Check availability of db-host.example.com"
+Network Specialist receives: "Check reachability of db-host.example.com"
 → Calls ping("db-host.example.com")
 → Returns: "Host is reachable"
 
@@ -54,7 +54,7 @@ Supervisor collects results and responds to user
 
 ### Recursion and Isolation
 
-Technically, calling an agent is just calling a function. Inside the `runWorkerAgent` function, we create a **new** dialogue context (new `messages` array). Worker has its own short memory, doesn't see Supervisor's conversation with user (context encapsulation).
+Technically, calling an agent is just a function call. Inside function `runWorkerAgent` we create a **new** dialogue context (new `messages` array). Worker has its own short memory, doesn't see Supervisor-user conversation (context encapsulation).
 
 ## Execution Algorithm
 
@@ -85,7 +85,7 @@ supervisorTools := []openai.Tool{
 }
 ```
 
-**Important:** Supervisor's tools are functions that call other agents!
+**Important:** Supervisor tools are functions for calling other agents!
 
 ### Step 2: Defining Tools for Workers
 
@@ -123,7 +123,7 @@ func runWorkerAgent(role, prompt, question string, tools []openai.Tool, client *
             return msg.Content  // Return worker's final answer
         }
         
-        // Execute worker's tools
+        // Execute worker tools
         for _, tc := range msg.ToolCalls {
             result := executeWorkerTool(tc.Function.Name)
             messages = append(messages, toolResult)
@@ -154,7 +154,7 @@ for i := 0; i < 10; i++ {
             workerResponse = runWorkerAgent("DBAdmin", "You are a DBA", question, dbTools, client)
         }
         
-        // Return worker's answer to Supervisor
+        // Return worker answer to Supervisor
         messages = append(messages, ChatCompletionMessage{
             Role: openai.ChatMessageRoleTool,
             Content: workerResponse,
@@ -164,13 +164,13 @@ for i := 0; i < 10; i++ {
 }
 ```
 
-## Common Mistakes
+## Common Errors
 
-### Mistake 1: Worker Sees Supervisor's Context
+### Error 1: Worker Sees Supervisor Context
 
-**Symptom:** Worker receives all Supervisor's history, context overflows.
+**Symptom:** Worker receives all Supervisor history, context overflows.
 
-**Cause:** You're passing Supervisor's `messages` to Worker.
+**Cause:** You're passing Supervisor `messages` to Worker.
 
 **Solution:**
 ```go
@@ -178,18 +178,18 @@ for i := 0; i < 10; i++ {
 runWorkerAgent(supervisorMessages, ...)  // Worker sees all history!
 
 // GOOD
-runWorkerAgent([]ChatCompletionMessage{systemMsg, questionMsg}, ...)  // Only own task
+runWorkerAgent([]ChatCompletionMessage{systemMsg, questionMsg}, ...)  // Only its task
 ```
 
-### Mistake 2: Supervisor Doesn't Receive Worker's Answer
+### Error 2: Supervisor Doesn't Receive Worker Answer
 
-**Symptom:** Supervisor calls Worker, but doesn't see result.
+**Symptom:** Supervisor calls Worker but doesn't see result.
 
-**Cause:** Worker's answer not added to Supervisor's history.
+**Cause:** Worker answer not added to Supervisor history.
 
 **Solution:**
 ```go
-// MUST add Worker's answer:
+// MUST add worker answer:
 messages = append(messages, ChatCompletionMessage{
     Role: openai.ChatMessageRoleTool,
     Content: workerResponse,  // Supervisor must see this!
@@ -197,7 +197,7 @@ messages = append(messages, ChatCompletionMessage{
 })
 ```
 
-### Mistake 3: Worker Loops Infinitely
+### Error 3: Worker Loops Infinitely
 
 **Symptom:** Worker executes loop infinitely.
 
@@ -236,7 +236,7 @@ fmt.Printf("[Worker: %s] Result: %s\n", workerName, result)
 
 ❌ **Not completed:**
 - Supervisor doesn't delegate tasks
-- Workers see Supervisor's context
+- Workers see Supervisor context
 - Worker answers not returned
 
 ---

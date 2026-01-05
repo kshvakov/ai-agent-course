@@ -1,23 +1,23 @@
-# Study Guide: Lab 05 — Human-in-the-Loop
+# Method Guide: Lab 05 — Human-in-the-Loop
 
-## Why This Lab?
+## Why Is This Needed?
 
-Autonomy doesn't mean permissiveness. There are two scenarios when the agent **must** return control to a human:
+Autonomy doesn't mean permissiveness. There are two scenarios when an agent **must** return control to a human:
 
-1. **Clarification:** User set the task unclearly
+1. **Clarification:** User set a task unclearly
 2. **Confirmation:** Action is too dangerous
 
 ### Real-World Case Study
 
 **Situation 1 (Clarification):**
 - User: "Send email to boss"
-- Agent: "What subject and text?" ← Agent asks for clarification
-- User: "Subject: Report, text: All ready"
+- Agent: "What's the subject and email text?" ← Agent asks for clarification
+- User: "Subject: Report, text: All done"
 - Agent: [Sends email]
 
 **Situation 2 (Confirmation):**
 - User: "Delete prod database"
-- Agent: "Are you sure? This will delete all data in production. Enter 'yes' to confirm." ← Agent requests confirmation
+- Agent: "Are you sure? This will delete all data in production. Type 'yes' to confirm." ← Agent requests confirmation
 - User: "yes"
 - Agent: [Deletes database]
 
@@ -51,7 +51,7 @@ Outer loop (Chat):
 
 We explicitly write in the system prompt: *"Always ask for explicit confirmation before deleting anything"*.
 
-LLM (especially GPT-4) follows this rule well. Instead of generating `ToolCall("delete_db")`, it generates text *"Are you sure you want to delete...?"*.
+LLM (especially GPT-4) follows this rule well. Instead of generating `ToolCall("delete_db")` it generates text *"Are you sure you want to delete...?"*.
 
 Since this is text, the inner loop breaks, and the question is shown to the user.
 
@@ -62,7 +62,7 @@ When the user responds *"Yes"*, we add it to history and run the agent again. No
 2. Assistant: "Are you sure?"
 3. User: "Yes"
 
-Agent sees confirmation and this time generates `ToolCall("delete_db")`.
+The agent sees confirmation and this time generates `ToolCall("delete_db")`.
 
 ## Execution Algorithm
 
@@ -81,7 +81,7 @@ tools := []openai.Tool{
 }
 ```
 
-**Important:** In `Description`, indicate that the action is dangerous.
+**Important:** In `Description` indicate that the action is dangerous.
 
 ### Step 2: System Prompt with Safety Rules
 
@@ -124,9 +124,9 @@ for {
 }
 ```
 
-## Common Mistakes
+## Common Errors
 
-### Mistake 1: Agent Doesn't Ask for Confirmation
+### Error 1: Agent Doesn't Ask for Confirmation
 
 **Symptom:** Agent immediately deletes database without confirmation.
 
@@ -137,7 +137,7 @@ for {
 2. Use a stronger model (GPT-4 instead of GPT-3.5)
 3. Add Few-Shot examples to prompt
 
-### Mistake 2: Agent Doesn't Clarify Parameters
+### Error 2: Agent Doesn't Clarify Parameters
 
 **Symptom:** Agent tries to call tool with incomplete arguments.
 
@@ -153,7 +153,7 @@ Agent: [Tries to call send_email without subject and text]
 "If required parameters are missing, ask the user for them. Do not guess."
 ```
 
-### Mistake 3: Confirmation Doesn't Work
+### Error 3: Confirmation Doesn't Work
 
 **Symptom:** User confirmed, but agent asks again.
 
@@ -194,7 +194,7 @@ Implement different confirmation types for different risk levels:
 if risk > 0.8 {
     // Critical action: require explicit "yes"
 } else if risk > 0.5 {
-    // Medium risk: simple confirmation enough
+    // Medium risk: simple confirmation is enough
 } else {
     // Low risk: can execute without confirmation
 }

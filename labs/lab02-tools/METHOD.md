@@ -1,16 +1,16 @@
-# Study Guide: Lab 02 — Function Calling (Tools)
+# Method Guide: Lab 02 — Function Calling (Tools)
 
-## Why This Lab?
+## Why Is This Needed?
 
-A regular LLM returns text. But to create an agent, we need the model to be able to call functions (tools). This turns an LLM from a "talker" into a "worker".
+A regular LLM returns text. But to create an agent, we need the model to be able to call functions (tools). This turns LLM from a "talker" into a "worker".
 
 ### Real-World Case Study
 
-**Situation:** You've created a chatbot for DevOps. User writes:
-- "Check server status web-01"
-- Bot responds: "I will check server status web-01 for you..." (text)
+**Situation:** You created a DevOps chatbot. User writes:
+- "Check status of server web-01"
+- Bot responds: "I'll check the status of server web-01 for you..." (text)
 
-**Problem:** Bot can't actually check the server. It only talks.
+**Problem:** Bot cannot actually check the server. It only talks.
 
 **Solution:** Function Calling allows the model to call real Go functions.
 
@@ -24,9 +24,9 @@ A regular LLM returns text. But to create an agent, we need the model to be able
 4. **Your code parses JSON** and executes the real function
 5. **Result is returned** to LLM for further processing
 
-### Why Don't All Models Support Tools?
+### Why Don't All Models Know Tools?
 
-Function Calling is the result of special training. If the model hasn't seen function call examples, it will simply continue the dialogue with text.
+Function Calling is a result of special training. If the model hasn't seen examples of function calls, it will simply continue the dialogue with text.
 
 **How to check:** Run Lab 00 before this lab!
 
@@ -68,7 +68,7 @@ req := openai.ChatCompletionRequest{
 }
 ```
 
-### Step 3: Response Processing
+### Step 3: Handling Response
 
 ```go
 resp, err := client.CreateChatCompletion(ctx, req)
@@ -96,9 +96,9 @@ if len(msg.ToolCalls) > 0 {
 }
 ```
 
-## Common Mistakes
+## Common Errors
 
-### Mistake 1: Model Doesn't Call Function
+### Error 1: Model Doesn't Call Function
 
 **Symptom:** `len(msg.ToolCalls) == 0`, model responds with text.
 
@@ -112,13 +112,13 @@ if len(msg.ToolCalls) > 0 {
 2. Improve `Description`: make it specific and clear
 3. Set `Temperature = 0`
 
-### Mistake 2: Broken JSON in Arguments
+### Error 2: Broken JSON in Arguments
 
 **Symptom:** `json.Unmarshal` returns error.
 
 **Example:**
 ```json
-{"ip": "192.168.1.10"  // Missing closing brace
+{"ip": "192.168.1.10"  // Missing closing bracket
 ```
 
 **Solution:**
@@ -129,7 +129,7 @@ if !json.Valid([]byte(call.Function.Arguments)) {
 }
 ```
 
-### Mistake 3: Wrong Function Name
+### Error 3: Wrong Function Name
 
 **Symptom:** Model calls function with different name.
 
@@ -153,11 +153,11 @@ if !allowedFunctions[call.Function.Name] {
 
 ### Exercise 1: Add Second Tool
 
-Create a `ping_host(host string)` tool and verify that the model correctly chooses between two tools.
+Create a tool `ping_host(host string)` and check that the model correctly chooses between two tools.
 
 ### Exercise 2: Improve Description
 
-Try different descriptions and see how it affects model choice:
+Try different descriptions and see how it affects model selection:
 
 ```go
 // Option 1: Short

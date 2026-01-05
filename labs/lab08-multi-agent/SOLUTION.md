@@ -5,8 +5,8 @@
 ### Key Points
 
 1. **Context isolation:** Each Worker creates its own dialogue context
-2. **Supervisor tools = Worker calls:** Supervisor doesn't have direct tools for infrastructure work
-3. **Return results:** Worker answers must be added to Supervisor's history with role: "tool"
+2. **Supervisor tools = Worker calls:** Supervisor doesn't have direct infrastructure tools
+3. **Returning results:** Worker answers must be added to Supervisor history with role: "tool"
 
 ### 🔍 Complete Solution Code
 
@@ -37,7 +37,7 @@ func runSQL(query string) string {
 	return "Query executed successfully."
 }
 
-// Function to run Worker agent
+// Worker launch function
 func runWorkerAgent(role, systemPrompt, question string, tools []openai.Tool, client *openai.Client) string {
 	ctx := context.Background()
 	
@@ -185,12 +185,12 @@ Collect results and provide a final answer to the user.`
 
 	messages := []openai.ChatCompletionMessage{
 		{Role: openai.ChatMessageRoleSystem, Content: supervisorPrompt},
-		{Role: openai.ChatMessageRoleUser, Content: "Check if DB server db-host.example.com is available, and if yes — find out PostgreSQL version"},
+		{Role: openai.ChatMessageRoleUser, Content: "Check if DB server db-host.example.com is accessible, and if yes — find out PostgreSQL version"},
 	}
 
 	fmt.Println("🏁 Starting Multi-Agent System...\n")
 
-	// Supervisor loop
+	// Supervisor Loop
 	for i := 0; i < 10; i++ {
 		req := openai.ChatCompletionRequest{
 			Model:    openai.GPT3Dot5Turbo,
@@ -239,7 +239,7 @@ Collect results and provide a final answer to the user.`
 				)
 			}
 
-			// Return Worker's answer to Supervisor
+			// Return worker answer to Supervisor
 			messages = append(messages, openai.ChatCompletionMessage{
 				Role:       openai.ChatMessageRoleTool,
 				Content:    workerResponse,
@@ -252,11 +252,11 @@ Collect results and provide a final answer to the user.`
 
 ### Expected Behavior
 
-1. Supervisor receives task: "Check DB availability and version"
-2. Supervisor delegates to Network Specialist → checks availability
+1. Supervisor receives task: "Check DB reachability and version"
+2. Supervisor delegates to Network Specialist → checks reachability
 3. Supervisor delegates to DB Specialist → finds out version
-4. Supervisor collects results and answers user
+4. Supervisor collects results and responds to user
 
 ---
 
-**More details:** See [Chapter 08: Multi-Agent Systems](../../book/08-multi-agent/README.md) for extended description of Multi-Agent systems.
+**More details:** See [Chapter 07: Multi-Agent Systems](../../book/07-multi-agent/README.md) for extended description of Multi-Agent systems.

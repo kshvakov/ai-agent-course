@@ -1,12 +1,12 @@
 # Lab 01 Solution: LLM Basics
 
 ## 🎯 Goal
-In this lab, we learned the basics of interacting with LLM: sending requests, receiving answers, and most importantly, **context management**. Without saving context (message history), it's impossible to build a dialogue.
+In this lab we learned the basics of interacting with LLM: sending requests, receiving responses, and, most importantly, **context management**. Without saving context (message history), it's impossible to build a dialogue.
 
 ## 📝 Solution Breakdown
 
 ### 1. Client Initialization (Local & Cloud)
-We added `OPENAI_BASE_URL` check. This allows switching between cloud (OpenAI) and local server (LM Studio, Ollama, vLLM) without rewriting code.
+We added a check for `OPENAI_BASE_URL`. This allows switching between cloud (OpenAI) and local server (LM Studio, Ollama, vLLM) without rewriting code.
 
 ```go
 config := openai.DefaultConfig(token)
@@ -52,7 +52,7 @@ func main() {
 
 	client := openai.NewClientWithConfig(config)
 
-	// Initialize memory
+	// Memory initialization
 	messages := []openai.ChatCompletionMessage{
 		{
 			Role:    openai.ChatMessageRoleSystem,
@@ -83,7 +83,7 @@ func main() {
 		})
 
 		req := openai.ChatCompletionRequest{
-			Model:    openai.GPT3Dot5Turbo, // Or "local-model", name often ignored by local servers
+			Model:    openai.GPT3Dot5Turbo, // Or "local-model", name is often ignored by local servers
 			Messages: messages,
 		}
 

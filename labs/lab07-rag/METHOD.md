@@ -1,39 +1,39 @@
-# Study Guide: Lab 07 — RAG & Knowledge Base
+# Method Guide: Lab 07 — RAG & Knowledge Base
 
-## Why This Lab?
+## Why Is This Needed?
 
-A regular agent only knows what it was taught during training (before cut-off date). It doesn't know your local instructions like "How to restart Phoenix server according to regulation #5".
+A regular agent only knows what it was taught during training (before cut-off date). It doesn't know your local instructions like "How to restart Phoenix server according to procedure #5".
 
-**RAG (Retrieval Augmented Generation)** is a mechanism of "peeking at a cheat sheet". The agent first searches for information in the knowledge base, then acts.
+**RAG (Retrieval Augmented Generation)** is a mechanism for "peeking at a cheat sheet". The agent first searches for information in the knowledge base, then acts.
 
 ### Real-World Case Study
 
-**Situation:** User asks: "Restart Phoenix server according to regulation".
+**Situation:** User asks: "Restart Phoenix server according to procedure".
 
 **Without RAG:**
 - Agent: [Immediately restarts server]
-- Result: Regulation violation (should have created backup first)
+- Result: Procedure violation (should have created backup first)
 
 **With RAG:**
 - Agent: Searches knowledge base "Phoenix restart protocol"
 - Knowledge base: "POLICY #12: Before restarting Phoenix, you MUST run backup_db"
-- Agent: Creates backup → Restarts server → Follows regulation
+- Agent: Creates backup → Restarts server → Follows procedure
 
-**Difference:** RAG allows agent to use current documentation.
+**Difference:** RAG allows agent to use up-to-date documentation.
 
 ## Theory in Simple Terms
 
 ### How Does RAG Work?
 
-1. **Task:** "Restart Phoenix server according to regulation"
-2. **Agent's thought:** "I don't know the regulation. Need to search"
+1. **Task:** "Restart Phoenix server according to procedure"
+2. **Agent thought:** "I don't know the procedure. Need to search"
 3. **Action:** `search_knowledge_base("Phoenix restart protocol")`
 4. **Result:** "File `protocols.txt`: ...first turn off load balancer, then server..."
-5. **Agent's thought:** "Got it. First I'll turn off the load balancer..."
+5. **Agent thought:** "Got it. First turn off load balancer..."
 
 ### Simple RAG vs Vector Search
 
-In this lab, we implement **simple RAG** (keyword search). In production, **vector search** (Semantic Search) is used, which searches by meaning, not by words.
+In this lab we implement **simple RAG** (keyword search). In production, **vector search** (Semantic Search) is used, which searches by meaning, not by words.
 
 **Simple RAG (Lab 07):**
 ```go
@@ -90,7 +90,7 @@ If you don't know the procedure, search first.`
 
 ```go
 // Agent receives task: "Restart server"
-// Agent thinks: "Need to check regulation"
+// Agent thinks: "Need to check procedure"
 // Agent calls: search_knowledge_base("restart")
 // Gets: "POLICY #12: ...MUST run backup..."
 // Agent thinks: "Need to do backup first"
@@ -98,9 +98,9 @@ If you don't know the procedure, search first.`
 // Agent calls: restart_server()
 ```
 
-## Common Mistakes
+## Common Errors
 
-### Mistake 1: Agent Doesn't Search Knowledge Base
+### Error 1: Agent Doesn't Search Knowledge Base
 
 **Symptom:** Agent immediately executes action without search.
 
@@ -112,7 +112,7 @@ If you don't know the procedure, search first.`
 "BEFORE any action, you MUST search knowledge base. This is mandatory."
 ```
 
-### Mistake 2: Search Doesn't Find Documents
+### Error 2: Search Doesn't Find Documents
 
 **Symptom:** `search_knowledge_base` returns "No documents found".
 
@@ -123,9 +123,9 @@ If you don't know the procedure, search first.`
 2. Add more documents to knowledge base
 3. Use vector search (in production)
 
-### Mistake 3: Agent Ignores Found Information
+### Error 3: Agent Ignores Found Information
 
-**Symptom:** Agent found regulation but doesn't follow it.
+**Symptom:** Agent found procedure but doesn't follow it.
 
 **Cause:** Information not added to context correctly.
 

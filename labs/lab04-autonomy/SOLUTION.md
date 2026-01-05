@@ -3,8 +3,8 @@
 ## 📝 Solution Breakdown
 
 ### Using Local Models
-For ReAct loop, it's very important that the model can **stably** call tools.
-If local model "glitches" (calls non-existent functions or forgets arguments), try lowering `temperature` to `0` or `0.1`.
+For the ReAct loop it's very important that the model can **stably** call tools.
+If a local model "glitches" (calls non-existent functions or forgets arguments), try lowering `temperature` to `0` or `0.1`.
 
 ### 🔍 Complete Solution Code
 
@@ -63,7 +63,7 @@ func main() {
 
 	messages := []openai.ChatCompletionMessage{
 		{Role: openai.ChatMessageRoleSystem, Content: "You are an autonomous DevOps agent. Solve problems efficiently."},
-		{Role: openai.ChatMessageRoleUser, Content: "I'm out of disk space on the server. Fix it."},
+		{Role: openai.ChatMessageRoleUser, Content: "I'm out of space on the server. Fix it."},
 	}
 
 	fmt.Println("🏁 Starting Agent Loop...\n")

@@ -1,31 +1,31 @@
 # Lab 07: RAG & Knowledge Base
 
 ## Goal
-Teach the agent to work with internal documentation (Wiki, Man pages, regulations) before executing actions. Implement simple knowledge base search (RAG).
+Teach the agent to work with internal documentation (Wiki, Man pages, procedures) before executing actions. Implement simple knowledge base search (RAG).
 
 ## Theory
 
 ### Problem: Agent Doesn't Know Local Instructions
 
-A regular agent only knows what it was taught during training (before cut-off date). It doesn't know your local instructions like "How to restart Phoenix server according to regulation #5".
+A regular agent only knows what it was taught during training (before cut-off date). It doesn't know your local instructions like "How to restart Phoenix server according to procedure #5".
 
-**RAG (Retrieval Augmented Generation)** is a mechanism of "peeking at a cheat sheet". The agent first searches for information in the knowledge base, then acts.
+**RAG (Retrieval Augmented Generation)** is a mechanism for "peeking at a cheat sheet". The agent first searches for information in the knowledge base, then acts.
 
 ### How Does RAG Work?
 
-1. **Task:** "Restart Phoenix server according to regulation"
-2. **Agent's thought:** "I don't know the regulation. Need to search"
+1. **Task:** "Restart Phoenix server according to procedure"
+2. **Agent thought:** "I don't know the procedure. Need to search"
 3. **Action:** `search_knowledge_base("Phoenix restart protocol")`
 4. **Result:** "File `protocols.txt`: ...first turn off load balancer, then server..."
-5. **Agent's thought:** "Got it. First I'll turn off the load balancer..."
+5. **Agent thought:** "Got it. First turn off load balancer..."
 
 ### Simple RAG vs Vector Search
 
-In this lab, we implement **simple RAG** (keyword search). In production, **vector search** (Semantic Search) is used, which searches by meaning, not by words.
+In this lab we implement **simple RAG** (keyword search). In production, **vector search** (Semantic Search) is used, which searches by meaning, not by words.
 
-## Assignment
+## Task
 
-In `main.go`, implement a RAG system for the agent.
+In `main.go` implement a RAG system for the agent.
 
 ### Part 1: Knowledge Base
 
@@ -40,24 +40,24 @@ var knowledgeBase = map[string]string{
 
 ### Part 2: Search Tool
 
-Implement the `searchKnowledgeBase(query string) string` function that:
+Implement function `searchKnowledgeBase(query string) string`, which:
 - Searches documents by keywords (simple substring search)
 - Returns found documents or "No documents found"
 
-### Part 3: Integration into Agent
+### Part 3: Agent Integration
 
-1. Add the `search_knowledge_base` tool to the agent's tools list
-2. Configure System Prompt so that the agent **always** searches the knowledge base before actions related to regulations
-3. Implement agent loop (like in Lab 04)
+1. Add tool `search_knowledge_base` to agent's tools list
+2. Configure System Prompt so agent **always** searches knowledge base before actions related to procedures
+3. Implement agent loop (as in Lab 04)
 
-### Testing Scenario
+### Test Scenario
 
-Run the agent with prompt: *"Restart Phoenix server according to regulation"*
+Run agent with prompt: *"Restart Phoenix server according to procedure"*
 
 **Expected:**
 - Agent calls `search_knowledge_base("Phoenix restart")`
-- Finds document with regulation
-- Follows instructions from document (e.g., first does backup)
+- Finds document with procedure
+- Follows instructions from document (e.g., does backup first)
 - Executes restart
 
 ## Important

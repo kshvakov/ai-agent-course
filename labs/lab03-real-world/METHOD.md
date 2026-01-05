@@ -1,16 +1,16 @@
-# Study Guide: Lab 03 — Real World (Interfaces & Infrastructure)
+# Method Guide: Lab 03 — Real World (Interfaces & Infrastructure)
 
-## Why This Lab?
+## Why Is This Needed?
 
-In this laboratory assignment, you'll learn to integrate real infrastructure tools (Proxmox API, Ansible CLI) into agent code. Using interfaces allows making the agent extensible: you can add new tools without changing the main code.
+In this lab you'll learn to integrate real infrastructure tools (Proxmox API, Ansible CLI) into agent code. Using interfaces allows making the agent extensible: you can add new tools without changing the main code.
 
 ### Real-World Case Study
 
-**Situation:** You've created an agent with tools for Proxmox. Then needed to add Ansible support. You started copying code and changing it manually.
+**Situation:** You created an agent with tools for Proxmox. Later you needed to add Ansible support. You started copying code and changing it manually.
 
 **Problem:** Code became unreadable, adding a new tool requires changes in dozens of places.
 
-**Solution:** Using Go interfaces and Registry pattern allows adding tools without changing the main code.
+**Solution:** Using Go interfaces and the Registry pattern allows adding tools without changing the main code.
 
 ## Theory in Simple Terms
 
@@ -30,7 +30,7 @@ Any type that implements these methods automatically satisfies the `Tool` interf
 
 ### Registry Pattern
 
-Registry is a storage of tools, accessible by name.
+Registry is a storage for tools, accessible by name.
 
 ```go
 registry := make(map[string]Tool)
@@ -38,7 +38,7 @@ registry["list_vms"] = &ProxmoxListVMsTool{}
 registry["run_playbook"] = &AnsibleRunPlaybookTool{}
 ```
 
-This allows searching for a tool by name in O(1) and executing it polymorphically.
+This allows finding a tool by name in O(1) and executing it polymorphically.
 
 ## Execution Algorithm
 
@@ -66,7 +66,7 @@ func (t *ProxmoxListVMsTool) Description() string {
 }
 
 func (t *ProxmoxListVMsTool) Execute(args json.RawMessage) (string, error) {
-    // Real Proxmox API call logic
+    // Real API call logic
     return "VM-100 (Running), VM-101 (Stopped)", nil
 }
 ```
@@ -99,9 +99,9 @@ if tool, exists := registry[toolName]; exists {
 }
 ```
 
-## Common Mistakes
+## Common Errors
 
-### Mistake 1: Incorrect Interface Implementation
+### Error 1: Incorrect Interface Implementation
 
 **Symptom:** Compiler complains: "does not implement Tool".
 
@@ -110,13 +110,13 @@ if tool, exists := registry[toolName]; exists {
 **Solution:** Ensure all interface methods are implemented:
 
 ```go
-// All three methods must be present:
+// Must have all three methods:
 func (t *MyTool) Name() string { ... }
 func (t *MyTool) Description() string { ... }
 func (t *MyTool) Execute(...) (string, error) { ... }
 ```
 
-### Mistake 2: Tool Not Found in Registry
+### Error 2: Tool Not Found in Registry
 
 **Symptom:** `exists == false` when searching for tool.
 
@@ -179,7 +179,7 @@ func (t *AnsibleRunPlaybookTool) Execute(args json.RawMessage) (string, error) {
 
 ❌ **Not completed:**
 - Interface not fully implemented
-- Tools don't register
+- Tools not registered
 - Code doesn't compile
 
 ---

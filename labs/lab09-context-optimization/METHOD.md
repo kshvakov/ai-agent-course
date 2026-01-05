@@ -1,30 +1,30 @@
-# Study Guide: Lab 09 — Context Optimization
+# Method Guide: Lab 09 — Context Optimization
 
-## Why This Lab?
+## Why Is This Needed?
 
-In this laboratory assignment, you'll learn to manage the LLM context window — a critically important skill for creating long-lived agents.
+In this lab you'll learn to manage the LLM context window — a critical skill for creating long-lived agents.
 
 ### Real-World Case Study
 
-**Situation:** You've created an autonomous DevOps agent that resolves incidents. Agent works in a loop:
+**Situation:** You created an autonomous DevOps agent that resolves incidents. Agent works in a loop:
 1. Checks metrics
 2. Analyzes logs
 3. Checks configuration
 4. Fixes problem
 5. Checks again
 
-After 15 steps, context overflows (4000 tokens), and agent:
+After 15 steps context overflows (4000 tokens), and agent:
 - Forgets initial task
 - Repeats already executed steps
 - Loses important information
 
-**Problem:** History too long, doesn't fit in context window.
+**Problem:** History is too long, doesn't fit in context window.
 
-**Solution:** Context optimization — compressing old messages via summarization, preserving important information.
+**Solution:** Context optimization — compress old messages via summarization, preserving important information.
 
 ## Theory in Simple Terms
 
-### Context Window is a Limitation
+### Context Window Is a Limitation
 
 **Context window** is the maximum number of tokens the model can "see" at once.
 
@@ -44,7 +44,7 @@ After 15 steps, context overflows (4000 tokens), and agent:
 
 **Example:**
 ```
-Message 1: "Hello! My name is Ivan" (10 tokens)
+Message 1: "Hi! My name is Ivan" (10 tokens)
 Message 2: "I work as a DevOps engineer" (8 tokens)
 ... (18 more messages, 20 tokens each) ...
 Message 21: "What's my name?" (5 tokens)
@@ -62,7 +62,7 @@ But if each message contains tool results (100+ tokens), context quickly overflo
 
 **How:**
 - Approximately: 1 token ≈ 4 characters (English), ≈ 3 characters (Russian)
-- Precisely: Use library `tiktoken` or `tiktoken-go`
+- Precisely: Use `tiktoken` or `tiktoken-go` library
 
 **Example:**
 ```go
@@ -77,7 +77,7 @@ func estimateTokens(text string) int {
 
 **How:** Keep only last N messages.
 
-**Problem:** We lose important information from the start.
+**Problem:** Lose important information from beginning.
 
 **Example:**
 ```go
@@ -92,7 +92,7 @@ if len(messages) > 10 {
 
 #### 3. Summarization
 
-**Why:** Preserve important information, compressing old messages.
+**Why:** Preserve important information, compress old messages.
 
 **How:** Use LLM to create brief summary.
 
@@ -105,22 +105,22 @@ if len(messages) > 10 {
 ```
 Original history (2000 tokens):
 - User: "My name is Ivan"
-- Assistant: "Hello, Ivan!"
+- Assistant: "Hi, Ivan!"
 - User: "I'm a DevOps engineer"
 - Assistant: "Great!"
 ... (50 more messages)
 
 Compressed version (200 tokens):
 Summary: "User Ivan, DevOps engineer. Discussed server setup.
-Current task: monitoring check."
+Current task: checking monitoring."
 ```
 
 #### 4. Adaptive Management
 
-**Why:** Choose technique depending on situation.
+**Why:** Choose technique based on situation.
 
 **Logic:**
-- < 80% full → do nothing
+- < 80% fill → do nothing
 - 80-90% → prioritization (preserve important messages)
 - > 90% → summarization (compress old messages)
 
@@ -198,7 +198,7 @@ func summarizeMessages(ctx context.Context, client *openai.Client, messages []op
         conversation += fmt.Sprintf("%s: %s\n", role, msg.Content)
     }
     
-    // Create prompt for summarization
+    // Create summarization prompt
     summaryPrompt := fmt.Sprintf(`Summarize this conversation, keeping only:
 1. Important facts about the user (name, role, preferences)
 2. Key decisions made
@@ -246,7 +246,7 @@ func compressOldMessages(ctx context.Context, client *openai.Client, messages []
     // Compress old messages
     summary := summarizeMessages(ctx, client, oldMessages)
     
-    // Assemble new context
+    // Build new context
     compressed := []openai.ChatCompletionMessage{
         systemMsg,
         {
@@ -314,9 +314,9 @@ func adaptiveContextManagement(ctx context.Context, client *openai.Client, messa
 }
 ```
 
-## Common Mistakes
+## Common Errors
 
-### Mistake 1: Incorrect Token Counting
+### Error 1: Incorrect Token Counting
 
 **Symptom:** Context overflows earlier than expected.
 
@@ -330,9 +330,9 @@ if len(msg.ToolCalls) > 0 {
 }
 ```
 
-### Mistake 2: Summarization Loses Important Information
+### Error 2: Summarization Loses Important Information
 
-**Symptom:** Agent forgets user's name after summarization.
+**Symptom:** Agent forgets user name after summarization.
 
 **Cause:** Summarization prompt doesn't specify what to preserve.
 
@@ -341,15 +341,15 @@ if len(msg.ToolCalls) > 0 {
 "Keep important facts about the user (name, role, preferences)"
 ```
 
-### Mistake 3: Summarization Called Too Often
+### Error 3: Summarization Called Too Often
 
 **Symptom:** Slow agent work due to frequent LLM calls for summarization.
 
 **Cause:** Summarization applied on every request.
 
-**Solution:** Use adaptive management — summarization only when > 90% full.
+**Solution:** Use adaptive management — summarization only at > 90% fill.
 
-### Mistake 4: System Prompt Lost During Truncation
+### Error 4: System Prompt Lost During Truncation
 
 **Symptom:** Agent forgets its role.
 
@@ -361,7 +361,7 @@ if len(msg.ToolCalls) > 0 {
 
 ### Exercise 1: Accurate Token Counting
 
-Use library `github.com/pkoukk/tiktoken-go` for accurate counting:
+Use `github.com/pkoukk/tiktoken-go` library for accurate counting:
 
 ```go
 import "github.com/pkoukk/tiktoken-go"
@@ -377,7 +377,7 @@ func countTokensAccurate(text string, model string) int {
 
 Create a test with 30+ messages and ensure:
 - Context doesn't overflow
-- Agent remembers start of conversation
+- Agent remembers beginning of conversation
 - Summarization works correctly
 
 ## Completion Criteria
@@ -387,7 +387,7 @@ Create a test with 30+ messages and ensure:
 - History truncation implemented
 - Summarization via LLM implemented
 - Adaptive management implemented
-- Agent remembers start of conversation after optimization
+- Agent remembers beginning of conversation after optimization
 - Context doesn't overflow in long dialogue (20+ messages)
 
 ❌ **Not completed:**
@@ -399,4 +399,4 @@ Create a test with 30+ messages and ensure:
 
 ---
 
-**Next step:** After successfully completing Lab 09, you've mastered all key agent techniques! You can proceed to study [Multi-Agent Systems](../lab08-multi-agent/README.md) or [RAG](../lab07-rag/README.md).
+**Next step:** After successfully completing Lab 09 you've mastered all key agent techniques! You can proceed to study [Multi-Agent Systems](../lab08-multi-agent/README.md) or [RAG](../lab07-rag/README.md).

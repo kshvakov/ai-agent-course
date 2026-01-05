@@ -6,43 +6,149 @@ This section contains reference information: glossary of terms, checklists, SOP 
 
 ## Glossary
 
-**Agent** — system using LLM for perception, decision-making, and action execution.
+### Core Concepts
 
-**Chain-of-Thought (CoT)** — prompting technique forcing model to generate intermediate reasoning.
+**Agent** — a system using LLM as a "reasoning engine" to perceive environment, make decisions, and perform actions. Consists of: LLM (brain) + Tools (hands) + Memory (memory) + Planning (planning).
 
-**Context Window** — maximum number of tokens model can process in one request.
+**See also:** [Chapter 00: Preface](../00-preface/README.md#what-is-an-ai-agent)
 
-**Eval (Evaluation)** — test for checking agent quality.
+**Runtime (Execution Environment)** — agent code you write in Go. Connects LLM with tools and manages agent work loop. Performs LLM response parsing, validation, tool execution, and dialogue history management.
 
-**Few-Shot Learning** — prompting technique with examples in context.
+**Important:** Runtime is not a separate system or framework. It's your code in `main.go` or separate modules.
 
-**Function Calling** — mechanism for LLM to call tools via structured JSON.
+**See also:** [Chapter 09: Agent Anatomy](../09-agent-architecture/README.md#runtime-execution-environment)
 
-**Grounding** — binding agent to real data via Tools/RAG to avoid hallucinations.
+**Tool** — a Go function, API call, or command that an agent can execute to interact with the real world. Described in JSON Schema format and passed to the model in `tools[]` field.
 
-**Human-in-the-Loop (HITL)** — mechanism for human confirmation of critical actions.
+**Synonyms:** Function (in Function Calling context)
 
-**In-Context Learning (ICL)** — model's ability to learn from examples within prompt.
+**See also:** [Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md)
 
-**Multi-Agent System (MAS)** — system of multiple agents working together.
+**Tool Call / Function Call** — structured JSON request that LLM generates to call a tool. Contains tool name and arguments in JSON format. Returned in `tool_calls` field of model response.
 
-**Prompt Injection** — attack on agent via input data manipulation.
+**Note:** "Tool Call" and "Function Call" are the same. "Function Calling" is the mechanism name in API, "Tool Call" is a specific tool invocation.
 
-**RAG (Retrieval Augmented Generation)** — technique for augmenting agent context with relevant documents from knowledge base.
+**See also:** [Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md#step-3-model-response-tool-call)
 
-**ReAct (Reason + Act)** — agent architecture: Thought → Action → Observation → Loop.
+**ReAct Loop (Reasoning and Action Loop)** — autonomous agent work pattern: Reason (reasons) → Act (acts) → Observe (observes) → repeats. Agent analyzes situation, performs action, sees result, and decides what to do next.
 
-**Reflexion** — agent self-correction technique through error analysis.
+**Etymology:** ReAct = Reason + Act
 
-**SOP (Standard Operating Procedure)** — action algorithm encoded in prompt.
+**See also:** [Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md#react-loop-autonomy-loop)
 
-**Temperature** — entropy parameter of token probability distribution.
+### LLM and Context
 
-**Token** — text unit processed by model (~0.75 words).
+**Context Window** — maximum number of tokens a model can process in one request. Limits dialogue history size. Examples: GPT-3.5: 4k tokens, GPT-4 Turbo: 128k tokens.
 
-**Tool** — function that agent can call to interact with external world.
+**See also:** [Chapter 01: LLM Physics](../01-llm-fundamentals/README.md#context-window)
 
-**Zero-Shot Learning** — prompting technique without examples.
+**Token** — unit of text processed by the model. One token ≈ 0.75 words (English) or ≈ 1.5 tokens per word (Russian). Everything the agent "knows" about the current task is limited by the number of tokens in the context window.
+
+**See also:** [Chapter 01: LLM Physics](../01-llm-fundamentals/README.md#what-is-a-token)
+
+**System Prompt** — instructions for the model that set agent role, goal, constraints, and work process. Passed in `messages[0].content` with role `"system"`. Consists of: Role (Persona), Goal, Constraints, Format, SOP.
+
+**See also:** [Chapter 02: Prompting](../02-prompt-engineering/README.md#system-prompt-structure)
+
+**Temperature** — entropy parameter of token probability distribution. `Temperature = 0` — deterministic behavior (for agents), `Temperature > 0` — random behavior (for creative tasks).
+
+**Rule:** For all agents, set `Temperature = 0`.
+
+**See also:** [Chapter 01: LLM Physics](../01-llm-fundamentals/README.md#temperature)
+
+### Prompting Techniques
+
+**Chain-of-Thought (CoT)** — prompting technique "think step by step", forcing the model to generate intermediate reasoning before final answer. Critical for agents solving complex multi-step tasks.
+
+**See also:** [Chapter 02: Prompting](../02-prompt-engineering/README.md#chain-of-thought-cot-think-step-by-step)
+
+**Few-Shot Learning / Few-Shot** — prompting technique where examples of desired behavior are added to the prompt. Model adapts to format based on examples in context.
+
+**Antonym:** Zero-Shot (instruction only, no examples)
+
+**See also:** [Chapter 02: Prompting](../02-prompt-engineering/README.md#few-shot-instruction--examples)
+
+**Zero-Shot Learning / Zero-Shot** — prompting technique where only instruction is given to the model without examples. Saves tokens, but requires precise instructions.
+
+**Antonym:** Few-Shot (with examples)
+
+**See also:** [Chapter 02: Prompting](../02-prompt-engineering/README.md#zero-shot-instruction-only)
+
+**In-Context Learning (ICL)** — model's ability to adapt behavior based on examples within the prompt, without changing model weights. Works in Zero-shot and Few-shot modes.
+
+**See also:** [Chapter 02: Prompting](../02-prompt-engineering/README.md#in-context-learning-icl-zero-shot-and-few-shot)
+
+**SOP (Standard Operating Procedure)** — action algorithm encoded in the prompt. Sets sequence of steps to solve a task. CoT helps follow SOP step by step.
+
+**See also:** [Chapter 02: Prompting](../02-prompt-engineering/README.md#sop-and-task-decomposition-agent-process)
+
+### Memory and Context
+
+**Memory (Agent Memory)** — system for storing and retrieving information between conversations. Includes short-term memory (current conversation history) and long-term memory (persistent fact storage).
+
+**See also:** [Chapter 12: Agent Memory Systems](../12-agent-memory/README.md)
+
+**Working Memory** — recent conversation turns that are always included in context. Most relevant for current task. Managed through Context Engineering.
+
+**See also:** [Chapter 13: Context Engineering](../13-context-engineering/README.md#context-layers)
+
+**Long-term Memory** — persistent storage of facts, preferences, and past decisions. Stored in database/files and persists between conversations. Can use vector database (RAG) for semantic search.
+
+**See also:** [Chapter 12: Agent Memory Systems](../12-agent-memory/README.md#long-term-memory)
+
+**Episodic Memory** — memory of specific events: "User asked about disk space on 2024-01-15". Useful for debugging and learning.
+
+**See also:** [Chapter 12: Agent Memory Systems](../12-agent-memory/README.md#episodic-memory)
+
+**Semantic Memory** — general knowledge extracted from episodes: "User prefers JSON responses". More abstract than episodic memory.
+
+**See also:** [Chapter 12: Agent Memory Systems](../12-agent-memory/README.md#semantic-memory)
+
+**Context Engineering** — techniques for efficient context management: context layers (working memory, summaries, facts), summarization of old conversations, selection of relevant facts, adaptive context management.
+
+**See also:** [Chapter 13: Context Engineering](../13-context-engineering/README.md)
+
+**RAG (Retrieval Augmented Generation)** — technique for augmenting agent context with relevant documents from knowledge base via vector search. Documents are split into chunks, converted to vectors (embeddings), similar vectors are searched on query.
+
+**See also:** [Chapter 06: RAG and Knowledge Base](../06-rag/README.md)
+
+### Planning and Architecture
+
+**Planning** — agent's ability to break a complex task into a sequence of simple steps and execute them in correct order. Levels: implicit (ReAct), explicit (Plan-and-Solve), hierarchical.
+
+**See also:** [Chapter 09: Agent Anatomy](../09-agent-architecture/README.md#planning)
+
+**State Management** — managing task execution state: progress, what's done, what's pending, resumption capability. Includes tool idempotency, retries with exponential backoff, deadlines, persist state.
+
+**See also:** [Chapter 11: State Management](../11-state-management/README.md)
+
+**Reflexion** — agent self-correction technique through error analysis. Cycle: Act → Observe → Fail → REFLECT → Plan Again. Agent analyzes why action didn't work and plans again.
+
+**See also:** [Chapter 09: Agent Anatomy](../09-agent-architecture/README.md#reflexion-self-correction)
+
+### Security and Reliability
+
+**Grounding** — anchoring agent to real data through Tools/RAG to avoid hallucinations. Agent must use tools to get facts, not invent them.
+
+**See also:** [Chapter 01: LLM Physics](../01-llm-fundamentals/README.md#hallucinations)
+
+**Human-in-the-Loop (HITL)** — mechanism for human confirmation of critical actions before execution. Includes Confirmation (confirmation), Clarification (clarification), Risk Scoring (risk assessment).
+
+**See also:** [Chapter 05: Safety and Human-in-the-Loop](../05-safety-and-hitl/README.md)
+
+**Prompt Injection** — attack on agent through input manipulation. Attacker tries to "trick" the prompt to make agent perform unwanted action.
+
+**See also:** [Chapter 05: Safety and Human-in-the-Loop](../05-safety-and-hitl/README.md#prompt-injection)
+
+**Eval (Evaluation)** — test to check agent work quality. Can check answer correctness, tool selection, SOP following, safety. In production systems used in CI/CD.
+
+**See also:** [Chapter 08: Evals and Reliability](../08-evals-and-reliability/README.md)
+
+### Multi-Agent Systems
+
+**Multi-Agent System (MAS)** — system of multiple agents working together. Can use Supervisor/Worker patterns, context isolation, task routing between specialized agents.
+
+**See also:** [Chapter 07: Multi-Agent Systems](../07-multi-agent/README.md)
 
 ## Checklists
 
@@ -57,22 +163,22 @@ This section contains reference information: glossary of terms, checklists, SOP 
 ### Checklist: Creating System Prompt
 
 - [ ] Role (Persona) clearly defined
-- [ ] Goal concrete and measurable
-- [ ] Constraints explicitly stated
+- [ ] Goal (Goal) specific and measurable
+- [ ] Constraints (Constraints) explicitly stated
 - [ ] Response format (Format) described
 - [ ] SOP (if applicable) detailed
-- [ ] CoT enabled for complex tasks
+- [ ] CoT included for complex tasks
 - [ ] Few-Shot examples added (if needed)
 
 ## Capability Benchmark (Characterization)
 
-Before building agents, you must **scientifically confirm** that selected model has necessary capabilities. In engineering, this is called **Characterization**.
+Before building agents, you must **scientifically confirm** that the selected model has necessary capabilities. In engineering, this is called **Characterization**.
 
-### Why This Chapter?
+### Why Is This Needed?
 
 We don't trust labels ("Super-Pro-Max Model"). We trust tests.
 
-**Problem without check:** You downloaded model "Llama-3-8B-Instruct" and started building agent. After an hour of work, discovered that model doesn't call tools, only writes text. You spent time debugging code, though problem was in model.
+**Problem without checking:** You downloaded "Llama-3-8B-Instruct" model and started building an agent. After an hour of work, discovered that the model doesn't call tools, only writes text. You wasted time debugging code, though the problem was in the model.
 
 **Solution:** Run capability benchmark **before** starting work. This saves hours.
 
@@ -81,63 +187,63 @@ We don't trust labels ("Super-Pro-Max Model"). We trust tests.
 #### 1. Basic Sanity
 - Model responds to requests
 - No critical API errors
-- Basic answer coherence
+- Basic response coherence
 
 #### 2. Instruction Following
 - Model can strictly adhere to constraints
 - Important for agents: they must return strictly defined formats
 - **Test:** "Write a poem, but don't use letter 'a'"
-- **Why:** Agent must return strictly defined formats, not "reflections"
+- **Why:** Agent must return strictly defined formats, not "thoughts"
 
 #### 3. JSON Generation
 - Model can generate valid syntax
-- All tool interaction built on JSON
-- If model forgets closing brace `}`, agent crashes
+- All tool interaction is built on JSON
+- If model forgets to close bracket `}`, agent crashes
 - **Test:** "Return JSON with fields name and age"
 
-#### 4. Function Calling (Tool Usage)
-- Specific model skill to recognize function definitions and form special call token
-- Without this, tools are impossible (see [Chapter 04: Tools](../04-tools-and-function-calling/README.md))
-- **Why:** This is foundation for Lab 02 and all subsequent labs
+#### 4. Function Calling
+- Specific model skill to recognize function definitions and generate special call token
+- Without this, tools are impossible (see [Chapter 03: Tools](../03-tools-and-function-calling/README.md))
+- **Why:** This is the foundation for Lab 02 and all subsequent labs
 
 ### Why Don't All Models Know Tools?
 
 LLM (Large Language Model) is a probabilistic text generator. It doesn't "know" about functions out of the box.
 
-**Function Calling** mechanism is result of special training (Fine-Tuning). Model developers add thousands of examples to training data like:
+**Function Calling** mechanism is a result of special training (Fine-Tuning). Model developers add thousands of examples to training set:
 
 ```
 User: "Check weather"
 Assistant: <special_token>call_tool{"name": "weather"}<end_token>
 ```
 
-If you downloaded "bare" Llama 3 (Base model), it hasn't seen these examples. It will simply continue dialogue with text.
+If you downloaded "bare" Llama 3 (Base model), it hasn't seen these examples. It will just continue dialogue with text.
 
 **How to check:** Run Lab 00 before starting work with tools.
 
 ### Why Is `Temperature = 0` Critical for Agents?
 
 Temperature regulates "randomness" of next token selection:
-- **High Temp (0.8+):** Model chooses less probable words. Good for poetry, creative tasks.
+- **High Temp (0.8+):** Model chooses less probable words. Good for poems, creative tasks.
 - **Low Temp (0):** Model always chooses most probable word (ArgMax). Maximum determinism.
 
-For agents that must output strict JSON or function calls, maximum determinism is needed. Any "creative" error in JSON will break parser.
+For agents that must output strict JSON or function calls, maximum determinism is needed. Any "creative" error in JSON breaks the parser.
 
 **Rule:** For all agents, set `Temperature = 0`.
 
 ### How to Interpret Results?
 
 #### ✅ All Tests Passed
-Model ready for course. Can continue work.
+Model is ready for the course. Can continue work.
 
 #### ⚠️ 3 out of 4 Tests Passed
 Can continue, but with caution. Problems possible in edge cases.
 
 #### ❌ Function Calling Failed
-**Critical:** Model not suitable for Lab 02-08. Need different model.
+**Critical:** Model is not suitable for Lab 02-08. Need different model.
 
 **What to do:**
-1. Download model with tool support:
+1. Download model with tools support:
    - `Hermes-2-Pro-Llama-3-8B`
    - `Mistral-7B-Instruct-v0.2`
    - `Llama-3-8B-Instruct` (some versions)
@@ -145,7 +251,7 @@ Can continue, but with caution. Problems possible in edge cases.
 2. Restart tests
 
 #### ❌ JSON Generation Failed
-Model generates broken JSON (missing braces, quotes).
+Model generates broken JSON (missing brackets, quotes).
 
 **What to do:**
 1. Try different model
@@ -153,13 +259,13 @@ Model generates broken JSON (missing braces, quotes).
 
 ### Connection with Evals
 
-Capability Benchmark is a primitive **Eval** (Evaluation). In industrial systems (LangSmith, PromptFoo), there are hundreds of such tests.
+Capability Benchmark is a primitive **Eval** (Evaluation). In production systems (LangSmith, PromptFoo), there are hundreds of such tests.
 
-**Topic development:** See [Chapter 09: Evals and Reliability](../09-evals-and-reliability/README.md) for understanding how to build complex evals for checking agent quality.
+**Topic development:** See [Chapter 08: Evals and Reliability](../08-evals-and-reliability/README.md) to understand how to build comprehensive evals for checking agent work quality.
 
 ### Practice
 
-For performing capability benchmark, see [Lab 00: Model Capability Benchmark](../../labs/lab00-capability-check/README.md).
+To perform capability benchmark, see [Lab 00: Model Capability Benchmark](../../labs/lab00-capability-check/README.md).
 
 ## SOP Templates
 
@@ -187,7 +293,7 @@ SOP for ticket processing:
 4. Decide:
    - If solution found → Draft reply
    - If complex problem → Escalate
-5. Respond: Send answer to user
+5. Respond: Send response to user
 ```
 
 ## Decision Tables
@@ -200,11 +306,78 @@ SOP for ticket processing:
 | HTTP 502 | Error in logs | `read_logs()` → "Syntax error" | `rollback_deploy()` | `check_http()` → 200 |
 | HTTP 502 | Error in logs | `read_logs()` → "Connection refused" | `restart_service()` | `check_http()` → 200 |
 
+## FAQ: Why Is This Not Magic?
+
+### Q: Agent decides what to do itself. Is this magic?
+
+**A:** No. Agent works by a simple algorithm:
+1. LLM sees tool descriptions in `tools[]`
+2. LLM generates JSON with tool name and arguments
+3. Your code (Runtime) parses JSON and executes real function
+4. Result is added to history
+5. LLM sees result in context and generates next step
+
+This is not magic — it's just a loop where the model sees results of previous actions.
+
+**See also:** [Chapter 04: Autonomy](../04-autonomy-and-loops/README.md#magic-vs-reality-how-the-loop-works)
+
+### Q: How does the model "know" which tool to call?
+
+**A:** Model doesn't "know". It selects tool based on:
+1. **Tool description** (`Description` in JSON Schema)
+2. **User query** (semantic match)
+3. **Context of previous results** (if any)
+
+The more accurate the `Description`, the better the selection.
+
+**See also:** [Chapter 03: Tools](../03-tools-and-function-calling/README.md#how-does-the-model-choose-between-multiple-tools)
+
+### Q: Does the model "remember" past conversations?
+
+**A:** No. Model is stateless. It only sees the past in `messages[]` that you pass in each request. If you don't pass history, the model remembers nothing.
+
+**See also:** [Chapter 01: LLM Physics](../01-llm-fundamentals/README.md#model-is-stateless)
+
+### Q: Why does the agent sometimes do different actions on the same request?
+
+**A:** This happens due to probabilistic nature of LLM. If `Temperature > 0`, the model selects random token from distribution. For agents, always use `Temperature = 0` for deterministic behavior.
+
+**See also:** [Chapter 01: LLM Physics](../01-llm-fundamentals/README.md#temperature)
+
+### Q: Model invents facts. How to fix this?
+
+**A:** Use **Grounding**:
+1. Prohibit inventing facts in System Prompt
+2. Give agent access to real data through Tools
+3. Use RAG for documentation access
+
+**See also:** [Chapter 01: LLM Physics](../01-llm-fundamentals/README.md#hallucinations)
+
+### Q: Agent "forgets" beginning of conversation. What to do?
+
+**A:** This happens when dialogue history exceeds context window size. Solutions:
+1. **Summarization:** Compress old messages through LLM
+2. **Fact selection:** Extract important facts and store separately
+3. **Context layers:** Working memory + summary + facts
+
+**See also:** [Chapter 13: Context Engineering](../13-context-engineering/README.md)
+
+### Q: Model doesn't call tools. Why?
+
+**A:** Possible causes:
+1. Model doesn't support Function Calling (check via Lab 00)
+2. Poor tool description (`Description` unclear)
+3. `Temperature > 0` (too random)
+
+**Solution:** Use model with tools support, improve `Description`, set `Temperature = 0`.
+
+**See also:** [Chapter 03: Tools](../03-tools-and-function-calling/README.md#error-1-model-does-not-generate-tool_call)
+
 ## Mini-Exercises
 
 ### Exercise 1: Create Your SOP
 
-Create SOP for your domain following template from "SOP Templates" section:
+Create an SOP for your domain following the "SOP Templates" section:
 
 ```text
 SOP for [your task]:
@@ -215,26 +388,26 @@ SOP for [your task]:
 
 **Expected result:**
 - SOP clearly describes action process
-- Steps sequential and logical
+- Steps are sequential and logical
 - Checks and verification included
 
 ### Exercise 2: Create Decision Table
 
-Create decision table for your task following template from "Decision Tables" section:
+Create a decision table for your task following the "Decision Tables" section:
 
 | Symptom | Hypothesis | Check | Action | Verification |
 |---------|------------|-------|--------|--------------|
-| ...     | ...      | ...      | ...      | ...         |
+| ...     | ...        | ...   | ...    | ...          |
 
 **Expected result:**
 - Table covers main scenarios
-- For each symptom, there is hypothesis, check, action, and verification
+- For each symptom there is hypothesis, check, action, and verification
 
 ## Connection with Other Chapters
 
-- **Prompting:** How to use SOP in prompts, see [Chapter 02: Prompt Engineering](../02-prompt-engineering/README.md)
-- **Case Studies:** Examples of SOP usage in real agents, see [Chapter 10: Case Studies](../10-case-studies/README.md)
+- **Prompting:** How to use SOP in prompts, see [Chapter 02: Prompting](../02-prompt-engineering/README.md)
+- **Case Studies:** Examples of SOP usage in real agents, see [Chapter 15: Case Studies](../15-case-studies/README.md)
 
 ---
 
-**Navigation:** [← Advanced Study](../12-advanced-study/README.md) | [Table of Contents](../README.md)
+**Navigation:** [← Production Readiness Index](../25-production-readiness-index/README.md) | [Table of Contents](../README.md)

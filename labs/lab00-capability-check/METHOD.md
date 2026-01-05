@@ -1,24 +1,24 @@
-# Study Guide: Lab 00 — Model Capability Benchmark
+# Method Guide: Lab 00 — Model Capability Benchmark
 
-## Why This Lab?
+## Why Is This Needed?
 
-Before building complex agents, we must **scientifically confirm** that our model (especially a local one) possesses the necessary abilities. In engineering, this is called **Characterization**.
+Before building complex agents, we must **scientifically confirm** that our model (especially local) has the necessary capabilities. In engineering, this is called **Characterization**.
 
 We don't trust labels ("Super-Pro-Max Model"). We trust tests.
 
 ### Real-World Case Study
 
-**Situation:** You downloaded the "Llama-3-8B-Instruct" model and started building an agent. After an hour of work, discovered that the model doesn't call tools, only writes text.
+**Situation:** You downloaded the "Llama-3-8B-Instruct" model and started building an agent. After an hour of work, you discovered that the model doesn't call tools, only writes text.
 
-**Problem:** You spent time debugging code, although the problem was in the model.
+**Problem:** You spent time debugging code, though the problem was in the model.
 
-**Solution:** Run Lab 00 **before** starting work. This will save hours.
+**Solution:** Run Lab 00 **before** starting work. This saves hours.
 
 ## Theory in Simple Terms
 
 ### What Do We Check?
 
-1. **Basic Sanity**
+1. **Basic Sanity (Basic Functionality)**
    - Model responds to requests
    - No critical API errors
 
@@ -28,17 +28,17 @@ We don't trust labels ("Super-Pro-Max Model"). We trust tests.
 
 3. **JSON Generation**
    - Model can generate valid syntax
-   - All interaction with tools is built on JSON
+   - All tool interaction is built on JSON
 
-4. **Function Calling**
-   - Specific skill of the model to recognize function definitions
+4. **Function Calling (Tool Usage)**
+   - Specific model skill to recognize function definitions
    - Without this, Lab 02 and beyond are impossible
 
-### Why Don't All Models Support Tools?
+### Why Don't All Models Know Tools?
 
 LLM (Large Language Model) is a probabilistic text generator. It doesn't "know" about functions.
 
-The **Function Calling** mechanism is the result of special training (Fine-Tuning). Model developers add thousands of examples to the training dataset like:
+The **Function Calling** mechanism is a result of special training (Fine-Tuning). Model developers add thousands of examples to the training set:
 
 ```
 User: "Check weather"
@@ -71,12 +71,12 @@ Tests will output a report:
 
 ### Step 3: Interpretation
 
-- **If all tests passed:** Model is ready for the course. Can continue.
-- **If Function Calling failed:** Model is not suitable for Lab 02-08. Need a different model.
+- **If all tests passed:** Model is ready for the course. You can continue.
+- **If Function Calling failed:** Model is not suitable for Lab 02-08. You need a different model.
 
-## Common Mistakes
+## Common Errors
 
-### Mistake 1: "API Error: connection refused"
+### Error 1: "API Error: connection refused"
 
 **Cause:** Local server (LM Studio/Ollama) is not running.
 
@@ -85,18 +85,18 @@ Tests will output a report:
 2. Click "Start Server" (usually port 1234)
 3. Check that `OPENAI_BASE_URL` points to the correct port
 
-### Mistake 2: "Function Calling - FAILED"
+### Error 2: "Function Calling - FAILED"
 
 **Cause:** Model is not trained on Function Calling.
 
 **Solution:**
-1. Download a model with tool support:
+1. Download a model with tools support:
    - `Hermes-2-Pro-Llama-3-8B`
    - `Mistral-7B-Instruct-v0.2`
    - `Llama-3-8B-Instruct` (some versions)
 2. Restart tests
 
-### Mistake 3: "JSON Generation - FAILED"
+### Error 3: "JSON Generation - FAILED"
 
 **Cause:** Model generates broken JSON (missing brackets, quotes).
 
@@ -108,7 +108,7 @@ Tests will output a report:
 
 ### Exercise 1: Add Your Own Test
 
-Add a test to check "model should not use forbidden words":
+Add a test to check "model must not use forbidden words":
 
 ```go
 runTest(ctx, client, "5. Safety Check",
@@ -133,7 +133,7 @@ fmt.Printf("Latency: %v\n", latency)
 ## Completion Criteria
 
 ✅ **Completed:** All 4 tests passed successfully  
-⚠️ **Partially:** 3 out of 4 tests passed (can continue, but with caution)  
+⚠️ **Partial:** 3 out of 4 tests passed (can continue, but with caution)  
 ❌ **Not completed:** Function Calling failed (need a different model)
 
 ---

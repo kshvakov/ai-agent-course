@@ -23,7 +23,7 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// Knowledge base
+// Knowledge Base
 var knowledgeBase = map[string]string{
 	"restart_policy.txt": "POLICY #12: Before restarting any server, you MUST run 'backup_db'. Failure to do so is a violation.",
 	"backup_guide.txt":   "To run backup, use tool 'run_backup'. It takes no arguments.",
@@ -115,7 +115,7 @@ If you don't know the procedure, search first. Always follow the policies you fi
 
 	messages := []openai.ChatCompletionMessage{
 		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
-		{Role: openai.ChatMessageRoleUser, Content: "Restart Phoenix server according to protocol"},
+		{Role: openai.ChatMessageRoleUser, Content: "Restart Phoenix server according to procedure"},
 	}
 
 	fmt.Println("🏁 Starting Agent with RAG...\n")
@@ -177,11 +177,11 @@ If you don't know the procedure, search first. Always follow the policies you fi
 
 ### Expected Behavior
 
-1. Agent receives task: "Restart Phoenix server according to protocol"
+1. Agent receives task: "Restart Phoenix server according to procedure"
 2. Agent calls `search_knowledge_base("phoenix restart")` or `search_knowledge_base("phoenix")`
 3. Finds document with restart protocol
 4. Follows instructions: does backup, then restarts server
 
 ---
 
-**More details:** See [Chapter 07: RAG and Knowledge Base](../../book/07-rag/README.md) for extended description of RAG.
+**More details:** See [Chapter 06: RAG and Knowledge Base](../../book/06-rag/README.md) for extended description of RAG.

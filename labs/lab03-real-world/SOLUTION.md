@@ -1,7 +1,7 @@
 # Lab 03 Solution: Real World (Interfaces & Infrastructure)
 
 ## 🎯 Goal
-Learn to build architecture that allows easily adding new tools without changing main code. Use Go interfaces to abstract complex external systems (Proxmox, Ansible).
+Learn to build architecture that allows easily adding new tools without changing the main code. Use Go interfaces to abstract complex external systems (Proxmox, Ansible).
 
 ## 📝 Solution Breakdown
 
@@ -21,7 +21,7 @@ type Tool interface {
 ```
 
 ### 2. Ansible Tool Implementation
-We create a structure that implements this interface. Inside the `Execute` method, we use standard library `os/exec` to call CLI utility. This is the simplest way to integrate with DevOps tools.
+We create a structure that implements this interface. Inside the `Execute` method we use the standard `os/exec` library to call CLI utilities. This is the simplest way to integrate with DevOps tools.
 
 ```go
 func (t *AnsibleRunPlaybookTool) Execute(args json.RawMessage) (string, error) {
@@ -31,7 +31,7 @@ func (t *AnsibleRunPlaybookTool) Execute(args json.RawMessage) (string, error) {
         return "", err
     }
     
-    // 2. Real call (emulated for lab)
+    // 2. Real call (emulation for lab)
     // cmd := exec.Command("ansible-playbook", params.Playbook)
     // ...
     return fmt.Sprintf("Playbook %s executed successfully.", params.Playbook), nil
@@ -39,7 +39,7 @@ func (t *AnsibleRunPlaybookTool) Execute(args json.RawMessage) (string, error) {
 ```
 
 ### 3. Registry
-We use `map[string]Tool` to store all tools. This allows O(1) lookup by name.
+We use `map[string]Tool` to store all tools. This allows finding a tool by name in O(1).
 
 ### 🔍 Complete Solution Code
 
@@ -101,7 +101,7 @@ func main() {
 		fmt.Printf("Registered tool: %s\n", t.Name())
 	}
 
-	// 2. Emulate user selection (or LLM)
+	// 2. Emulation of user (or LLM) selection
 	// Let's say LLM returned this:
 	toolName := "run_playbook"
 	toolArgsRaw := json.RawMessage(`{"playbook": "deploy_nginx.yml"}`)
@@ -123,4 +123,4 @@ func main() {
 ```
 
 ## 🧠 Why Is This Important?
-In large systems, you may have hundreds of tools. Using interfaces and registry allows separating agent logic (brain) from tool logic (hands). You can add new capabilities without rewriting the main agent loop.
+In large systems you may have hundreds of tools. Using interfaces and registry allows separating agent logic (brain) from tool logic (hands). You'll be able to add new capabilities without rewriting the main agent loop.

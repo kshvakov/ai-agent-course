@@ -1,7 +1,7 @@
 # Lab 02: Function Calling (Tools)
 
 ## Goal
-Understand the Function Calling mechanism. Learn to describe Go functions so that an LLM can call them.
+Understand the Function Calling mechanism. Learn to describe Go functions so that LLM can call them.
 
 ## Important for Local Models ⚠️
 Not all local models support **Function Calling**.
@@ -9,7 +9,7 @@ If you're using **LM Studio** or **Ollama**, choose models with tags `function-c
 Good options:
 *   `Mistral 7B Instruct`
 *   `Hermes 2 Pro`
-*   `Llama 3 (some tunes)`
+*   `Llama 3 (some fine-tunes)`
 *   `Gorilla OpenFunctions`
 
 If the model doesn't support tools, it may simply continue the conversation with text, ignoring your `Tools` instructions.
@@ -23,10 +23,10 @@ Process:
 3.  **Response:** Model returns `ToolCalls` flag (instead of text).
 4.  **Execution:** Your code sees this flag and executes the function.
 
-## Assignment
+## Task
 We have a stub function `GetServerStatus(ip string)`.
 
-1.  **Setup:** Initialize the client with `NewClientWithConfig` (like in Lab 01) to work locally.
-2.  **Definition:** Describe the function `get_server_status` in `openai.Tool`.
-3.  **Request:** Send a request: "Check server status 192.168.1.10".
-4.  **Processing:** Check `msg.ToolCalls`. If not empty — print the function name and arguments.
+1.  **Setup:** Initialize client with `NewClientWithConfig` (as in Lab 01) to work locally.
+2.  **Definition:** Describe function `get_server_status` in `openai.Tool`.
+3.  **Request:** Send request: "Check status of server 192.168.1.10".
+4.  **Handling:** Check `msg.ToolCalls`. If not empty — print function name and arguments.

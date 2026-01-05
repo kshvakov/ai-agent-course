@@ -9,41 +9,41 @@ Note the System Prompt in the solution:
 
 **Why is this needed?**
 
-Without this prompt, model sees: `User: Fix it`.  
+Without this prompt, the model sees: `User: Fix it`.  
 Its probabilistic mechanism may output: `Call: restart_service`. This is the most "popular" action.
 
-With this prompt, model is forced to generate text:
+With this prompt, the model is forced to generate text:
 - "Step 1: I need to check HTTP status." → This increases probability of calling `check_http`
 - "HTTP is 502. Step 2: I need to check logs." → This increases probability of calling `read_logs`
 
-We **direct model's attention** along the needed path.
+We **direct the model's attention** in the right direction.
 
 ### Decision Table
 
-For incident "Payment Service 502", agent must follow this table:
+For incident "Payment Service 502", the agent should follow this table:
 
 | Symptom | Hypothesis | Check | Action | Verification |
 |---------|------------|-------|--------|--------------|
 | HTTP 502 | Service down | `check_http()` → 502 | - | - |
 | HTTP 502 | Error in logs | `read_logs()` → "Syntax error" | `rollback_deploy()` | `check_http()` → 200 |
 | HTTP 502 | Error in logs | `read_logs()` → "Connection refused" | `restart_service()` | `check_http()` → 200 |
-| HTTP 502 | Transient failure | `read_logs()` → "Transient error" | `restart_service()` | `check_http()` → 200 |
+| HTTP 502 | Transient error | `read_logs()` → "Transient error" | `restart_service()` | `check_http()` → 200 |
 
 **Important:** Agent must not act without checking logs!
 
-### What to Do if Model "Stalls" (Local)?
+### What to Do If Model "Stutters" (Local)?
 
 1. **Force Thinking:** In prompt write: *"Before calling any tool, output a thought starting with 'THOUGHT:' describing what you want to do."*
 
-2. **Reduce Scope:** Remove extra tools. If you have 10 tools, model may get confused.
+2. **Reduce Scope:** Remove extra tools. If you have 10 tools, the model may get confused.
 
-3. **Few-Shot:** Add to dialogue history an example of ideal incident solution:
+3. **Few-Shot:** Add to dialogue history an example of ideal incident resolution:
    ```json
    User: "Service down"
    Assistant: "THOUGHT: Checking status first."
    Tool: check_http...
    ```
-   This is the most powerful way to make model work correctly (In-Context Learning).
+   This is the most powerful way to make the model work correctly (In-Context Learning).
 
 ### 🔍 Complete Solution Code
 
@@ -220,7 +220,7 @@ ALWAYS Think step by step. Output your thought process before calling a tool.`
 🤖 Agent: The service has been fixed. I rolled back to version v1.9 due to a config syntax error. The service is now returning 200 OK.
 ```
 
-### Problem Diagnosis
+### Troubleshooting
 
 If agent doesn't follow SOP:
 

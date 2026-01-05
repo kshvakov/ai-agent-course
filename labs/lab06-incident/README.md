@@ -1,13 +1,13 @@
 # Lab 06: Incident Management (Advanced Planning)
 
 ## Goal
-Create an SRE-level agent capable of independently investigating and resolving failures using **explicit planning** (Plan-and-Solve) and SOP (Standard Operating Procedure).
+Create an SRE-level agent capable of independently investigating and resolving incidents using **explicit planning** (Plan-and-Solve) and SOP (Standard Operating Procedure).
 
 ## Theory
 
-### Planning — Breaking Down Tasks into Steps
+### Planning — breaking task into steps
 
-In this lab, we use **explicit planning** (Plan-and-Solve), unlike implicit planning (ReAct) from Lab 04.
+In this lab we use **explicit planning** (Plan-and-Solve), unlike implicit planning (ReAct) from Lab 04.
 
 **Difference:**
 
@@ -17,7 +17,7 @@ In this lab, we use **explicit planning** (Plan-and-Solve), unlike implicit plan
 - Example: "Check disk" → "Clean logs" → "Check again"
 
 **Explicit planning (Plan-and-Solve) — Lab 06:**
-- Agent first creates a full plan
+- Agent first creates a complete plan
 - Then executes plan step by step
 - Suitable for complex tasks (5+ steps)
 - Example: "Plan: 1. Check HTTP 2. Read logs 3. Analyze 4. Fix 5. Verify"
@@ -30,7 +30,7 @@ In this lab, we use **explicit planning** (Plan-and-Solve), unlike implicit plan
 ```
 SOP for service failure:
 1. Check Status: Check HTTP response code
-2. Check Logs: If 500/502 — read last 20 lines of logs
+2. Check Logs: If 500/502 — read last 20 log lines
 3. Analyze: Find keywords:
    - "Syntax error" → Rollback
    - "Connection refused" → Check Database
@@ -47,13 +47,13 @@ With SOP, the model is forced to generate text:
 - "Step 1: I need to check HTTP status." → This increases probability of calling `check_http`
 - "HTTP is 502. Step 2: I need to check logs." → This increases probability of calling `read_logs`
 
-We **direct the model's attention** along the right path.
+We **direct the model's attention** in the right direction.
 
 ### Task Decomposition
 
-The task "Investigate the incident" is broken down into subtasks:
+The task "Investigate incident" is broken into subtasks:
 
-1. **Diagnostics:** What happened?
+1. **Diagnosis:** What happened?
    - Check service status
    - Read logs
    - Analyze errors
@@ -63,29 +63,29 @@ The task "Investigate the incident" is broken down into subtasks:
    - Choose correct action (rollback/restart/scale)
    - Apply fix
 
-3. **Verification:** Did the solution help?
+3. **Verification:** Did solution help?
    - Check status again
    - Ensure problem is resolved
 
 **Decomposition principles:**
 - **Atomicity:** Each step is executable with one action
-- **Dependencies:** Steps execute in correct order
+- **Dependencies:** Steps executed in correct order
 - **Verifiability:** Each step has a clear success criterion
 
-## Assignment
-In `main.go` — large skeleton.
+## Task
+In `main.go` — large template.
 
 1. **Tools:** You have 4 tools:
-   - `check_http` — HTTP status check
-   - `read_logs` — service log reading
-   - `restart_service` — service restart
+   - `check_http` — check HTTP status
+   - `read_logs` — read service logs
+   - `restart_service` — restart service
    - `rollback_deploy` — rollback to previous version
 
 2. **SOP in prompt:** Add detailed SOP for incident handling to System Prompt.
 
 3. **The Loop:** Implement agent loop that strictly follows SOP.
 
-4. **Scenario:** Run the agent with prompt: *"Payment Service is down (502). Fix it."*
+4. **Scenario:** Run agent with prompt: *"Payment Service is down (502). Fix it."*
    - Expected: Agent follows SOP:
      - Checks HTTP → 502
      - Reads logs → "Syntax error"

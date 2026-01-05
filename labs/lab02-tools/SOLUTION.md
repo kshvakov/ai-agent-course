@@ -3,9 +3,9 @@
 ## 📝 Solution Breakdown
 
 ### Initialization for Local Model
-Note the use of `NewClientWithConfig`. This is a standard pattern for all labs.
+Note the use of `NewClientWithConfig`. This is the standard pattern for all labs.
 
-### How to Determine if Model Supports Function Calling?
+### How to Determine If Model Supports Function Calling?
 
 **Before starting this lab, be sure to run Lab 00!** It will check if your model supports Function Calling.
 
@@ -13,7 +13,7 @@ Note the use of `NewClientWithConfig`. This is a standard pattern for all labs.
 - Model is not trained on Function Calling
 - Need a different model (e.g., `Hermes-2-Pro-Llama-3`, `Mistral-7B-Instruct-v0.2`)
 
-**If Lab 00 passed, but model doesn't call functions in this lab:**
+**If Lab 00 passed, but in this lab model doesn't call functions:**
 
 1. **Check tool description (`Description`):**
    ```go
@@ -35,14 +35,14 @@ Note the use of `NewClientWithConfig`. This is a standard pattern for all labs.
    Assistant: {"tool": "get_server_status", "args": {"ip": "192.168.1.1"}}
    `
    ```
-   > **Note:** This is an educational demonstration of format in prompt text. With real Function Calling, model returns call in `tool_calls` field (see [Chapter 04: Tools](../../book/04-tools-and-function-calling/README.md)).
+   > **Note:** This is an educational demonstration of format in prompt text. In real Function Calling, the model returns a call in the `tool_calls` field (see [Chapter 03: Tools](../../book/03-tools-and-function-calling/README.md)).
 
 ### Tool Call Validation
 
 **Important:** Always validate arguments before execution!
 
 ```go
-// 1. Function name check
+// 1. Check function name
 allowedTools := map[string]bool{
     "get_server_status": true,
 }
@@ -50,7 +50,7 @@ if !allowedTools[call.Function.Name] {
     return fmt.Errorf("unknown tool: %s", call.Function.Name)
 }
 
-// 2. JSON validation
+// 2. Validate JSON
 if !json.Valid([]byte(call.Function.Arguments)) {
     return fmt.Errorf("invalid JSON in arguments")
 }
@@ -67,9 +67,9 @@ if args.IP == "" {
 }
 ```
 
-### Common Problems and Solutions
+### Common Issues and Solutions
 
-#### Problem 1: Model Doesn't Call Function
+#### Issue 1: Model Doesn't Call Function
 
 **Symptom:** `len(msg.ToolCalls) == 0`, model responds with text.
 
@@ -87,13 +87,13 @@ Description: "Get the status of a server by IP address. Use this when user asks 
 systemPrompt := `You are a DevOps assistant. When user asks about server status, you MUST call get_server_status tool.`
 ```
 
-#### Problem 2: Broken JSON in Arguments
+#### Issue 2: Broken JSON in Arguments
 
 **Symptom:** `json.Unmarshal` returns error.
 
 **Example:**
 ```json
-{"ip": "192.168.1.10"  // Missing closing brace
+{"ip": "192.168.1.10"  // Missing closing bracket
 ```
 
 **Solution:**
@@ -104,7 +104,7 @@ if !json.Valid([]byte(call.Function.Arguments)) {
 }
 ```
 
-#### Problem 3: Wrong Function Name
+#### Issue 3: Wrong Function Name
 
 **Symptom:** Model calls function with different name.
 

@@ -5,21 +5,21 @@
 ### Local Models and Safety
 For this lab, model quality is **critical**. 
 Small models (7B) often ignore safety instructions ("Always ask confirmation").
-Recommended models:
+Recommended to use:
 *   `Llama 3 70B` (if fits in memory/quantized)
 *   `Mixtral 8x7B`
 *   `Command R+`
 
-If model deletes database without asking — try strengthening System Prompt by adding examples (Few-Shot Prompting).
+If the model deletes database without asking — try strengthening System Prompt, adding examples (Few-Shot Prompting).
 
 ### 🛡️ Additional Protection: Runtime Confirmation Gate
 
-**Important:** Cannot rely only on prompt and model quality for safety. Even if model returned `tool_call` for dangerous action, **runtime must check risk and block execution** until explicit user confirmation is received.
+**Important:** Cannot rely solely on prompt and model quality for safety. Even if the model returned `tool_call` for a dangerous action, **runtime must check risk and block execution** until explicit user confirmation is received.
 
 **Why this is critical:**
 - Small models (7B) may ignore safety instructions
 - Even large models can make mistakes or be compromised via prompt injection
-- Safety must be **built into execution layer**, not depend on model "discipline"
+- Safety must be **built into the execution layer**, not depend on model "discipline"
 
 **How it works:**
 
@@ -47,13 +47,13 @@ func hasConfirmationInHistory(messages []openai.ChatCompletionMessage) bool {
     return false
 }
 
-// Modified tool execution function with safety check
+// Modified tool execution function
 func executeToolWithSafetyCheck(toolCall openai.ToolCall, messages []openai.ChatCompletionMessage) (string, error) {
     // Risk check at Runtime level
     riskScore := calculateRisk(toolCall.Function.Name, json.RawMessage(toolCall.Function.Arguments))
     
     if riskScore > 0.8 {
-        // Check if there was confirmation
+        // Check if confirmation was given
         if !hasConfirmationInHistory(messages) {
             // DON'T execute tool! Return special code
             return "REQUIRES_CONFIRMATION: This action requires explicit user confirmation. Ask the user to confirm.", nil
@@ -111,7 +111,7 @@ In a real application, instead of text confirmation, you can use UI:
    - Runtime checks risk → `riskScore = 0.9 > 0.8`
    - No confirmation → block execution
 
-2. **Show user preview:**
+2. **Show preview to user:**
    ```
    ⚠️ Dangerous action requires confirmation
    
@@ -135,7 +135,7 @@ In a real application, instead of text confirmation, you can use UI:
 - ✅ User sees action preview before confirmation
 - ✅ Can add additional checks (allowlist, argument validation)
 
-**More details:** See [Chapter 06: Safety and Human-in-the-Loop](../../book/06-safety-and-hitl/README.md) for extended description of this approach.
+**More details:** See [Chapter 05: Safety and Human-in-the-Loop](../../book/05-safety-and-hitl/README.md) for extended description of this approach.
 
 ### 🔍 Complete Solution Code
 
@@ -250,13 +250,13 @@ func main() {
 			msg := resp.Choices[0].Message
 			messages = append(messages, msg)
 
-			// If this is text - output and return control to user
+			// If it's text - output and give control to user
 			if len(msg.ToolCalls) == 0 {
 				fmt.Printf("Agent > %s\n", msg.Content)
 				break
 			}
 
-			// If these are tools - execute them autonomously
+			// If it's tools - execute them autonomously
 			for _, toolCall := range msg.ToolCalls {
 				fmt.Printf("  [⚙️ System] Executing tool: %s\n", toolCall.Function.Name)
 
