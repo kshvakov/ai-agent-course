@@ -54,6 +54,13 @@ def fix_links(content: str, is_ru: bool = False) -> str:
             f'\\1[English version]({SITE_BASE_PATH}/)',
             content
         )
+        # Russian version: replace any local "English version" link in the Translations section with site root
+        # (On GitHub it's often a relative path to /book/README.md, but on the site it must be /ai-agent-course/)
+        content = re.sub(
+            r'(?m)^- (\*\*English \(EN\)\*\* — )\[English version\]\([^)]+\)\s*$',
+            f'- \\1[English version]({SITE_BASE_PATH}/)',
+            content
+        )
         # Remove "ru (эта ветка)" reference
         content = re.sub(
             r'(\*\*Русский \(RU\)\*\* — )`ru` \(эта ветка\)',
