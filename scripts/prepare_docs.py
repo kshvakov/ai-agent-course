@@ -177,6 +177,78 @@ def fix_links(content: str, is_ru: bool = False) -> str:
     return re.sub(link_pattern, replace_link, content)
 
 
+def normalize_lists(content: str) -> str:
+    """
+    Normalize markdown lists by ensuring there's a blank line before list items.
+    This fixes the issue where Python-Markdown doesn't recognize lists without
+    a preceding blank line, causing them to render as a single paragraph.
+    
+    Works only outside of code fences (```/~~~) to avoid breaking code examples.
+    Also handles blockquote lists (lines starting with >).
+    """
+    lines = content.split('\n')
+    result = []
+    in_code_fence = False
+    code_fence_char = None
+    
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        
+        # Track code fence state
+        stripped = line.strip()
+        if stripped.startswith('```') or stripped.startswith('~~~'):
+            # Check if this is a closing fence
+            if in_code_fence and stripped.startswith(code_fence_char * 3):
+                in_code_fence = False
+                code_fence_char = None
+            elif not in_code_fence:
+                # Opening fence - extract the language/fence type
+                code_fence_char = stripped[0]
+                in_code_fence = True
+            result.append(line)
+            i += 1
+            continue
+        
+        # If we're inside a code fence, don't process
+        if in_code_fence:
+            result.append(line)
+            i += 1
+            continue
+        
+        # Check if this line starts a list
+        # Pattern: optional blockquote (>), optional spaces, then list marker
+        # List markers: 1. 2. etc (ordered) or - * + (unordered)
+        list_pattern = re.compile(r'^(\s*>?\s*)(\d+\.\s+|\-\s+|\*\s+|\+\s+).*')
+        match = list_pattern.match(line)
+        
+        if match:
+            # This is a list item
+            prefix = match.group(1)  # Includes blockquote and indentation
+            list_marker = match.group(2)
+            
+            # Check if previous line is blank or also a list
+            if result:
+                prev_line = result[-1]
+                prev_stripped = prev_line.strip()
+                
+                # If previous line is not blank and not a list, insert blank line
+                if prev_stripped and not re.match(r'^(\s*>?\s*)(\d+\.\s+|\-\s+|\*\s+|\+\s+).*', prev_line):
+                    # Insert blank line with same blockquote prefix if present
+                    if prefix.startswith('>'):
+                        # Extract blockquote prefix (may have spaces)
+                        blockquote_match = re.match(r'^(\s*>)', prefix)
+                        if blockquote_match:
+                            result.append(blockquote_match.group(1))
+                    else:
+                        result.append('')
+        
+        result.append(line)
+        i += 1
+    
+    return '\n'.join(result)
+
+
 def copy_readme_to_index(src_dir: Path, dst_dir: Path, is_ru: bool = False):
     """Copy README.md to index.md and fix links."""
     readme_file = src_dir / "README.md"
@@ -188,6 +260,7 @@ def copy_readme_to_index(src_dir: Path, dst_dir: Path, is_ru: bool = False):
     
     content = readme_file.read_text(encoding='utf-8')
     content = fix_links(content, is_ru)
+    content = normalize_lists(content)
     
     index_file.write_text(content, encoding='utf-8')
     print(f"  ✓ {src_dir.name}/README.md -> {dst_dir.name}/index.md")
@@ -203,6 +276,7 @@ def copy_other_files(src_dir: Path, dst_dir: Path):
             
             content = src_file.read_text(encoding='utf-8')
             content = fix_links(content)
+            content = normalize_lists(content)
             
             dst_file.write_text(content, encoding='utf-8')
             print(f"  ✓ {src_dir.name}/{filename} -> {dst_dir.name}/{filename}")
@@ -241,6 +315,7 @@ def main():
     if book_readme.exists():
         content = book_readme.read_text(encoding='utf-8')
         content = fix_links(content, is_ru=False)
+        content = normalize_lists(content)
         (DOCS_DIR / "index.md").write_text(content, encoding='utf-8')
         print("  ✓ book/README.md -> index.md")
     
@@ -263,6 +338,7 @@ def main():
     if ru_book_readme.exists():
         content = ru_book_readme.read_text(encoding='utf-8')
         content = fix_links(content, is_ru=True)
+        content = normalize_lists(content)
         (DOCS_RU_DIR / "index.md").write_text(content, encoding='utf-8')
         print("  ✓ translations/ru/book/README.md -> ru/index.md")
     
