@@ -10,7 +10,7 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// База знаний
+// Knowledge Base
 var knowledgeBase = map[string]string{
 	"restart_policy.txt":  "POLICY #12: Before restarting any server, you MUST run 'backup_db'. Failure to do so is a violation.",
 	"backup_guide.txt":    "To run backup, use tool 'run_backup'. It takes no arguments.",
@@ -44,7 +44,7 @@ func searchKnowledgeBase(query string) string {
 }
 
 func main() {
-	// 1. Настройка клиента (Local-First)
+	// 1. Client setup (Local-First)
 	token := os.Getenv("OPENAI_API_KEY")
 	baseURL := os.Getenv("OPENAI_BASE_URL")
 	if token == "" {
@@ -59,7 +59,7 @@ func main() {
 
 	ctx := context.Background()
 
-	// 2. Определяем инструменты
+	// 2. Define tools
 	tools := []openai.Tool{
 		{
 			Type: openai.ToolTypeFunction,
@@ -104,7 +104,7 @@ If you don't know the procedure, search first. Always follow the policies you fi
 
 	messages := []openai.ChatCompletionMessage{
 		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
-		{Role: openai.ChatMessageRoleUser, Content: "Перезагрузи сервер Phoenix согласно регламенту"},
+		{Role: openai.ChatMessageRoleUser, Content: "Restart Phoenix server according to protocol"},
 	}
 
 	fmt.Println("Starting Agent with RAG...")
@@ -125,13 +125,13 @@ If you don't know the procedure, search first. Always follow the policies you fi
 		msg := resp.Choices[0].Message
 		messages = append(messages, msg)
 
-		// 4. Анализируем ответ
+		// 4. Analyze response
 		if len(msg.ToolCalls) == 0 {
 			fmt.Println("AI:", msg.Content)
 			break
 		}
 
-		// 5. Выполняем инструменты
+		// 5. Execute tools
 		for _, toolCall := range msg.ToolCalls {
 			fmt.Printf("Executing tool: %s\n", toolCall.Function.Name)
 

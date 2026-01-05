@@ -8,7 +8,7 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// --- Environment Mock (Состояние системы) ---
+// --- Environment Mock (System State) ---
 var serviceState = map[string]string{
 	"status":  "failed", // failed -> running
 	"config":  "bad",    // bad -> good
@@ -76,11 +76,11 @@ func main() {
 		{Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{Name: "rollback_deploy", Description: "Rollback to previous version. Use if logs show Config/Syntax error."}},
 	}
 
-	// TODO: Добавьте SOP (Standard Operating Procedure) в System Prompt
-	// SOP должен включать:
+	// TODO: Add SOP (Standard Operating Procedure) to System Prompt
+	// SOP should include:
 	// 1. Check HTTP status first
 	// 2. If status is not 200, READ LOGS immediately
-	// 3. Analyze logs и выберите правильное действие
+	// 3. Analyze logs and choose the correct action
 	// 4. Verify fix by checking HTTP status again
 	sopPrompt := `You are a Site Reliability Engineer (SRE).
 Your goal is to fix the Payment Service.
@@ -99,13 +99,13 @@ ALWAYS Think step by step. Output your thought process before calling a tool.`
 		{Role: openai.ChatMessageRoleUser, Content: "Payment Service is down (502). Fix it."},
 	}
 
-	// TODO: Реализуйте цикл агента, который следует SOP строго
-	// Цикл должен:
-	// 1. Отправлять запрос в LLM
-	// 2. Проверять, есть ли ToolCalls
-	// 3. Если есть ToolCalls - выполнять инструменты
-	// 4. Добавлять результаты в историю
-	// 5. Повторять до тех пор, пока агент не ответит текстом
+	// TODO: Implement agent loop that strictly follows SOP
+	// Loop should:
+	// 1. Send request to LLM
+	// 2. Check if there are ToolCalls
+	// 3. If there are ToolCalls - execute tools
+	// 4. Add results to history
+	// 5. Repeat until agent responds with text
 
 	// The Loop
 	for i := 0; i < 15; i++ {
@@ -113,7 +113,7 @@ ALWAYS Think step by step. Output your thought process before calling a tool.`
 			Model:       openai.GPT3Dot5Turbo,
 			Messages:    messages,
 			Tools:       tools,
-			Temperature: 0, // Детерминированное поведение
+			Temperature: 0, // Deterministic behavior
 		}
 
 		resp, err := client.CreateChatCompletion(ctx, req)
@@ -129,7 +129,7 @@ ALWAYS Think step by step. Output your thought process before calling a tool.`
 			break
 		}
 
-		fmt.Printf("\n🧠 Thought: %s\n", msg.Content) // Печатаем Chain of Thought
+		fmt.Printf("\n🧠 Thought: %s\n", msg.Content) // Print Chain of Thought
 
 		for _, toolCall := range msg.ToolCalls {
 			fmt.Printf("🔧 Call: %s\n", toolCall.Function.Name)

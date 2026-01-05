@@ -9,12 +9,12 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// Mock Tools для Network Specialist
+// Mock Tools for Network Specialist
 func ping(host string) string {
 	return fmt.Sprintf("Host %s is reachable. Latency: 5ms", host)
 }
 
-// Mock Tools для DB Specialist
+// Mock Tools for DB Specialist
 func runSQL(query string) string {
 	if query == "SELECT version()" {
 		return "PostgreSQL 15.2"
@@ -22,17 +22,17 @@ func runSQL(query string) string {
 	return "Query executed successfully."
 }
 
-// Функция запуска Worker-а
+// Function to run Worker agent
 func runWorkerAgent(role, systemPrompt, question string, tools []openai.Tool, client *openai.Client) string {
 	ctx := context.Background()
 	
-	// Создаем НОВЫЙ контекст для работника (изоляция!)
+	// Create NEW context for worker (isolation!)
 	messages := []openai.ChatCompletionMessage{
 		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
 		{Role: openai.ChatMessageRoleUser, Content: question},
 	}
 
-	// Простой цикл для работника (1-2 шага обычно)
+	// Simple loop for worker (usually 1-2 steps)
 	for i := 0; i < 5; i++ {
 		req := openai.ChatCompletionRequest{
 			Model:    openai.GPT3Dot5Turbo,
@@ -49,10 +49,10 @@ func runWorkerAgent(role, systemPrompt, question string, tools []openai.Tool, cl
 		messages = append(messages, msg)
 
 		if len(msg.ToolCalls) == 0 {
-			return msg.Content // Возвращаем финальный ответ работника
+			return msg.Content // Return worker's final answer
 		}
 
-		// Выполняем инструменты работника
+		// Execute worker's tools
 		for _, toolCall := range msg.ToolCalls {
 			var result string
 			if toolCall.Function.Name == "ping" {
@@ -80,7 +80,7 @@ func runWorkerAgent(role, systemPrompt, question string, tools []openai.Tool, cl
 }
 
 func main() {
-	// 1. Настройка клиента (Local-First)
+	// 1. Client setup (Local-First)
 	token := os.Getenv("OPENAI_API_KEY")
 	baseURL := os.Getenv("OPENAI_BASE_URL")
 	if token == "" {
@@ -95,7 +95,7 @@ func main() {
 
 	ctx := context.Background()
 
-	// 2. Инструменты для Workers
+	// 2. Tools for Workers
 	netTools := []openai.Tool{
 		{
 			Type: openai.ToolTypeFunction,
@@ -130,7 +130,7 @@ func main() {
 		},
 	}
 
-	// 3. Инструменты для Supervisor (вызов специалистов)
+	// 3. Tools for Supervisor (calling specialists)
 	supervisorTools := []openai.Tool{
 		{
 			Type: openai.ToolTypeFunction,
@@ -170,12 +170,12 @@ Collect results and provide a final answer to the user.`
 
 	messages := []openai.ChatCompletionMessage{
 		{Role: openai.ChatMessageRoleSystem, Content: supervisorPrompt},
-		{Role: openai.ChatMessageRoleUser, Content: "Проверь, доступен ли сервер БД db-host.example.com, и если да — узнай версию PostgreSQL"},
+		{Role: openai.ChatMessageRoleUser, Content: "Check if DB server db-host.example.com is reachable, and if yes — find out PostgreSQL version"},
 	}
 
 	fmt.Println("Starting Multi-Agent System...")
 
-	// 4. Цикл Supervisor-а
+	// 4. Supervisor loop
 	for i := 0; i < 10; i++ {
 		req := openai.ChatCompletionRequest{
 			Model:    openai.GPT3Dot5Turbo,
@@ -191,13 +191,13 @@ Collect results and provide a final answer to the user.`
 		msg := resp.Choices[0].Message
 		messages = append(messages, msg)
 
-		// 5. Анализируем ответ
+		// 5. Analyze response
 		if len(msg.ToolCalls) == 0 {
 			fmt.Println("Supervisor:", msg.Content)
 			break
 		}
 
-		// 6. Выполняем инструменты Supervisor-а (делегируем Workers)
+		// 6. Execute Supervisor tools (delegate to Workers)
 		for _, toolCall := range msg.ToolCalls {
 			fmt.Printf("Supervisor delegating to: %s\n", toolCall.Function.Name)
 
@@ -227,7 +227,7 @@ Collect results and provide a final answer to the user.`
 
 			fmt.Printf("Worker response: %s\n", workerResponse)
 
-			// Возвращаем ответ Worker-а Supervisor-у
+			// Return worker's response to Supervisor
 			messages = append(messages, openai.ChatCompletionMessage{
 				Role:       openai.ChatMessageRoleTool,
 				Content:    workerResponse,

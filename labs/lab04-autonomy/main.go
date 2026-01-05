@@ -13,7 +13,7 @@ func checkDisk() string { return "Disk Usage: 95% (CRITICAL). Large folder: /var
 func cleanLogs() string { return "Logs cleaned. Freed 20GB." }
 
 func main() {
-	// 1. Настройка клиента (Local-First)
+	// 1. Client setup (Local-First)
 	token := os.Getenv("OPENAI_API_KEY")
 	baseURL := os.Getenv("OPENAI_BASE_URL")
 	if token == "" {
@@ -28,7 +28,7 @@ func main() {
 
 	ctx := context.Background()
 
-	// 2. Определяем инструменты
+	// 2. Define tools
 	tools := []openai.Tool{
 		{
 			Type: openai.ToolTypeFunction,
@@ -48,7 +48,7 @@ func main() {
 
 	messages := []openai.ChatCompletionMessage{
 		{Role: openai.ChatMessageRoleSystem, Content: "You are an autonomous DevOps agent."},
-		{Role: openai.ChatMessageRoleUser, Content: "У меня кончилось место. Разберись."},
+		{Role: openai.ChatMessageRoleUser, Content: "I'm out of disk space. Fix it."},
 	}
 
 	fmt.Println("Starting Agent Loop...")
@@ -69,13 +69,13 @@ func main() {
 		msg := resp.Choices[0].Message
 		messages = append(messages, msg)
 
-		// 4. Анализируем ответ
+		// 4. Analyze response
 		if len(msg.ToolCalls) == 0 {
 			fmt.Println("AI:", msg.Content)
 			break
 		}
 
-		// 5. Выполняем инструменты
+		// 5. Execute tools
 		for _, toolCall := range msg.ToolCalls {
 			fmt.Printf("Executing tool: %s\n", toolCall.Function.Name)
 

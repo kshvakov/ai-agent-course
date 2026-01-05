@@ -1,67 +1,58 @@
-# 01. Физика LLM — как работает "мозг" агента
+# 01. LLM Physics — How the Agent's "Brain" Works
 
-## Зачем это нужно?
+## Why Is This Needed?
 
-Чтобы управлять агентом, нужно понимать, как работает его "мозг". Без понимания физики LLM вы не сможете:
-- Правильно настроить модель для агента
-- Понять, почему агент ведет себя недетерминированно
-- Управлять контекстом и историей диалога
-- Избежать галлюцинаций и ошибок
+To control an agent, you need to understand how its "brain" works. Without understanding LLM physics, you won't be able to:
+- Properly configure the model for the agent
+- Understand why the agent behaves non-deterministically
+- Manage context and conversation history
+- Avoid hallucinations and errors
 
-Эта глава объясняет основы работы LLM простым языком, без лишней математики.
+This chapter explains the basics of how LLMs work in simple terms, without excessive mathematics.
 
-### Реальный кейс
+### Real-World Case Study
 
-**Ситуация:** Вы создали агента для DevOps. Пользователь пишет: "Проверь статус сервера web-01"
+**Situation:** You created a DevOps agent. The user writes: "Check the status of server web-01"
 
-**Проблема:** Агент иногда отвечает текстом "Сервер работает", а иногда вызывает инструмент `check_status`. Поведение непредсказуемо.
+**Problem:** The agent sometimes responds with text "Server is working", and sometimes calls the `check_status` tool. Behavior is unpredictable.
 
-**Решение:** Понимание вероятностной природы LLM и настройка `Temperature = 0` делает поведение детерминированным. Понимание контекстного окна помогает управлять историей диалога.
+**Solution:** Understanding the probabilistic nature of LLMs and setting `Temperature = 0` makes behavior deterministic. Understanding the context window helps manage conversation history.
 
-## Теория простыми словами
+## Theory in Simple Terms
 
-### Вероятностная природа
+### Probabilistic Nature
 
-**Ключевой факт:** LLM не думает, она предсказывает.
+**Key Fact:** LLM doesn't think, it predicts.
 
-LLM — это функция `NextToken(Context) -> Distribution`.  
-На вход подается последовательность токенов $x_1, ..., x_t$. Модель вычисляет распределение вероятностей для следующего токена:
-
-$$P(x_{t+1} | x_1, ..., x_t)$$
-
-**Что это значит на практике?**
-
-**Ключевой факт:** LLM не думает, она предсказывает.
-
-LLM — это функция `NextToken(Context) -> Distribution`.  
-На вход подается последовательность токенов $x_1, ..., x_t$. Модель вычисляет распределение вероятностей для следующего токена:
+LLM is a function `NextToken(Context) -> Distribution`.  
+A sequence of tokens $x_1, ..., x_t$ is fed as input. The model computes a probability distribution for the next token:
 
 $$P(x_{t+1} | x_1, ..., x_t)$$
 
-### Что это значит на практике?
+**What does this mean in practice?**
 
-#### Пример 1: DevOps — Магия vs Реальность
+#### Example 1: DevOps — Magic vs Reality
 
-**❌ Магия (как обычно объясняют):**
-> Промпт: `"Проверь статус сервера"`  
-> Модель видит контекст и предсказывает: "Я вызову инструмент `check_status`" (вероятность 0.85)
+**❌ Magic (as usually explained):**
+> Prompt: `"Check server status"`  
+> Model sees context and predicts: "I will call the `check_status` tool" (probability 0.85)
 
-**✅ Реальность (как на самом деле):**
+**✅ Reality (how it actually works):**
 
-**1. Что отправляется в модель:**
+**1. What is sent to the model:**
 
 ```go
-// System Prompt (задает роль и поведение)
+// System Prompt (sets role and behavior)
 systemPrompt := `You are a DevOps assistant. 
 When user asks about server status, use the check_status tool.
 When user asks about logs, use the read_logs tool.
 When user asks to restart, use the restart_service tool.`
 
 // User Input
-userInput := "Проверь статус сервера"
+userInput := "Check server status"
 
-// Описание доступных инструментов (tools schema)
-// ВАЖНО: Модель видит ВСЕ инструменты и выбирает нужный!
+// Description of available tools (tools schema)
+// IMPORTANT: The model sees ALL tools and selects the needed one!
 tools := []openai.Tool{
     {
         Type: openai.ToolTypeFunction,
@@ -108,7 +99,7 @@ tools := []openai.Tool{
     },
 }
 
-// Полный запрос к API
+// Full API request
 messages := []openai.ChatCompletionMessage{
     {Role: "system", Content: systemPrompt},
     {Role: "user", Content: userInput},
@@ -117,13 +108,13 @@ messages := []openai.ChatCompletionMessage{
 req := openai.ChatCompletionRequest{
     Model:    openai.GPT3Dot5Turbo,
     Messages: messages,
-    Tools:    tools,  // Ключевой момент: модель видит описание инструментов!
+    Tools:    tools,  // Key point: the model sees tool descriptions!
 }
 ```
 
-**2. Что возвращает модель:**
+**2. What the model returns:**
 
-Модель **не возвращает текст** "Я вызову инструмент". Она возвращает **структурированный tool call**:
+The model **does not return text** "I will call the tool". It returns a **structured tool call**:
 
 ```json
 {
@@ -142,79 +133,79 @@ req := openai.ChatCompletionRequest{
 }
 ```
 
-**Как модель выбирает инструмент?**
+**How does the model choose the tool?**
 
-Модель видит **все три инструмента** и их `Description`:
+The model sees **all three tools** and their `Description`:
 - `check_status`: "Check the status... Use this when user asks about server status"
 - `read_logs`: "Read logs... Use this when user asks about logs"
 - `restart_service`: "Restart service... Use this when user explicitly asks to restart"
 
-Запрос пользователя: "Проверь статус сервера"
+User request: "Check server status"
 
-Модель сопоставляет запрос с описаниями:
-- ✅ `check_status` — описание содержит "server status" → **выбирает этот**
-- ❌ `read_logs` — описание про логи, не про статус
-- ❌ `restart_service` — описание про рестарт, не про проверку
+The model matches the request with descriptions:
+- ✅ `check_status` — description contains "server status" → **selects this**
+- ❌ `read_logs` — description is about logs, not status
+- ❌ `restart_service` — description is about restart, not checking
 
-**Пример с другим запросом:**
+**Example with a different request:**
 
 ```go
-userInput := "Покажи последние ошибки в логах nginx"
+userInput := "Show the latest errors in nginx logs"
 
-// Модель видит те же 3 инструмента
-// Сопоставляет:
-// - check_status: про статус, не про логи → не подходит
-// - read_logs: "Use this when user asks about logs" → ✅ ВЫБИРАЕТ ЭТОТ
-// - restart_service: про рестарт → не подходит
+// Model sees the same 3 tools
+// Matches:
+// - check_status: about status, not logs → doesn't fit
+// - read_logs: "Use this when user asks about logs" → ✅ SELECTS THIS
+// - restart_service: about restart → doesn't fit
 
-// Модель возвращает:
+// Model returns:
 // tool_calls: [{function: {name: "read_logs", arguments: "{\"service\": \"nginx\", \"lines\": 50}"}}]
 ```
 
-**Ключевой момент:** Модель выбирает инструмент на основе **семантического соответствия** между запросом пользователя и `Description` инструмента. Чем точнее `Description`, тем лучше выбор.
+**Key point:** The model selects a tool based on **semantic matching** between the user's request and the tool's `Description`. The more accurate the `Description`, the better the selection.
 
-**3. Что делает Runtime:**
+**3. What Runtime does:**
 
 ```go
 resp, _ := client.CreateChatCompletion(ctx, req)
 msg := resp.Choices[0].Message
 
-// Runtime проверяет: есть ли tool_calls?
+// Runtime checks: are there tool_calls?
 if len(msg.ToolCalls) > 0 {
-    // Парсим аргументы
+    // Parse arguments
     var args struct {
         Hostname string `json:"hostname"`
     }
     json.Unmarshal([]byte(msg.ToolCalls[0].Function.Arguments), &args)
     
-    // Выполняем реальную функцию
+    // Execute the real function
     result := checkStatus(args.Hostname)  // "Server is ONLINE"
     
-    // Возвращаем результат обратно в модель
+    // Return result back to the model
     messages = append(messages, openai.ChatCompletionMessage{
         Role:       "tool",
         Content:    result,
         ToolCallID: msg.ToolCalls[0].ID,
     })
     
-    // Отправляем обновленную историю в модель снова
-    // Модель видит результат и решает, что делать дальше
+    // Send updated history to the model again
+    // Model sees the result and decides what to do next
 }
 ```
 
-**Примечание о "вероятностях":**
+**Note about "probabilities":**
 
-Цифры типа "вероятность 0.85" — это **иллюстрация** для понимания. API OpenAI/локальных моделей обычно **не возвращает** эти вероятности напрямую (если не использовать `logprobs`). Важно понимать принцип: когда в контексте есть `tools` с хорошим `Description`, модель с высокой вероятностью выберет tool call вместо текста. Но это происходит **внутри модели**, мы видим только финальный выбор.
+Numbers like "probability 0.85" are **illustrations** for understanding. OpenAI/local model APIs usually **do not return** these probabilities directly (unless using `logprobs`). It's important to understand the principle: when there are `tools` with good `Description` in the context, the model will likely choose a tool call instead of text. But this happens **inside the model**, we only see the final choice.
 
-#### Пример 2: Support — Магия vs Реальность
+#### Example 2: Support — Magic vs Reality
 
-**❌ Магия:**
-> Промпт: `"Пользователь жалуется на ошибку 500"`  
-> Модель предсказывает: "Сначала соберу контекст через `get_ticket_details`" (вероятность 0.9)
+**❌ Magic:**
+> Prompt: `"User reports error 500"`  
+> Model predicts: "First I'll gather context via `get_ticket_details`" (probability 0.9)
 
-**✅ Реальность:**
+**✅ Reality:**
 
-**Что отправляется:**
+**What is sent:**
 
 ```go
 systemPrompt := `You are a Customer Support agent.
@@ -284,11 +275,11 @@ tools := []openai.Tool{
 
 messages := []openai.ChatCompletionMessage{
     {Role: "system", Content: systemPrompt},
-    {Role: "user", Content: "Пользователь жалуется на ошибку 500"},
+    {Role: "user", Content: "User reports error 500"},
 }
 ```
 
-**Что возвращает модель:**
+**What the model returns:**
 
 ```json
 {
@@ -305,56 +296,56 @@ messages := []openai.ChatCompletionMessage{
 }
 ```
 
-**Как модель выбрала именно `get_ticket_details`?**
+**How did the model choose `get_ticket_details`?**
 
-Модель видела **4 инструмента**:
+The model saw **4 tools**:
 - `get_ticket_details`: "Use this FIRST when user reports an error" ✅
 - `check_account_status`: "Use this when user asks about account status" ❌
-- `search_kb`: "Use this after gathering ticket details" ❌ (слишком рано)
-- `draft_reply`: "Use this when you have a solution" ❌ (еще нет решения)
+- `search_kb`: "Use this after gathering ticket details" ❌ (too early)
+- `draft_reply`: "Use this when you have a solution" ❌ (no solution yet)
 
-Запрос: "Пользователь жалуется на ошибку 500"
+Request: "User reports error 500"
 
-Модель сопоставила:
-- ✅ `get_ticket_details` — описание говорит "FIRST when user reports an error" → **выбирает этот**
-- Остальные не подходят по контексту
+The model matched:
+- ✅ `get_ticket_details` — description says "FIRST when user reports an error" → **selects this**
+- Others don't fit the context
 
-**Пример последовательного выбора инструментов:**
+**Example of sequential tool selection:**
 
 ```go
-// Итерация 1: Пользователь жалуется на ошибку
-userInput := "Пользователь жалуется на ошибку 500"
-// Модель выбирает: get_ticket_details (собирает контекст)
+// Iteration 1: User reports an error
+userInput := "User reports error 500"
+// Model selects: get_ticket_details (gathers context)
 
-// Итерация 2: После получения деталей тикета
-// Модель видит в контексте: "Error 500, user_id: 12345"
-// Модель выбирает: search_kb("error 500") (ищет решение)
+// Iteration 2: After receiving ticket details
+// Model sees in context: "Error 500, user_id: 12345"
+// Model selects: search_kb("error 500") (searches for solution)
 
-// Итерация 3: После поиска в KB
-// Модель видит решение в контексте
-// Модель выбирает: draft_reply(ticket_id, solution) (создает ответ)
+// Iteration 3: After searching KB
+// Model sees solution in context
+// Model selects: draft_reply(ticket_id, solution) (creates response)
 ```
 
-**Ключевой момент:** Модель выбирает инструменты последовательно, основываясь на:
-1. **Текущем запросе пользователя**
-2. **Результатах предыдущих инструментов** (в контексте)
-3. **Описаниях инструментов** (`Description`)
+**Key point:** The model selects tools sequentially, based on:
+1. **Current user request**
+2. **Results of previous tools** (in context)
+3. **Tool descriptions** (`Description`)
 
 **Runtime:**
-- Парсит `ticket_id` из JSON
-- Вызывает реальную функцию `getTicketDetails("TICKET-12345")`
-- Возвращает результат в модель как сообщение с ролью `tool`
-- Модель видит результат и продолжает работу
+- Parses `ticket_id` from JSON
+- Calls real function `getTicketDetails("TICKET-12345")`
+- Returns result to model as a message with role `tool`
+- Model sees result and continues work
 
-#### Пример 3: Data Analytics — Магия vs Реальность
+#### Example 3: Data Analytics — Magic vs Reality
 
-**❌ Магия:**
-> Промпт: `"Покажи продажи за последний месяц"`  
-> Модель предсказывает: "Сформулирую SQL-запрос через `sql_select`" (вероятность 0.95)
+**❌ Magic:**
+> Prompt: `"Show sales for the last month"`  
+> Model predicts: "I'll formulate SQL query via `sql_select`" (probability 0.95)
 
-**✅ Реальность:**
+**✅ Reality:**
 
-**Что отправляется:**
+**What is sent:**
 
 ```go
 systemPrompt := `You are a Data Analyst.
@@ -408,7 +399,7 @@ tools := []openai.Tool{
 }
 ```
 
-**Что возвращает модель:**
+**What the model returns:**
 
 ```json
 {
@@ -424,96 +415,96 @@ tools := []openai.Tool{
 }
 ```
 
-**Как модель выбрала `sql_select`?**
+**How did the model choose `sql_select`?**
 
-Модель видела **3 инструмента**:
-- `describe_table`: "Use this FIRST when user asks about data structure" ❌ (пользователь не спрашивает про структуру)
+The model saw **3 tools**:
+- `describe_table`: "Use this FIRST when user asks about data structure" ❌ (user is not asking about structure)
 - `sql_select`: "Use this when user asks for specific data or reports" ✅
-- `check_data_quality`: "Use this when user asks about data quality" ❌ (не про качество)
+- `check_data_quality`: "Use this when user asks about data quality" ❌ (not about quality)
 
-Запрос: "Покажи продажи за последний месяц"
+Request: "Show sales for the last month"
 
-Модель сопоставила:
-- ✅ `sql_select` — описание говорит "when user asks for specific data" → **выбирает этот**
-- Остальные не подходят
+The model matched:
+- ✅ `sql_select` — description says "when user asks for specific data" → **selects this**
+- Others don't fit
 
-**Пример с другим запросом:**
+**Example with a different request:**
 
 ```go
-userInput := "Какие поля есть в таблице sales?"
+userInput := "What fields are in the sales table?"
 
-// Модель видит те же 3 инструмента
-// Сопоставляет:
-// - describe_table: "Use this FIRST when user asks about data structure" → ✅ ВЫБИРАЕТ ЭТОТ
-// - sql_select: про выполнение запросов → не подходит
-// - check_data_quality: про качество данных → не подходит
+// Model sees the same 3 tools
+// Matches:
+// - describe_table: "Use this FIRST when user asks about data structure" → ✅ SELECTS THIS
+// - sql_select: about executing queries → doesn't fit
+// - check_data_quality: about data quality → doesn't fit
 
-// Модель возвращает:
+// Model returns:
 // tool_calls: [{function: {name: "describe_table", arguments: "{\"table_name\": \"sales\"}"}}]
 ```
 
-**Пример последовательного выбора:**
+**Example of sequential selection:**
 
 ```go
-// Итерация 1: Пользователь спрашивает про продажи
-userInput := "Почему упали продажи в регионе X?"
-// Модель выбирает: describe_table("sales") (сначала нужно понять структуру)
+// Iteration 1: User asks about sales
+userInput := "Why did sales drop in region X?"
+// Model selects: describe_table("sales") (need to understand structure first)
 
-// Итерация 2: После получения схемы таблицы
-// Модель видит в контексте: "columns: date, region, amount"
-// Модель выбирает: sql_select("SELECT region, SUM(amount) FROM sales WHERE region='X' GROUP BY date")
+// Iteration 2: After receiving table schema
+// Model sees in context: "columns: date, region, amount"
+// Model selects: sql_select("SELECT region, SUM(amount) FROM sales WHERE region='X' GROUP BY date")
 
-// Итерация 3: После получения данных
-// Модель анализирует результаты и может выбрать: check_data_quality("sales")
-// если нужно проверить качество данных перед выводом
+// Iteration 3: After receiving data
+// Model analyzes results and may select: check_data_quality("sales")
+// if data quality needs to be checked before output
 ```
 
-**Ключевой момент:** Модель выбирает инструменты на основе:
-1. **Семантического соответствия** запроса и `Description`
-2. **Последовательности** (сначала schema, потом query)
-3. **Контекста** предыдущих результатов
+**Key point:** The model selects tools based on:
+1. **Semantic matching** of request and `Description`
+2. **Sequence** (schema first, then query)
+3. **Context** of previous results
 
 **Runtime:**
-- Валидирует, что это SELECT (не DELETE/DROP!)
-- Выполняет SQL через безопасное соединение (read-only)
-- Возвращает результаты в модель
-- Модель форматирует результаты для пользователя
+- Validates that it's a SELECT (not DELETE/DROP!)
+- Executes SQL through a secure connection (read-only)
+- Returns results to model
+- Model formats results for user
 
-### Почему это важно для инженера?
+### Why Is This Important for Engineers?
 
-#### 1. Недетерминированность
+#### 1. Non-Determinism
 
-Запустив агента дважды с одним промптом, вы можете получить разные действия.
+Running the agent twice with the same prompt, you may get different actions.
 
-**Пример:**
+**Example:**
 ```
-Запрос 1: "Проверь сервер"
-Ответ 1: [Вызывает check_status]
+Request 1: "Check server"
+Response 1: [Calls check_status]
 
-Запрос 2: "Проверь сервер" (тот же промпт)
-Ответ 2: [Отвечает текстом "Сервер работает"]
+Request 2: "Check server" (same prompt)
+Response 2: [Responds with text "Server is working"]
 ```
 
-**Решение:** `Temperature = 0` (Greedy decoding) сжимает распределение, заставляя модель всегда выбирать наиболее вероятный путь.
+**Solution:** `Temperature = 0` (Greedy decoding) compresses the distribution, forcing the model to always choose the most probable path.
 
 ```go
 req := openai.ChatCompletionRequest{
-    Temperature: 0,  // Детерминированное поведение
+    Temperature: 0,  // Deterministic behavior
     // ...
 }
 ```
 
-#### 2. Галлюцинации
+#### 2. Hallucinations
 
-Модель стремится сгенерировать *правдоподобный*, а не *истинный* текст.
+The model strives to generate *plausible*, not *true* text.
 
-**DevOps пример:** Модель может написать "используй флаг `--force`" для команды, которая его не поддерживает.
+**DevOps example:** The model may write "use flag `--force`" for a command that doesn't support it.
 
-**Data пример:** Модель может сгенерировать SQL с несуществующим полем `user.email` вместо `users.email`.
+**Data example:** The model may generate SQL with a non-existent field `user.email` instead of `users.email`.
 
-**Support пример:** Модель может "выдумать" решение проблемы, которого нет в базе знаний.
+**Support example:** The model may "invent" a solution to a problem that doesn't exist in the knowledge base.
 
-**Решение:** **Grounding** (Заземление). Мы даем агенту доступ к реальным данным (Tools/RAG) и запрещаем выдумывать факты.
+**Solution:** **Grounding**. We give the agent access to real data (Tools/RAG) and forbid inventing facts.
 
 ```go
 systemPrompt := `You are a DevOps assistant.
@@ -521,178 +512,178 @@ CRITICAL: Never invent facts. Always use tools to get real data.
 If you don't know something, say "I don't know" or use a tool.`
 ```
 
-## Токены и контекстное окно
+## Tokens and Context Window
 
-### Что такое токен?
+### What Is a Token?
 
-**Токен** — это единица текста, которую обрабатывает модель.
-- Один токен ≈ 0.75 слова (в английском)
-- В русском: одно слово ≈ 1.5 токена
+**Token** is a unit of text that the model processes.
+- One token ≈ 0.75 words (in English)
+- In Russian: one word ≈ 1.5 tokens
 
-**Пример:**
+**Example:**
 ```
-Текст: "Проверь статус сервера"
-Токены: ["Проверь", " статус", " сервера"]  // ~3 токена
-```
-
-### Контекстное окно (Context Window)
-
-**Контекстное окно** — это "оперативная память" модели.
-
-**Примеры размеров контекстного окна (на момент написания):**
-- GPT-3.5: 4k токенов (~3000 слов)
-- GPT-4 Turbo: 128k токенов (~96000 слов)
-- Llama 3 70B: 8k токенов
-
-> **Примечание:** Конкретные модели и размеры контекста могут меняться со временем. Важно понимать принцип: чем больше контекстное окно, тем больше информации агент может "помнить" в рамках одного запроса.
-
-**Что это значит для агента?**
-
-Все, что агент "знает" о текущей задаче — это то, что влезает в контекстное окно (Prompt + History).
-
-**Пример расчета (приблизительно):**
-```
-Контекстное окно: 4k токенов
-System Prompt: 200 токенов
-История диалога: 3000 токенов
-Результаты инструментов: 500 токенов
-Осталось места: 300 токенов
+Text: "Check server status"
+Tokens: ["Check", " server", " status"]  // ~3 tokens
 ```
 
-> **Примечание:** Это приблизительная оценка. Точный подсчет токенов зависит от модели и используемой библиотеки (например, `tiktoken` для OpenAI моделей).
+### Context Window
 
-Если история переполняется, агент "забывает" начало разговора.
+**Context window** is the model's "working memory".
 
-**Модель Stateless:** Она не помнит ваш прошлый запрос, если вы не передали его снова в `messages`.
+**Examples of context window sizes (at time of writing):**
+- GPT-3.5: 4k tokens (~3000 words)
+- GPT-4 Turbo: 128k tokens (~96000 words)
+- Llama 3 70B: 8k tokens
+
+> **Note:** Specific models and context sizes may change over time. It's important to understand the principle: the larger the context window, the more information the agent can "remember" within a single request.
+
+**What does this mean for the agent?**
+
+Everything the agent "knows" about the current task is what fits in the context window (Prompt + History).
+
+**Example calculation (approximate):**
+```
+Context window: 4k tokens
+System Prompt: 200 tokens
+Conversation history: 3000 tokens
+Tool results: 500 tokens
+Remaining space: 300 tokens
+```
+
+> **Note:** This is an approximate estimate. Exact token counting depends on the model and library used (e.g., `tiktoken` for OpenAI models).
+
+If history overflows, the agent "forgets" the beginning of the conversation.
+
+**Model is Stateless:** It doesn't remember your previous request if you don't pass it again in `messages`.
 
 ```go
-// Каждый запрос должен включать всю историю
+// Each request must include the full history
 messages := []openai.ChatCompletionMessage{
     {Role: "system", Content: systemPrompt},
-    {Role: "user", Content: "Проверь сервер"},
-    {Role: "assistant", Content: "Проверяю..."},
+    {Role: "user", Content: "Check server"},
+    {Role: "assistant", Content: "Checking..."},
     {Role: "tool", Content: "Server is ONLINE"},
-    {Role: "user", Content: "А что с базой?"},  // Агент видит всю историю!
+    {Role: "user", Content: "What about the database?"},  // Agent sees full history!
 }
 ```
 
-## Температура (Temperature)
+## Temperature
 
-**Температура** — это параметр энтропии распределения вероятностей.
+**Temperature** is a parameter of probability distribution entropy.
 
 ```go
-Temperature = 0  // Детерминировано (для агентов!)
-Temperature = 0.7  // Баланс креативности и стабильности
-Temperature = 1.0+  // Креативно, но нестабильно
+Temperature = 0  // Deterministic (for agents!)
+Temperature = 0.7  // Balance of creativity and stability
+Temperature = 1.0+  // Creative, but unstable
 ```
 
-### Когда использовать какое значение?
+### When to Use Which Value?
 
-| Temperature | Использование | Пример |
-|-------------|---------------|--------|
-| 0.0 | Агенты, JSON-генерация, Tool Calling | DevOps-агент должен стабильно вызывать `restart_service`, а не "творить" |
-| 0.1-0.3 | Структурированные ответы | Support-агент генерирует шаблоны ответов |
-| 0.7-1.0 | Креативные задачи | Product-агент пишет маркетинговые тексты |
+| Temperature | Usage | Example |
+|-------------|-------|---------|
+| 0.0 | Agents, JSON generation, Tool Calling | DevOps agent should consistently call `restart_service`, not "create" |
+| 0.1-0.3 | Structured responses | Support agent generates response templates |
+| 0.7-1.0 | Creative tasks | Product agent writes marketing texts |
 
-**Практический пример:**
+**Practical example:**
 
 ```go
-// ПЛОХО: Для агента
+// BAD: For agent
 req := openai.ChatCompletionRequest{
-    Temperature: 0.9,  // Слишком случайно!
+    Temperature: 0.9,  // Too random!
     // ...
 }
 
-// ХОРОШО: Для агента
+// GOOD: For agent
 req := openai.ChatCompletionRequest{
-    Temperature: 0,  // Максимальная детерминированность
+    Temperature: 0,  // Maximum determinism
     // ...
 }
 ```
 
-## Выбор модели для локального запуска
+## Choosing a Model for Local Deployment
 
-Не все модели одинаково хороши для агентов.
+Not all models are equally good for agents.
 
-### Критерии выбора
+### Selection Criteria
 
-1. **Поддержка Function Calling:** Модель должна уметь генерировать структурированные вызовы инструментов.
-   - ✅ Хорошо: Модели с fine-tuning на function calling (например, `Hermes-2-Pro`, `Llama-3-Instruct`, `Mistral-7B-Instruct` на момент написания)
-   - ❌ Плохо: Базовые модели без fine-tuning на tools
+1. **Function Calling Support:** The model must be able to generate structured tool calls.
+   - ✅ Good: Models fine-tuned on function calling (e.g., `Hermes-2-Pro`, `Llama-3-Instruct`, `Mistral-7B-Instruct` at time of writing)
+   - ❌ Bad: Base models without fine-tuning on tools
    
-   > **Примечание:** Конкретные модели могут меняться. Важно проверить поддержку function calling через capability benchmark (см. [Приложение: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization)).
+   > **Note:** Specific models may change. It's important to verify function calling support through capability benchmark (see [Appendix: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization)).
 
-2. **Размер контекста:** Для сложных задач нужен большой контекст.
-   - Минимум: 4k токенов
-   - Рекомендуется: 8k+
+2. **Context Size:** Complex tasks require large context.
+   - Minimum: 4k tokens
+   - Recommended: 8k+
 
-3. **Качество следования инструкциям:** Модель должна строго следовать System Prompt.
-   - Проверяется через capability benchmark (см. [Приложение: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization))
+3. **Instruction Following Quality:** The model must strictly follow System Prompt.
+   - Verified through capability benchmark (see [Appendix: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization))
 
-### Как проверить модель?
+### How to Test a Model?
 
-**Теория:** См. [Приложение: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization) — подробное описание того, что проверяем и почему это важно.
+**Theory:** See [Appendix: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization) — detailed description of what we test and why it's important.
 
-**Практика:** См. [Lab 00: Model Capability Benchmark](../../labs/lab00-capability-check/README.md) — готовый инструмент для проверки модели.
+**Practice:** See [Lab 00: Model Capability Benchmark](../../labs/lab00-capability-check/README.md) — ready tool for testing the model.
 
-## Типовые ошибки
+## Common Mistakes
 
-### Ошибка 1: Модель недетерминированна
+### Mistake 1: Model is Non-Deterministic
 
-**Симптом:** Один и тот же промпт дает разные результаты. Агент иногда вызывает инструмент, иногда отвечает текстом.
+**Symptom:** The same prompt gives different results. Agent sometimes calls a tool, sometimes responds with text.
 
-**Причина:** `Temperature > 0` делает модель случайной. Она выбирает не самый вероятный токен, а случайный из распределения.
+**Cause:** `Temperature > 0` makes the model random. It chooses not the most probable token, but a random one from the distribution.
 
-**Решение:**
+**Solution:**
 ```go
-// ПЛОХО
+// BAD
 req := openai.ChatCompletionRequest{
-    Temperature: 0.7,  // Случайное поведение!
+    Temperature: 0.7,  // Random behavior!
     // ...
 }
 
-// ХОРОШО
+// GOOD
 req := openai.ChatCompletionRequest{
-    Temperature: 0,  // Всегда используйте для агентов
+    Temperature: 0,  // Always use for agents
     // ...
 }
 ```
 
-### Ошибка 2: Контекст переполняется
+### Mistake 2: Context Overflow
 
-**Симптом:** Агент "забывает" начало разговора. После N сообщений перестает помнить, что обсуждалось в начале.
+**Symptom:** Agent "forgets" the beginning of the conversation. After N messages, stops remembering what was discussed at the start.
 
-**Причина:** История диалога превышает размер контекстного окна модели. Старые сообщения "выталкиваются" из контекста.
+**Cause:** Conversation history exceeds the model's context window size. Old messages are "pushed out" of context.
 
-**Решение:**
+**Solution:**
 
-Есть два подхода:
+There are two approaches:
 
-**Вариант 1: Обрезка истории (простое, но теряем информацию)**
+**Option 1: History Trimming (simple, but we lose information)**
 ```go
-// ПЛОХО: Теряем важную информацию из начала разговора!
+// BAD: We lose important information from the start of conversation!
 if len(messages) > maxHistoryLength {
     messages = append(
         []openai.ChatCompletionMessage{messages[0]},  // System
-        messages[len(messages)-maxHistoryLength+1:]...,  // Последние
+        messages[len(messages)-maxHistoryLength+1:]...,  // Last ones
     )
 }
 ```
 
-**Вариант 2: Сжатие контекста через саммаризацию (лучшее решение)**
+**Option 2: Context Compression via Summarization (better solution)**
 
-Вместо обрезки лучше **сжать** старые сообщения через LLM, сохранив важную информацию:
+Instead of trimming, it's better to **compress** old messages via LLM, preserving important information:
 
 ```go
-// 1. Разделяем на "старые" и "новые" сообщения
+// 1. Split into "old" and "new" messages
 systemMsg := messages[0]
-oldMessages := messages[1 : len(messages)-10]  // Все кроме последних 10
-recentMessages := messages[len(messages)-10:]  // Последние 10
+oldMessages := messages[1 : len(messages)-10]  // All except last 10
+recentMessages := messages[len(messages)-10:]  // Last 10
 
-// 2. Сжимаем старые сообщения через LLM
+// 2. Compress old messages via LLM
 summary := summarizeMessages(ctx, client, oldMessages)
 
-// 3. Собираем новый контекст: System + Summary + Recent
+// 3. Assemble new context: System + Summary + Recent
 compressed := []openai.ChatCompletionMessage{
     systemMsg,
     {
@@ -703,138 +694,137 @@ compressed := []openai.ChatCompletionMessage{
 compressed = append(compressed, recentMessages...)
 ```
 
-**Почему саммаризация лучше обрезки?**
+**Why is summarization better than trimming?**
 
-- ✅ **Сохраняет важную информацию:** Имя пользователя, контекст задачи, принятые решения
-- ✅ **Экономит токены:** Сжимает 2000 токенов до 200, сохраняя суть
-- ✅ **Агент помнит начало:** Может отвечать на вопросы о ранних сообщениях
+- ✅ **Preserves important information:** User name, task context, decisions made
+- ✅ **Saves tokens:** Compresses 2000 tokens to 200, preserving essence
+- ✅ **Agent remembers start:** Can answer questions about early messages
 
-**Пример:**
+**Example:**
 ```
-Исходная история (2000 токенов):
-- User: "Меня зовут Иван, я DevOps инженер"
-- Assistant: "Привет, Иван!"
-- User: "У нас проблема с сервером"
-- Assistant: "Опишите проблему"
-... (еще 50 сообщений)
+Original history (2000 tokens):
+- User: "My name is Ivan, I'm a DevOps engineer"
+- Assistant: "Hello, Ivan!"
+- User: "We have a server problem"
+- Assistant: "Describe the problem"
+... (50 more messages)
 
-После обрезки: Теряем имя и контекст ❌
-После саммаризации: "Пользователь Иван, DevOps инженер. Обсуждали проблему с сервером. Текущая задача: диагностика." ✅
+After trimming: We lose name and context ❌
+After summarization: "User Ivan, DevOps engineer. Discussed server problem. Current task: diagnostics." ✅
 ```
 
-**Когда использовать:**
-- **Обрезка:** Быстрые одноразовые задачи, неважна история
-- **Саммаризация:** Долгие сессии, важна контекстная информация, автономные агенты
+**When to use:**
+- **Trimming:** Quick one-time tasks, history not important
+- **Summarization:** Long sessions, contextual information important, autonomous agents
 
-См. подробнее: раздел "Оптимизация контекста" в [Главе 09: Анатомия Агента](../09-agent-architecture/README.md#оптимизация-контекста-context-optimization) и [Lab 09: Context Optimization](../../labs/lab09-context-optimization/README.md)
+See more: section "Context Optimization" in [Chapter 09: Agent Anatomy](../09-agent-architecture/README.md#context-optimization) and [Lab 09: Context Optimization](../../labs/lab09-context-optimization/README.md)
 
-### Ошибка 3: Галлюцинации
+### Mistake 3: Hallucinations
 
-**Симптом:** Модель выдумывает факты. Например, говорит "используй флаг `--force`" для команды, которая его не поддерживает.
+**Symptom:** Model invents facts. For example, says "use flag `--force`" for a command that doesn't support it.
 
-**Причина:** Модель стремится сгенерировать *правдоподобный* текст, а не *истинный*. Она не знает реальных фактов о вашей системе.
+**Cause:** Model strives to generate *plausible* text, not *true*. It doesn't know real facts about your system.
 
-**Решение:**
+**Solution:**
 ```go
-// ХОРОШО: Запрещаем выдумывать факты
+// GOOD: Forbid inventing facts
 systemPrompt := `You are a DevOps assistant.
 CRITICAL: Never invent facts. Always use tools to get real data.
 If you don't know something, say "I don't know" or use a tool.`
 
-// Также используйте:
-// 1. Tools для получения реальных данных
-// 2. RAG для доступа к документации
+// Also use:
+// 1. Tools to get real data
+// 2. RAG for access to documentation
 ```
 
-## Критерии сдачи / Чек-лист
+## Completion Criteria / Checklist
 
-✅ **Сдано:**
-- Понимаете, что LLM предсказывает токены, а не "думает"
-- Знаете, как настроить `Temperature = 0` для детерминированного поведения
-- Понимаете ограничения контекстного окна
-- Знаете, как управлять историей диалога (саммаризация или обрезка)
-- Модель поддерживает Function Calling (проверено через Lab 00)
-- System Prompt запрещает галлюцинации
+✅ **Completed:**
+- Understand that LLM predicts tokens, not "thinks"
+- Know how to set `Temperature = 0` for deterministic behavior
+- Understand context window limitations
+- Know how to manage conversation history (summarization or trimming)
+- Model supports Function Calling (verified via Lab 00)
+- System Prompt forbids hallucinations
 
-❌ **Не сдано:**
-- Модель ведет себя недетерминированно (`Temperature > 0`)
-- Агент "забывает" начало разговора (контекст переполняется)
-- Модель выдумывает факты (нет grounding через Tools/RAG)
+❌ **Not completed:**
+- Model behaves non-deterministically (`Temperature > 0`)
+- Agent "forgets" conversation start (context overflow)
+- Model invents facts (no grounding via Tools/RAG)
 
-## Мини-упражнения
+## Mini-Exercises
 
-### Упражнение 1: Подсчет токенов
+### Exercise 1: Token Counting
 
-Напишите функцию, которая приблизительно подсчитывает количество токенов в тексте:
+Write a function that approximately counts the number of tokens in text:
 
 ```go
 func estimateTokens(text string) int {
-    // Примерная оценка: 1 токен ≈ 4 символа (для английского)
-    // Для русского: 1 токен ≈ 3 символа
+    // Approximate estimate: 1 token ≈ 4 characters (for English)
+    // For Russian: 1 token ≈ 3 characters
     return len(text) / 4
 }
 ```
 
-**Ожидаемый результат:**
-- Функция возвращает приблизительное количество токенов
-- Учитывает разницу между английским и русским текстом
+**Expected result:**
+- Function returns approximate number of tokens
+- Accounts for difference between English and Russian text
 
-### Упражнение 2: Обрезка истории
+### Exercise 2: History Trimming
 
-Реализуйте функцию обрезки истории сообщений:
+Implement a function to trim message history:
 
 ```go
 func trimHistory(messages []ChatCompletionMessage, maxTokens int) []ChatCompletionMessage {
-    // Оставляем System Prompt + последние сообщения, которые влезают в maxTokens
+    // Keep System Prompt + last messages that fit in maxTokens
     // ...
 }
 ```
 
-**Ожидаемый результат:**
-- System Prompt всегда остается первым
-- Последние сообщения добавляются, пока не превысят maxTokens
-- Функция возвращает обрезанную историю
+**Expected result:**
+- System Prompt always remains first
+- Last messages are added until they exceed maxTokens
+- Function returns trimmed history
 
-## Для любопытных
+## For the Curious
 
-> Этот раздел объясняет формализацию работы LLM на более глубоком уровне. Можно пропустить, если вас интересует только практика.
+> This section explains the formalization of LLM operation at a deeper level. Can be skipped if you're only interested in practice.
 
-### Формальное определение LLM
+### Formal Definition of LLM
 
-LLM — это функция `NextToken(Context) -> Distribution`:
+LLM is a function `NextToken(Context) -> Distribution`:
 
 $$P(x_{t+1} | x_1, ..., x_t)$$
 
-Где:
-- $x_1, ..., x_t$ — последовательность токенов (контекст)
-- $P(x_{t+1})$ — распределение вероятностей для следующего токена
-- Модель выбирает токен на основе этого распределения
+Where:
+- $x_1, ..., x_t$ — sequence of tokens (context)
+- $P(x_{t+1})$ — probability distribution for the next token
+- Model selects token based on this distribution
 
-**Temperature** изменяет энтропию распределения:
-- `Temperature = 0`: выбирается наиболее вероятный токен (greedy decoding)
-- `Temperature > 0`: выбирается случайный токен из распределения (sampling)
+**Temperature** changes the entropy of the distribution:
+- `Temperature = 0`: most probable token is selected (greedy decoding)
+- `Temperature > 0`: random token is selected from distribution (sampling)
 
-### Почему модель "выбирает" инструмент?
+### Why Does the Model "Choose" a Tool?
 
-Когда модель видит в контексте:
+When the model sees in context:
 - System Prompt: "Use tools when needed"
 - Tools Schema: `[{name: "check_status", description: "..."}]`
-- User Input: "Проверь статус сервера"
+- User Input: "Check server status"
 
-Модель генерирует последовательность токенов, которая соответствует формату tool call. Это не "магия" — это результат обучения на примерах вызовов функций.
+The model generates a sequence of tokens that matches the tool call format. This is not "magic" — it's the result of training on function call examples.
 
-## Связь с другими главами
+## Connection to Other Chapters
 
-- **Function Calling:** Подробнее о том, как модель генерирует tool calls, см. [Главу 03: Инструменты](../03-tools-and-function-calling/README.md)
-- **Контекстное окно:** Как управлять историей сообщений, см. [Главу 09: Анатомия Агента](../09-agent-architecture/README.md#оптимизация-контекста-context-optimization)
-- **Temperature:** Почему для агентов используется `Temperature = 0`, см. [Главу 03: Инструменты](../03-tools-and-function-calling/README.md)
+- **Function Calling:** More about how the model generates tool calls, see [Chapter 03: Tools](../03-tools-and-function-calling/README.md)
+- **Context Window:** How to manage message history, see [Chapter 09: Agent Anatomy](../09-agent-architecture/README.md#context-optimization)
+- **Temperature:** Why `Temperature = 0` is used for agents, see [Chapter 03: Tools](../03-tools-and-function-calling/README.md)
 
-## Что дальше?
+## What's Next?
 
-После изучения физики LLM переходите к:
-- **[02. Промптинг как Программирование](../02-prompt-engineering/README.md)** — как управлять поведением модели через промпты
+After studying LLM physics, proceed to:
+- **[02. Prompting as Programming](../02-prompt-engineering/README.md)** — how to control model behavior through prompts
 
 ---
 
-**Навигация:** [← Предисловие](../00-preface/README.md) | [Оглавление](../README.md) | [Промптинг →](../02-prompt-engineering/README.md)
-
+**Navigation:** [← Preface](../00-preface/README.md) | [Table of Contents](../README.md) | [Prompting →](../02-prompt-engineering/README.md)

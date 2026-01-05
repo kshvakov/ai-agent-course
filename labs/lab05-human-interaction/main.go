@@ -92,7 +92,7 @@ func main() {
 		// 4. Agent Execution Loop
 		for {
 			req := openai.ChatCompletionRequest{
-				Model:    openai.GPT4, // Локальные сервера обычно игнорируют это, но для OpenAI лучше оставить GPT-4 для безопасности
+				Model:    openai.GPT4, // Local servers usually ignore this, but for OpenAI it's better to keep GPT-4 for safety
 				Messages: messages,
 				Tools:    tools,
 			}

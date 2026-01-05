@@ -10,12 +10,12 @@ import (
 )
 
 func main() {
-	// 1. Настройка клиента (OpenAI или Local LLM)
+	// 1. Client setup (OpenAI or Local LLM)
 	token := os.Getenv("OPENAI_API_KEY")
 	baseURL := os.Getenv("OPENAI_BASE_URL")
 
 	if token == "" {
-		token = "dummy-token" // Для локальных моделей токен часто не важен
+		token = "dummy-token" // For local models, token is often not important
 		fmt.Println("Warning: OPENAI_API_KEY is not set. Using dummy token.")
 	}
 
@@ -28,7 +28,7 @@ func main() {
 	// client := openai.NewClientWithConfig(config)
 	// _ = client // TODO: remove this
 
-	// 2. Инициализируйте историю сообщений
+	// 2. Initialize message history
 	// messages := ...
 
 	reader := bufio.NewReader(os.Stdin)
@@ -51,7 +51,7 @@ func main() {
 
 		// 4. Call API
 		// req := openai.ChatCompletionRequest{
-		//     // Для локальных моделей имя модели часто игнорируется, но лучше указать что-то
+		//     // For local models, model name is often ignored, but it's better to specify something
 		//     Model: openai.GPT3Dot5Turbo,
 		//     Messages: messages,
 		// }

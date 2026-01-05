@@ -5,32 +5,32 @@ import (
 	"fmt"
 )
 
-// 1. Интерфейс Инструмента
+// 1. Tool Interface
 type Tool interface {
 	Name() string
 	Description() string
-	// Execute принимает JSON аргументы и возвращает строку-результат
+	// Execute takes JSON arguments and returns a result string
 	Execute(args json.RawMessage) (string, error)
 }
 
-// 2. Реализация Proxmox Tool
+// 2. Proxmox Tool Implementation
 type ProxmoxListVMsTool struct{}
 
 func (t *ProxmoxListVMsTool) Name() string        { return "list_vms" }
 func (t *ProxmoxListVMsTool) Description() string { return "List all VMs" }
 func (t *ProxmoxListVMsTool) Execute(args json.RawMessage) (string, error) {
-	// TODO: Здесь должен быть реальный вызов API Proxmox
+	// TODO: Here should be a real Proxmox API call
 	// client.GetNodes()...
 	return "VM-100 (Running), VM-101 (Stopped)", nil
 }
 
-// 3. Реализация Ansible Tool
+// 3. Ansible Tool Implementation
 type AnsibleRunPlaybookTool struct{}
 
 func (t *AnsibleRunPlaybookTool) Name() string        { return "run_playbook" }
 func (t *AnsibleRunPlaybookTool) Description() string { return "Run ansible playbook" }
 func (t *AnsibleRunPlaybookTool) Execute(args json.RawMessage) (string, error) {
-	// TODO: Парсинг аргументов
+	// TODO: Parse arguments
 	// var params struct { Playbook string }
 	// json.Unmarshal(args, &params)
 	
@@ -39,7 +39,7 @@ func (t *AnsibleRunPlaybookTool) Execute(args json.RawMessage) (string, error) {
 }
 
 func main() {
-	// 4. Реестр инструментов (Map)
+	// 4. Tool Registry (Map)
 	registry := make(map[string]Tool)
 	
 	pTool := &ProxmoxListVMsTool{}
@@ -50,7 +50,7 @@ func main() {
 
 	fmt.Println("Available tools:", len(registry))
 
-	// 5. Эмуляция вызова (как будто от LLM)
+	// 5. Call emulation (as if from LLM)
 	toolName := "list_vms"
 	toolArgs := json.RawMessage("{}")
 

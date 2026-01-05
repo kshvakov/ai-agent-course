@@ -7,7 +7,7 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// Наша "реальная" функция
+// Our "real" function
 func runGetServerStatus(ip string) string {
 	// Mock implementation
 	if ip == "192.168.1.10" {
@@ -17,7 +17,7 @@ func runGetServerStatus(ip string) string {
 }
 
 func main() {
-	// 1. Настройка клиента
+	// 1. Client setup
 	token := os.Getenv("OPENAI_API_KEY")
 	baseURL := os.Getenv("OPENAI_BASE_URL")
 	if token == "" {
@@ -29,12 +29,12 @@ func main() {
 	}
 	client := openai.NewClientWithConfig(config)
 
-	// 2. Опишите инструмент
+	// 2. Describe the tool
 	// tools := []openai.Tool{ ... }
 
-	// 3. Сформируйте запрос
+	// 3. Form the request
 	// req := openai.ChatCompletionRequest{
-	//     Model: openai.GPT3Dot5Turbo, // Или имя вашей локальной модели
+	//     Model: openai.GPT3Dot5Turbo, // Or your local model name
 	//     Messages: []openai.ChatCompletionMessage{
 	//         {Role: openai.ChatMessageRoleUser, Content: "Is server 192.168.1.10 online?"},
 	//     },
@@ -46,7 +46,7 @@ func main() {
 	_ = client
 	_ = runGetServerStatus
 
-	// 4. Выполните запрос и проверьте ToolCalls
+	// 4. Execute request and check ToolCalls
 	// resp, _ := client.CreateChatCompletion(ctx, req)
 	// if len(resp.Choices[0].Message.ToolCalls) > 0 { ... }
 }
