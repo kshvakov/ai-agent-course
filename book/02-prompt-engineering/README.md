@@ -23,8 +23,7 @@ This chapter will teach you to create effective prompts that control agent behav
 ## TL;DR: What to Remember
 
 - **System Prompt** — this is the agent behavior specification. Consists of: Role, Goal, Constraints, Format, SOP.
-- **Instruction vs Demonstration**: instruction is compact, demonstration is more accurate for complex formats. In practice — combination.
-- **Zero-shot vs Few-shot**: zero-shot — only instruction, few-shot — instruction + examples. Few-shot is needed for complex response formats.
+- **In-Context Learning (ICL)**: Zero-shot (instruction-only) — compact, flexible, but model may misinterpret format. Few-shot (demonstration) — instruction + examples, more accurate for complex formats. In practice — combination.
 - **CoT (Chain-of-Thought)**: forces the model to think step by step. Critical for agents.
 - **SOP**: action algorithm encoded in the prompt. Sets the process, CoT helps follow it.
 - **Task Decomposition**: complex tasks are broken down into subtasks.
@@ -136,52 +135,9 @@ SOP for analysis:
 6. Generate report
 ```
 
-## Instruction vs Demonstration: How to Control Behavior
+## In-Context Learning (ICL): Zero-shot and Few-shot
 
 After we've defined the System Prompt structure, the question arises: **how to best convey the desired behavior to the model?**
-
-There are two approaches:
-
-### 1. Instruction (Instruction-only)
-
-We **describe** to the model what to do:
-
-```text
-You are a DevOps engineer. When the user asks to check logs, use the read_logs tool.
-```
-
-**Pros:** compact, flexible  
-**Cons:** model may misinterpret the format
-
-### 2. Demonstration (Demonstration / Few-shot)
-
-We **show** the model examples of desired behavior:
-
-```text
-Example 1:
-User: "Check nginx logs"
-Assistant: {"tool": "read_logs", "args": {"service": "nginx"}}
-
-Example 2:
-User: "Restart server"
-Assistant: {"tool": "restart", "args": {"name": "web-01"}}
-```
-
-**Pros:** model accurately copies the format  
-**Cons:** takes more tokens
-
-### Which Approach to Choose?
-
-| Situation | Approach | Why |
-|-----------|---------|-----|
-| Simple tasks, model understands instructions well | **Instruction** | Token savings, flexibility |
-| Complex response format (JSON, structured data) | **Demonstration** | Model better copies format from examples |
-| High accuracy in following format needed | **Demonstration** | Examples set a clear pattern |
-| Limited context | **Instruction** | More compact |
-
-**Default rule:** Use a **combination** — instruction + 1-2 examples for complex formats or edge cases.
-
-## In-Context Learning (ICL): Zero-shot and Few-shot
 
 **In-Context Learning (ICL)** — is the model's ability to adapt behavior based on examples *within the prompt*, without changing model weights.
 
@@ -229,12 +185,21 @@ Assistant: {"tool": "check_status", "args": {"hostname": "web-01"}}
 - High accuracy in following format needed
 - Model may misinterpret instruction
 
+### Terminology: Instruction vs Demonstration
+
+The terms **Instruction-only** and **Demonstration** (or **Few-shot**) are alternative ways to describe the same ICL modes:
+
+- **Instruction-only** = **Zero-shot**: We **describe** to the model what to do (compact, flexible, but model may misinterpret format)
+- **Demonstration/Few-shot** = **Few-shot**: We **show** the model examples of desired behavior (model accurately copies format, but takes more tokens)
+
+**Default rule:** Use a **combination** — instruction + 1-2 examples for complex formats or edge cases.
+
 ### ICL Mode Selection Table
 
 | Mode | What we pass to model | When to use | Example |
 |------|---------------------|-------------|---------|
-| **Zero-shot** | Only instruction | Simple tasks, token savings | "You are a DevOps engineer. Check logs via read_logs." |
-| **Few-shot** | Instruction + examples | Complex format, accuracy needed | Instruction + 2-3 response format examples |
+| **Zero-shot** (Instruction-only) | Only instruction | Simple tasks, model understands instructions well, limited context, token savings | "You are a DevOps engineer. Check logs via read_logs." |
+| **Few-shot** (Demonstration) | Instruction + examples | Complex response format (JSON, structured data), high accuracy in following format needed | Instruction + 2-3 response format examples |
 
 ### Practical Example: Few-Shot for Support
 
