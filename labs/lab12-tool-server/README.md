@@ -1,7 +1,7 @@
 # Lab 12: Tool Server Protocol
 
 ## Goal
-Learn to implement tool servers: stdio/HTTP protocols, schema versioning, and tool server architecture.
+Learn to implement tool servers: stdio/HTTP protocols, schema versioning, and tool server architecture. In production, gRPC is also commonly used due to its strict contract and built-in security and observability mechanisms.
 
 ## Theory
 
@@ -9,7 +9,7 @@ Learn to implement tool servers: stdio/HTTP protocols, schema versioning, and to
 
 As agents grow, tools become services:
 - **Separate processes** — Tools run independently
-- **Protocol communication** — stdio or HTTP
+- **Protocol communication** — stdio, HTTP, or gRPC (in production)
 - **Schema versioning** — Handling tool updates
 - **Isolation** — Tools isolated for security
 

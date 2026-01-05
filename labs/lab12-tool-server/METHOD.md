@@ -2,7 +2,7 @@
 
 ## Why Is This Needed?
 
-In this lab you'll implement a tool server — architecture where tools run in separate processes and communicate with agent via protocols (stdio or HTTP).
+In this lab you'll implement a tool server — architecture where tools run in separate processes and communicate with agent via protocols (stdio or HTTP). In production, gRPC is also commonly used due to its strict contract via Protobuf and built-in security and observability mechanisms.
 
 ### Real-World Case Study
 
@@ -56,6 +56,14 @@ Tools in separate process, can be in different languages.
 - Better for distributed systems
 - Can be called from anywhere
 - Example: `POST http://localhost:8080/execute`
+
+**gRPC Protocol (production):**
+- Strict contract via Protocol Buffers (Protobuf)
+- Type safety and automatic client/server generation
+- Built-in mechanisms: TLS/mTLS, authentication via metadata, deadlines, retries
+- Rich Go ecosystem: interceptors, health checks, reflection
+- Integration with observability (tracing, metrics, logging)
+- Practical choice for production tool servers, especially in Go ecosystem
 
 ### Schema Versioning
 

@@ -4,7 +4,7 @@
 
 As agents grow, tools become complex services. Instead of embedding tool code directly, you can run tools as separate processes or services. This requires protocols for communication, versioning, and security.
 
-This chapter covers tool server patterns: stdio protocols, HTTP API, schema versioning, and authentication/authorization.
+This chapter covers tool server patterns: stdio protocols, HTTP API, gRPC, schema versioning, and authentication/authorization.
 
 ### Real-World Case Study
 
@@ -16,7 +16,7 @@ This chapter covers tool server patterns: stdio protocols, HTTP API, schema vers
 - No isolation between tools
 - Hard to scale individual tools
 
-**Solution:** Tool servers: Each tool runs as a separate process/service. Agent communicates through a standard protocol (stdio or HTTP). Tools can be updated independently, scaled separately, and isolated for security.
+**Solution:** Tool servers: Each tool runs as a separate process/service. Agent communicates through a standard protocol (stdio, HTTP, or gRPC). Tools can be updated independently, scaled separately, and isolated for security.
 
 ## Theory in Simple Terms
 
@@ -48,6 +48,15 @@ This chapter covers tool server patterns: stdio protocols, HTTP API, schema vers
 - Tool runs as HTTP service
 - REST API interface
 - Good for distributed systems
+
+**3. gRPC Protocol:**
+- Tool runs as gRPC service
+- Strict contract via Protobuf (IDL)
+- Type safety and backward compatibility of schemas
+- Rich Go ecosystem: client/server code generation, interceptors, reflection
+- Built-in mechanisms: TLS/mTLS, authentication via metadata, deadlines, retries, load balancing
+- Observability: integration with tracing/metrics/logging
+- Practical choice for production tool servers
 
 ## How It Works (Step by Step)
 
@@ -153,7 +162,56 @@ func (s *HTTPToolServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-### Step 5: Schema Versioning
+### Step 5: gRPC Protocol
+
+gRPC provides a strict contract via Protocol Buffers. Service definition:
+
+```protobuf
+syntax = "proto3";
+
+package tools.v1;
+
+service ToolServer {
+  rpc ListTools(ListToolsRequest) returns (ListToolsResponse);
+  rpc ExecuteTool(ExecuteToolRequest) returns (ExecuteToolResponse);
+}
+
+message ListToolsRequest {
+  string version = 1; // Protocol version
+}
+
+message ListToolsResponse {
+  repeated ToolDefinition tools = 1;
+}
+
+message ExecuteToolRequest {
+  string tool_name = 1;
+  string version = 2;
+  bytes arguments = 3; // JSON-serialized arguments
+}
+
+message ExecuteToolResponse {
+  bytes result = 1;
+  string error = 2;
+}
+
+message ToolDefinition {
+  string name = 1;
+  string description = 2;
+  string schema = 3; // JSON Schema
+  string version = 4;
+  repeated string compatible_versions = 5;
+}
+```
+
+**Advantages of gRPC for tool servers:**
+- **Strict contract**: Protobuf guarantees type safety and schema evolution without breaking changes
+- **Go ecosystem**: Automatic client/server generation, interceptors for authn/authz, health checks
+- **Security**: Built-in TLS/mTLS support, authentication via metadata (tokens, API keys)
+- **Reliability**: Deadlines, retries, load balancing at client level or via service mesh
+- **Observability**: Integration with OpenTelemetry, gRPC metrics, structured logging
+
+### Step 6: Schema Versioning
 
 ```go
 type ToolDefinition struct {
@@ -222,6 +280,7 @@ func main() {
 - Understand tool server architecture
 - Can implement stdio protocol
 - Can implement HTTP protocol
+- Understand advantages of gRPC for production tool servers
 - Understand schema versioning
 
 ❌ **Not completed:**

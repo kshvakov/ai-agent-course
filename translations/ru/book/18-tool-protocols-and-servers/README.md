@@ -4,7 +4,7 @@
 
 По мере роста агентов инструменты становятся сложными сервисами. Вместо встраивания кода инструментов напрямую, можно запускать инструменты как отдельные процессы или сервисы. Это требует протоколов для коммуникации, версионирования и безопасности.
 
-Эта глава покрывает паттерны tool servers: stdio протоколы, HTTP API, версионирование схем и аутентификацию/авторизацию.
+Эта глава покрывает паттерны tool servers: stdio протоколы, HTTP API, gRPC, версионирование схем и аутентификацию/авторизацию.
 
 ### Реальный кейс
 
@@ -16,7 +16,7 @@
 - Нет изоляции между инструментами
 - Сложно масштабировать отдельные инструменты
 
-**Решение:** Tool servers: Каждый инструмент запускается как отдельный процесс/сервис. Агент общается через стандартный протокол (stdio или HTTP). Инструменты могут обновляться независимо, масштабироваться отдельно и изолироваться для безопасности.
+**Решение:** Tool servers: Каждый инструмент запускается как отдельный процесс/сервис. Агент общается через стандартный протокол (stdio, HTTP или gRPC). Инструменты могут обновляться независимо, масштабироваться отдельно и изолироваться для безопасности.
 
 ## Теория простыми словами
 
@@ -48,6 +48,15 @@
 - Инструмент запускается как HTTP сервис
 - REST API интерфейс
 - Хорошо для распределённых систем
+
+**3. gRPC Протокол:**
+- Инструмент запускается как gRPC сервис
+- Строгий контракт через Protobuf (IDL)
+- Типобезопасность и обратная совместимость схем
+- Богатая экосистема в Go: кодогенерация клиентов/серверов, интерсепторы, reflection
+- Встроенные механизмы: TLS/mTLS, аутентификация через metadata, дедлайны, ретраи, балансировка
+- Наблюдаемость: интеграция с tracing/metrics/logging
+- Практичный выбор для production tool servers
 
 ## Как это работает (пошагово)
 
@@ -153,7 +162,56 @@ func (s *HTTPToolServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-### Шаг 5: Версионирование схем
+### Шаг 5: gRPC Протокол
+
+gRPC предоставляет строгий контракт через Protocol Buffers. Определение сервиса:
+
+```protobuf
+syntax = "proto3";
+
+package tools.v1;
+
+service ToolServer {
+  rpc ListTools(ListToolsRequest) returns (ListToolsResponse);
+  rpc ExecuteTool(ExecuteToolRequest) returns (ExecuteToolResponse);
+}
+
+message ListToolsRequest {
+  string version = 1; // Версия протокола
+}
+
+message ListToolsResponse {
+  repeated ToolDefinition tools = 1;
+}
+
+message ExecuteToolRequest {
+  string tool_name = 1;
+  string version = 2;
+  bytes arguments = 3; // JSON-сериализованные аргументы
+}
+
+message ExecuteToolResponse {
+  bytes result = 1;
+  string error = 2;
+}
+
+message ToolDefinition {
+  string name = 1;
+  string description = 2;
+  string schema = 3; // JSON Schema
+  string version = 4;
+  repeated string compatible_versions = 5;
+}
+```
+
+**Преимущества gRPC для tool servers:**
+- **Строгий контракт**: Protobuf гарантирует типобезопасность и эволюцию схем без breaking changes
+- **Экосистема Go**: Автоматическая генерация клиентов/серверов, интерсепторы для authn/authz, health checks
+- **Безопасность**: Встроенная поддержка TLS/mTLS, аутентификация через metadata (токены, API ключи)
+- **Надёжность**: Дедлайны, ретраи, балансировка на уровне клиента или через service mesh
+- **Наблюдаемость**: Интеграция с OpenTelemetry, метрики gRPC, structured logging
+
+### Шаг 6: Версионирование схем
 
 ```go
 type ToolDefinition struct {
@@ -222,6 +280,7 @@ func main() {
 - Понимаете архитектуру tool server
 - Можете реализовать stdio протокол
 - Можете реализовать HTTP протокол
+- Понимаете преимущества gRPC для production tool servers
 - Понимаете версионирование схем
 
 ❌ **Не сдано:**
