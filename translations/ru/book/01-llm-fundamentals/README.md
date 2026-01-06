@@ -620,6 +620,8 @@ req := openai.ChatCompletionRequest{
 3. **Качество следования инструкциям:** Модель должна строго следовать System Prompt.
    - Проверяется через capability benchmark (см. [Приложение: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization))
 
+4. **Совместимость Prompt Template (при использовании LM Studio):** Если вы используете LM Studio для локального запуска модели, убедитесь, что выбранный prompt template поддерживает все необходимые роли (system, user, assistant, tool). Если шаблон поддерживает только `user` и `assistant`, вы можете получить ошибку `"Only user and assistant roles are supported!"`. В этом случае выберите корректный template в настройках модели (например, `ChatML` или специфичный для модели, например `Mistral Instruct` для моделей Mistral). Подробнее см. [Ошибка 3: LM Studio — неверный Prompt Template](#ошибка-3-lm-studio--неверный-prompt-template-ошибка-ролей) в разделе "Типовые ошибки".
+
 ### Как проверить модель?
 
 **Теория:** См. [Приложение: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization) — подробное описание того, что проверяем и почему это важно.
@@ -719,7 +721,34 @@ compressed = append(compressed, recentMessages...)
 
 См. подробнее: раздел "Оптимизация контекста" в [Главе 09: Анатомия Агента](../09-agent-architecture/README.md#оптимизация-контекста-context-optimization) и [Lab 09: Context Optimization](../../labs/lab09-context-optimization/README.md)
 
-### Ошибка 3: Галлюцинации
+### Ошибка 3: LM Studio — неверный Prompt Template (ошибка ролей)
+
+**Симптом:** При попытке использовать модель через LM Studio вы получаете ошибку:
+
+```json
+{
+  "error": "Error rendering prompt with jinja template: \"Only user and assistant roles are supported!\".\n\nThis is usually an issue with the model's prompt template. If you are using a popular model, you can try to search the model under lmstudio-community, which will have fixed prompt templates. If you cannot find one, you are welcome to post this issue to our discord or issue tracker on GitHub. Alternatively, if you know how to write jinja templates, you can override the prompt template in My Models > model settings > Prompt Template."
+}
+```
+
+**Причина:** Шаблон промпта модели в LM Studio настроен так, что принимает только роли `user` и `assistant`, и не поддерживает роли `system` или `tool`, которые необходимы для работы агентов. Это может произойти, если выбран неверный community template или шаблон по умолчанию не совместим с вашей моделью.
+
+**Решение:**
+
+Выберите корректный prompt template в настройках модели. Пример для `mistralai/mistral-7b-instruct-v0.3`:
+
+1. Откройте LM Studio
+2. Перейдите в **My Models**
+3. Найдите модель `mistralai/mistral-7b-instruct-v0.3`
+4. Нажмите на три точки → **Model Settings**
+5. Перейдите на вкладку **Prompt Template**
+6. Выберите правильный шаблон:
+   - Для Mistral: **Mistral Instruct**
+   - Или попробуйте: **ChatML**
+
+Для других моделей аналогично выберите соответствующий шаблон (например, `Llama 3` для моделей Llama, `ChatML` как универсальный вариант).
+
+### Ошибка 4: Галлюцинации
 
 **Симптом:** Модель выдумывает факты. Например, говорит "используй флаг `--force`" для команды, которая его не поддерживает.
 

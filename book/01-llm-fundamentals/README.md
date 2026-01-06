@@ -620,6 +620,8 @@ Not all models are equally good for agents.
 3. **Instruction Following Quality:** The model must strictly follow System Prompt.
    - Verified through capability benchmark (see [Appendix: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization))
 
+4. **Prompt Template Compatibility (when using LM Studio):** If you're using LM Studio, make sure the selected prompt template supports all required roles (system, user, assistant, tool). If the template only supports `user` and `assistant`, you'll get an error: `"Only user and assistant roles are supported!"`. To fix this, select the correct template in model settings (e.g., `ChatML` or a model-specific template like `Mistral Instruct` for Mistral models). See more details in [Mistake 3: LM Studio — Wrong Prompt Template](#mistake-3-lm-studio--wrong-prompt-template-role-support-error) in the "Common Mistakes" section.
+
 ### How to Test a Model?
 
 **Theory:** See [Appendix: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization) — detailed description of what we test and why it's important.
@@ -719,7 +721,34 @@ After summarization: "User Ivan, DevOps engineer. Discussed server problem. Curr
 
 See more: section "Context Optimization" in [Chapter 09: Agent Anatomy](../09-agent-architecture/README.md#context-optimization) and [Lab 09: Context Optimization](../../labs/lab09-context-optimization/README.md)
 
-### Mistake 3: Hallucinations
+### Mistake 3: LM Studio — Wrong Prompt Template (role support error)
+
+**Symptom:** When trying to use a model through LM Studio, you get an error:
+
+```json
+{
+  "error": "Error rendering prompt with jinja template: \"Only user and assistant roles are supported!\".\n\nThis is usually an issue with the model's prompt template. If you are using a popular model, you can try to search the model under lmstudio-community, which will have fixed prompt templates. If you cannot find one, you are welcome to post this issue to our discord or issue tracker on GitHub. Alternatively, if you know how to write jinja templates, you can override the prompt template in My Models > model settings > Prompt Template."
+}
+```
+
+**Cause:** The prompt template in LM Studio only accepts `user` and `assistant` roles and doesn't support `system` or `tool` roles that agents need. This usually happens when an incorrect community template is selected or the default template doesn't match your model.
+
+**Solution:**
+
+Choose the correct prompt template in model settings. Here's how to fix it for `mistralai/mistral-7b-instruct-v0.3`:
+
+1. Open LM Studio
+2. Go to **My Models**
+3. Find the model `mistralai/mistral-7b-instruct-v0.3`
+4. Click the three dots → **Model Settings**
+5. Go to the **Prompt Template** tab
+6. Select the correct template:
+   - For Mistral: **Mistral Instruct**
+   - Or try: **ChatML**
+
+For other models, select the appropriate template (e.g., `Llama 3` for Llama models, or `ChatML` as a universal option).
+
+### Mistake 4: Hallucinations
 
 **Symptom:** Model invents facts. For example, says "use flag `--force`" for a command that doesn't support it.
 
