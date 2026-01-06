@@ -334,9 +334,12 @@ var toolCatalog = []ToolDefinition{
 
 **Шаг 2: Поиск релевантных инструментов**
 
+Для поиска инструментов можно использовать два подхода: простой поиск по ключевым словам (для обучения) и векторный поиск (для продакшена).
+
+**Простой поиск (Lab 13):**
 ```go
 func searchToolCatalog(query string, topK int) []ToolDefinition {
-    // Простой поиск по описанию и тегам (в продакшене - векторный поиск)
+    // Простой поиск по описанию и тегам
     var results []ToolDefinition
     
     queryLower := strings.ToLower(query)
@@ -361,8 +364,42 @@ func searchToolCatalog(query string, topK int) []ToolDefinition {
     }
     return results
 }
+```
 
-// Пример использования
+**Векторный поиск (продакшен):**
+```go
+// 1. Инструменты преобразуются в векторы (embeddings)
+toolEmbeddings := []ToolEmbedding{
+    {
+        Tool:      toolCatalog[0], // grep
+        Embedding: embedText("Search for patterns in text. Use for filtering lines matching a pattern."), // [1536]float32{...}
+    },
+    {
+        Tool:      toolCatalog[1], // sort
+        Embedding: embedText("Sort lines of text. Use for ordering output."), // [1536]float32{...}
+    },
+    // ... все инструменты
+}
+
+// 2. Запрос пользователя тоже преобразуется в вектор
+queryEmbedding := embedQuery("find errors in logs")  // [1536]float32{...}
+
+// 3. Поиск похожих векторов по косинусному расстоянию
+similarTools := vectorDB.Search(queryEmbedding, topK=5)
+// Возвращает 5 наиболее похожих инструментов по смыслу (не по словам!)
+
+// 4. Результат используется так же, как в простом поиске
+relevantTools := extractTools(similarTools)  // [grep, tail, jq, ...]
+```
+
+**Почему векторный поиск лучше для инструментов:**
+- Ищет по **смыслу**, а не по словам
+- Найдет `grep` даже если запрос "фильтровать строки по паттерну" (без слова "grep")
+- Работает с синонимами и разными формулировками
+- Особенно важен для больших каталогов (1000+ инструментов)
+
+**Пример использования:**
+```go
 userQuery := "найди ошибки в логах"
 relevantTools := searchToolCatalog("error log filter", 5)
 // Возвращает: [grep, tail, jq, ...] - только релевантные!
@@ -721,6 +758,8 @@ func searchToolCatalog(query string, catalog []ToolDefinition, topK int) []ToolD
 - Функция находит инструменты, релевантные запросу
 - Возвращает не более topK инструментов
 - Учитывает описание и теги инструментов
+
+**Для продвинутых:** Реализуйте векторный поиск для инструментов (аналогично векторному поиску документов выше). Это особенно полезно для больших каталогов (1000+ инструментов).
 
 ### Упражнение 4: Валидация пайплайна
 

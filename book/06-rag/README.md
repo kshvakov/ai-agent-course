@@ -334,9 +334,12 @@ var toolCatalog = []ToolDefinition{
 
 **Step 2: Search for Relevant Tools**
 
+For tool search, you can use two approaches: simple keyword search (for learning) and vector search (for production).
+
+**Simple search (Lab 13):**
 ```go
 func searchToolCatalog(query string, topK int) []ToolDefinition {
-    // Simple search by description and tags (in production - vector search)
+    // Simple search by description and tags
     var results []ToolDefinition
     
     queryLower := strings.ToLower(query)
@@ -361,8 +364,42 @@ func searchToolCatalog(query string, topK int) []ToolDefinition {
     }
     return results
 }
+```
 
-// Example usage
+**Vector search (production):**
+```go
+// 1. Tools are converted to vectors (embeddings)
+toolEmbeddings := []ToolEmbedding{
+    {
+        Tool:      toolCatalog[0], // grep
+        Embedding: embedText("Search for patterns in text. Use for filtering lines matching a pattern."), // [1536]float32{...}
+    },
+    {
+        Tool:      toolCatalog[1], // sort
+        Embedding: embedText("Sort lines of text. Use for ordering output."), // [1536]float32{...}
+    },
+    // ... all tools
+}
+
+// 2. User query is also converted to vector
+queryEmbedding := embedQuery("find errors in logs")  // [1536]float32{...}
+
+// 3. Search for similar vectors by cosine distance
+similarTools := vectorDB.Search(queryEmbedding, topK=5)
+// Returns 5 most similar tools by meaning (not by words!)
+
+// 4. Result is used the same way as in simple search
+relevantTools := extractTools(similarTools)  // [grep, tail, jq, ...]
+```
+
+**Why vector search is better for tools:**
+- Searches by **meaning**, not by words
+- Will find `grep` even if query is "filter lines by pattern" (without word "grep")
+- Works with synonyms and different phrasings
+- Especially important for large catalogs (1000+ tools)
+
+**Example usage:**
+```go
 userQuery := "find errors in logs"
 relevantTools := searchToolCatalog("error log filter", 5)
 // Returns: [grep, tail, jq, ...] - only relevant ones!
@@ -721,6 +758,8 @@ func searchToolCatalog(query string, catalog []ToolDefinition, topK int) []ToolD
 - Function finds tools relevant to the query
 - Returns no more than topK tools
 - Considers tool descriptions and tags
+
+**Advanced:** Implement vector search for tools (similar to vector search for documents above). This is especially useful for large catalogs (1000+ tools).
 
 ### Exercise 4: Pipeline Validation
 
