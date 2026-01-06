@@ -1,4 +1,4 @@
-# Method Guide: Lab 08 — Multi-Agent Systems
+# Manual: Lab 08 — Multi-Agent Systems
 
 ## Why Is This Needed?
 
@@ -166,7 +166,7 @@ for i := 0; i < 10; i++ {
 
 ## Common Errors
 
-### Error 1: Worker Sees Supervisor Context
+### Error 1: Worker Receives Supervisor Context
 
 **Symptom:** Worker receives all Supervisor history, context overflows.
 
@@ -175,7 +175,7 @@ for i := 0; i < 10; i++ {
 **Solution:**
 ```go
 // BAD
-runWorkerAgent(supervisorMessages, ...)  // Worker sees all history!
+runWorkerAgent(supervisorMessages, ...)  // Worker receives all history!
 
 // GOOD
 runWorkerAgent([]ChatCompletionMessage{systemMsg, questionMsg}, ...)  // Only its task

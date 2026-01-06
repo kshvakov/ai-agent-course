@@ -2,17 +2,17 @@
 
 ## Why This Chapter?
 
-In this chapter, we'll examine best practices for creating and maintaining agents, as well as application areas where agents can be most effective.
+This chapter examines best practices for creating and maintaining agents, as well as application areas where agents can be most effective.
 
 Knowing theory and examples is good, but without understanding best practices you may make common mistakes and create an inefficient or unsafe agent.
 
 ### Real-World Case Study
 
-**Situation:** You created a DevOps agent and launched it in production. After a week, the agent deleted the production database without confirmation.
+**Situation:** You've created a DevOps agent and launched it in production. After a week, the agent deleted the production database without confirmation.
 
 **Problem:** You didn't implement input validation and security checks. The agent performed a dangerous action without confirmation.
 
-**Solution:** Following best practices (validation, safety checks, evals) prevents such problems. This chapter will teach you to create safe and efficient agents.
+**Solution:** Following best practices (validation, safety checks, evals) prevents such problems. This chapter teaches you to create safe and efficient agents.
 
 ## Best Practices: Creating Agents
 

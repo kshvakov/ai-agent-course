@@ -11,7 +11,7 @@ Put it all together: Brain + Tools + Memory. Implement the **ReAct** pattern (Re
 
 **Example:**
 - **Without planning:** Agent receives "Out of space" and may immediately try to delete files without checking how much space is used.
-- **With planning:** Agent first checks disk usage → sees 95% → decides to clean logs → checks again → reports result.
+- **With planning:** Agent first checks disk usage → receives 95% → decides to clean logs → checks again → reports result.
 
 ### ReAct (Reason + Act) — implicit planning
 
@@ -34,16 +34,16 @@ Point 4.c provides the "magic" — the agent looks at the result and decides wha
 1. Agent receives task: "Out of space"
 2. Agent thinks: "What do I need to do first? Check disk usage"
 3. Agent executes: `check_disk_usage()`
-4. Agent sees result: "95%"
+4. Agent receives result: "95%"
 5. Agent thinks: "Disk is full. What to do next? Clean logs"
 6. Agent executes: `clean_logs()`
-7. Agent sees result: "Freed 20GB"
+7. Agent receives result: "Freed 20GB"
 8. Agent thinks: "Check again to make sure"
 9. Agent executes: `check_disk_usage()`
-10. Agent sees result: "40%"
+10. Agent receives result: "40%"
 11. Agent thinks: "Task solved. Report to user"
 
-**Note:** For more complex tasks (5+ steps), **explicit planning** (Plan-and-Solve) is used, which we'll study in Lab 06.
+**Note:** For more complex tasks (5+ steps), **explicit planning** (Plan-and-Solve) is used, which you'll study in Lab 06.
 
 ## Task
 In `main.go` — large template.
@@ -51,7 +51,7 @@ In `main.go` — large template.
 1.  **Tools:** You have 2 tools: `check_disk_usage` (returns 95%) and `clean_logs` (frees space).
 2.  **The Loop:** Implement the `RunAgentLoop` function. It should loop until LLM responds with regular text.
 3.  **Scenario:** Run the agent with prompt: *"I'm out of space on the server. Fix it."*
-    *   Expected: Agent calls `check_disk_usage` -> sees 95% -> decides to call `clean_logs` -> checks again -> says "Done".
+    *   Expected: Agent calls `check_disk_usage` -> receives 95% -> decides to call `clean_logs` -> checks again -> says "Done".
 
 ## Important
 Don't forget to handle errors and add them to history! If a tool fails, LLM should know and try something else.

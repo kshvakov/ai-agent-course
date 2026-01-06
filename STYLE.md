@@ -1,6 +1,6 @@
 # Documentation Style Guide
 
-This document describes a unified style for all textbook chapters `book/*`. The goal is to make documentation as simple and educational through practice as lab assignments `labs/*/METHOD.md`.
+This document describes a unified style for all textbook chapters `book/*`. The goal is to make documentation as simple and educational through practice as lab assignments `labs/*/MANUAL.md`.
 
 ## Philosophy
 
@@ -63,7 +63,7 @@ Intuitive explanation of concept without formalization. Use analogies and simple
 ### How Does Function Calling Work?
 
 1. You describe a function in JSON Schema format
-2. LLM sees description and decides: "I need to call this function"
+2. LLM receives description and decides: "I need to call this function"
 3. LLM generates JSON with function name and arguments
 4. Your code parses JSON and executes real function
 5. Result is returned to LLM for further processing

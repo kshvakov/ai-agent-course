@@ -2,7 +2,7 @@
 
 ## Why This Chapter?
 
-In this chapter, we'll examine examples of agents in different domains with detailed breakdowns of their operation.
+This chapter examines examples of agents in different domains with detailed breakdowns of their operation.
 
 Theory is good, but real examples help understand how to apply concepts in practice. Here you'll see how all studied concepts (SOP, CoT, Tools, Safety, RAG) work together in real agents.
 

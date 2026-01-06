@@ -9,7 +9,7 @@ Note the System Prompt in the solution:
 
 **Why is this needed?**
 
-Without this prompt, the model sees: `User: Fix it`.  
+Without this prompt, the model receives: `User: Fix it`.  
 Its probabilistic mechanism may output: `Call: restart_service`. This is the most "popular" action.
 
 With this prompt, the model is forced to generate text:

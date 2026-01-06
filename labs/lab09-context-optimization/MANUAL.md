@@ -1,4 +1,4 @@
-# Method Guide: Lab 09 — Context Optimization
+# Manual: Lab 09 — Context Optimization
 
 ## Why Is This Needed?
 

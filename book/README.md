@@ -116,7 +116,7 @@ If you're an experienced developer and want to quickly understand the essence:
 3. **Key points:**
    - LLM doesn't execute code. It generates JSON with an execution request.
    - Runtime (your code) executes real Go functions.
-   - LLM doesn't "remember" the past. It sees it in `messages[]`, which Runtime collects.
+   - LLM doesn't "remember" the past. It processes it in `messages[]`, which Runtime collects.
    - Temperature = 0 for deterministic agent behavior.
 
 4. **Minimal example:**

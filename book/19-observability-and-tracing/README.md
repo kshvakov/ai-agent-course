@@ -16,7 +16,7 @@ Observability is "vision" for your agent. Without it, you cannot debug problems,
 
 **Problem:** You cannot understand why the agent didn't request confirmation. Logs only show "Agent executed delete_database". No information about which tools were available, what prompt was used, what arguments were passed.
 
-**Solution:** Structured logging with tracing allows seeing the full picture: input request → tool selection → execution → result. Now you can understand that the agent didn't see a tool with confirmation or the prompt was incorrect.
+**Solution:** Structured logging with tracing shows the full picture: input request → tool selection → execution → result. Now you can understand that the agent didn't receive a tool with confirmation or the prompt was incorrect.
 
 ## Theory in Simple Terms
 

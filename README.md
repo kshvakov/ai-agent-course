@@ -17,7 +17,7 @@ This course is designed for programmers who want to understand how modern LLM ag
 
 **Problem:** A regular chatbot can only respond with text. It cannot actually check metrics, read logs, or apply fixes.
 
-**Solution:** An AI agent with tools can independently check metrics → read logs → form hypotheses → apply fixes → verify results. This course will teach you to build such agents.
+**Solution:** An AI agent with tools can independently check metrics → read logs → form hypotheses → apply fixes → verify results. This course teaches you how to build such agents.
 
 ## Theory
 
@@ -43,7 +43,7 @@ A complete textbook with theory, examples from different domains (DevOps, Suppor
 
 If you want to transition from a "learning agent" to a "production agent," study **[Chapter 25: Production Readiness Index](./book/25-production-readiness-index/README.md)** in the textbook.
 
-There you'll find a practical guide to production readiness: observability and tracing, cost & latency engineering, workflow and state management, security and governance, prompt management, data/privacy, RAG in production, evals in CI/CD and other practical topics with step-by-step implementation recipes tied to your code from the laboratory assignments.
+There you'll find a practical guide to production readiness: observability and tracing, cost & latency engineering, workflow and state management, security and governance, prompt management, data/privacy, RAG in production, evals in CI/CD, and other practical topics with step-by-step implementation recipes tied to your code from the laboratory assignments.
 
 ## How to Take the Course
 
@@ -54,13 +54,13 @@ There you'll find a practical guide to production readiness: observability and t
 2. **Start with Lab 00:** Check if your model is suitable for the course.
    ```bash
    cd labs/lab00-capability-check
-   # Read METHOD.md before starting
+   # Read MANUAL.md before starting
    go run main.go
    ```
 
 3. **Complete labs in order:**
    - Navigate to the lab folder (e.g., `cd labs/lab01-basics`)
-   - **Read `METHOD.md`** — this is a study guide with theory, algorithms, and common mistakes
+   - **Read `MANUAL.md`** — this is a study guide with theory, algorithms, and common mistakes
    - Read `README.md` with the assignment
    - Open `main.go`, where the code skeleton is already written
    - Implement missing parts marked with `// TODO` comments
@@ -68,7 +68,7 @@ There you'll find a practical guide to production readiness: observability and t
 
 4. **Run and test:** After each lab, run the code and verify it works.
 
-**Important:** Each laboratory assignment has its own `METHOD.md` — a study guide that must be read before starting. It contains:
+**Important:** Each laboratory assignment has its own `MANUAL.md` — a study guide that you must read before starting. It contains:
 - Why this is needed (real-world case)
 - Theory in simple terms
 - Execution algorithm
@@ -86,7 +86,7 @@ There you'll find a practical guide to production readiness: observability and t
 The course consists of a preparatory stage (Lab 00) and 12 main laboratory assignments (Lab 01-12), plus 2 optional labs (Lab 13-14).
 
 ### 🔬 [Lab 00: Model Benchmark](./labs/lab00-capability-check)
-**Diagnostics.** Before starting, we'll verify whether your model (especially a local one) is suitable for the course. We'll run a series of tests on JSON, Instruction Following, and Function Calling.
+**Diagnostics.** Before starting, verify whether your model (especially a local one) is suitable for the course. Run a series of tests on JSON, Instruction Following, and Function Calling.
 
 ### [Lab 01: Hello, LLM!](./labs/lab01-basics)
 **Basics and Memory.** You'll learn to programmatically communicate with LLMs, manage context (memory), and configure the agent's role through system prompts.
@@ -95,22 +95,22 @@ The course consists of a preparatory stage (Lab 00) and 12 main laboratory assig
 **Function Calling.** Learn how to turn Go functions into tools that an LLM can call. Implement the Tool Execution mechanism.
 
 ### [Lab 03: Real-World Tools](./labs/lab03-real-world)
-**Infrastructure as Code Integration.** We'll connect real APIs (Proxmox, Ansible) to our agent.
+**Infrastructure as Code Integration.** Connect real APIs (Proxmox, Ansible) to your agent.
 
 ### [Lab 04: Autonomy Loop](./labs/lab04-autonomy)
-**The Agent Loop.** We'll implement the ReAct pattern (Reason + Act). The agent will learn to independently make decisions, execute actions, and analyze results in a loop.
+**The Agent Loop.** Implement the ReAct pattern (Reason + Act). The agent learns to independently make decisions, execute actions, and analyze results in a loop.
 
 ### [Lab 05: Human-in-the-Loop](./labs/lab05-human-interaction)
 **Dialogue and Safety.** The agent will learn to ask clarifying questions ("In which region should I create the server?") and request confirmation before dangerous actions ("Are you sure you want to delete the database?").
 
 ### [Lab 06: Incident Management](./labs/lab06-incident)
-**Complex Scenarios.** We'll create an agent capable of independently investigating and resolving failures (e.g., service crashes) using a toolkit of tools.
+**Complex Scenarios.** Create an agent capable of independently investigating and resolving failures (e.g., service crashes) using a toolkit of tools.
 
 ### [Lab 07: RAG & Knowledge Base](./labs/lab07-rag)
-**Working with Knowledge.** The agent will learn to read internal documentation (Wiki/Man pages) before executing actions. We'll implement simple document search.
+**Working with Knowledge.** The agent learns to read internal documentation (Wiki/Man pages) before executing actions. Implement simple document search.
 
 ### [Lab 08: Agent Team (Multi-Agent)](./labs/lab08-multi-agent)
-**Supervisor Pattern.** We'll create a system where a main agent (Orchestrator) manages highly specialized sub-agents (Network Admin, DB Admin).
+**Supervisor Pattern.** Create a system where a main agent (Orchestrator) manages highly specialized sub-agents (Network Admin, DB Admin).
 
 ### [Lab 09: Context Optimization](./labs/lab09-context-optimization)
 **Context Window Management.** Learn to count tokens, apply optimization techniques (truncation, summarization), and implement adaptive context management for long-lived agents.
@@ -128,21 +128,21 @@ The course consists of a preparatory stage (Lab 00) and 12 main laboratory assig
 
 | Lab | Topic | Key Skills | Study Guide |
 | :--- | :--- | :--- | :--- |
-| **Lab 00** | **Capability Check** | Model testing. Unit tests for LLMs. | [METHOD.md](./labs/lab00-capability-check/METHOD.md) |
-| **Lab 01** | **Basics** | OpenAI API, Chat Loop, Memory Management. | [METHOD.md](./labs/lab01-basics/METHOD.md) |
-| **Lab 02** | **Tools** | Function definitions (JSON Schema), parsing ToolCalls. | [METHOD.md](./labs/lab02-tools/METHOD.md) |
-| **Lab 03** | **Architecture** | Go interfaces, Registry pattern, Mocking. | [METHOD.md](./labs/lab03-real-world/METHOD.md) |
-| **Lab 04** | **Autonomy (ReAct)** | `Think-Act-Observe` loop. Result processing. | [METHOD.md](./labs/lab04-autonomy/METHOD.md) |
-| **Lab 05** | **Human-in-the-Loop** | Interactivity. Clarifying questions. Safety. | [METHOD.md](./labs/lab05-human-interaction/METHOD.md) |
-| **Lab 06** | **Incident (SOP)** | Advanced planning. SOP integration in prompts. | [METHOD.md](./labs/lab06-incident/METHOD.md) |
-| **Lab 07** | **RAG** | Working with documentation. Knowledge search before action. | [METHOD.md](./labs/lab07-rag/METHOD.md) |
-| **Lab 08** | **Multi-Agent** | Orchestration. Task delegation. Context isolation. | [METHOD.md](./labs/lab08-multi-agent/METHOD.md) |
-| **Lab 09** | **Context Optimization** | Token counting, summarization, adaptive context management. | [METHOD.md](./labs/lab09-context-optimization/METHOD.md) |
-| **Lab 10** | **Planning & Workflow** | Task decomposition, dependency resolution, plan execution with retries. | [METHOD.md](./labs/lab10-planning-workflows/METHOD.md) |
-| **Lab 11** | **Memory & Context Engineering** | Long-term memory, fact extraction, context layering. | [METHOD.md](./labs/lab11-memory-context/METHOD.md) |
-| **Lab 12** | **Tool Server Protocol** | stdio/HTTP protocols, schema versioning, tool server architecture. | [METHOD.md](./labs/lab12-tool-server/METHOD.md) |
-| **Lab 13** | **Agent Security Hardening** (Optional) | Allowlists, risk scoring, prompt injection protection, audit. | [METHOD.md](./labs/lab13-security-hardening/METHOD.md) |
-| **Lab 14** | **Evals in CI** (Optional) | Eval runner, golden dataset, CI pipeline integration. | [METHOD.md](./labs/lab14-evals-in-ci/METHOD.md) |
+| **Lab 00** | **Capability Check** | Model testing. Unit tests for LLMs. | [MANUAL.md](./labs/lab00-capability-check/MANUAL.md) |
+| **Lab 01** | **Basics** | OpenAI API, Chat Loop, Memory Management. | [MANUAL.md](./labs/lab01-basics/MANUAL.md) |
+| **Lab 02** | **Tools** | Function definitions (JSON Schema), parsing ToolCalls. | [MANUAL.md](./labs/lab02-tools/MANUAL.md) |
+| **Lab 03** | **Architecture** | Go interfaces, Registry pattern, Mocking. | [MANUAL.md](./labs/lab03-real-world/MANUAL.md) |
+| **Lab 04** | **Autonomy (ReAct)** | `Think-Act-Observe` loop. Result processing. | [MANUAL.md](./labs/lab04-autonomy/MANUAL.md) |
+| **Lab 05** | **Human-in-the-Loop** | Interactivity. Clarifying questions. Safety. | [MANUAL.md](./labs/lab05-human-interaction/MANUAL.md) |
+| **Lab 06** | **Incident (SOP)** | Advanced planning. SOP integration in prompts. | [MANUAL.md](./labs/lab06-incident/MANUAL.md) |
+| **Lab 07** | **RAG** | Working with documentation. Knowledge search before action. | [MANUAL.md](./labs/lab07-rag/MANUAL.md) |
+| **Lab 08** | **Multi-Agent** | Orchestration. Task delegation. Context isolation. | [MANUAL.md](./labs/lab08-multi-agent/MANUAL.md) |
+| **Lab 09** | **Context Optimization** | Token counting, summarization, adaptive context management. | [MANUAL.md](./labs/lab09-context-optimization/MANUAL.md) |
+| **Lab 10** | **Planning & Workflow** | Task decomposition, dependency resolution, plan execution with retries. | [MANUAL.md](./labs/lab10-planning-workflows/MANUAL.md) |
+| **Lab 11** | **Memory & Context Engineering** | Long-term memory, fact extraction, context layering. | [MANUAL.md](./labs/lab11-memory-context/MANUAL.md) |
+| **Lab 12** | **Tool Server Protocol** | stdio/HTTP protocols, schema versioning, tool server architecture. | [MANUAL.md](./labs/lab12-tool-server/MANUAL.md) |
+| **Lab 13** | **Agent Security Hardening** (Optional) | Allowlists, risk scoring, prompt injection protection, audit. | [MANUAL.md](./labs/lab13-security-hardening/MANUAL.md) |
+| **Lab 14** | **Evals in CI** (Optional) | Eval runner, golden dataset, CI pipeline integration. | [MANUAL.md](./labs/lab14-evals-in-ci/MANUAL.md) |
 
 ## Requirements
 

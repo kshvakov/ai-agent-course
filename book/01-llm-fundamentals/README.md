@@ -12,7 +12,7 @@ This chapter explains the basics of how LLMs work in simple terms, without exces
 
 ### Real-World Case Study
 
-**Situation:** You created a DevOps agent. The user writes: "Check the status of server web-01"
+**Situation:** You've created a DevOps agent. The user writes: "Check the status of server web-01"
 
 **Problem:** The agent sometimes responds with text "Server is working", and sometimes calls the `check_status` tool. Behavior is unpredictable.
 
@@ -35,7 +35,7 @@ $$P(x_{t+1} | x_1, ..., x_t)$$
 
 **❌ Magic (as usually explained):**
 > Prompt: `"Check server status"`  
-> Model sees context and predicts: "I will call the `check_status` tool" (probability 0.85)
+> Model processes context and predicts: "I will call the `check_status` tool" (probability 0.85)
 
 **✅ Reality (how it actually works):**
 
@@ -52,7 +52,7 @@ When user asks to restart, use the restart_service tool.`
 userInput := "Check server status"
 
 // Description of available tools (tools schema)
-// IMPORTANT: The model sees ALL tools and selects the needed one!
+// IMPORTANT: The model receives ALL tools and selects the needed one!
 tools := []openai.Tool{
     {
         Type: openai.ToolTypeFunction,
@@ -108,7 +108,7 @@ messages := []openai.ChatCompletionMessage{
 req := openai.ChatCompletionRequest{
     Model:    openai.GPT3Dot5Turbo,
     Messages: messages,
-    Tools:    tools,  // Key point: the model sees tool descriptions!
+    Tools:    tools,  // Key point: the model receives tool descriptions!
 }
 ```
 
@@ -135,7 +135,7 @@ The model **does not return text** "I will call the tool". It returns a **struct
 
 **How does the model choose the tool?**
 
-The model sees **all three tools** and their `Description`:
+The model receives **all three tools** and their `Description`:
 - `check_status`: "Check the status... Use this when user asks about server status"
 - `read_logs`: "Read logs... Use this when user asks about logs"
 - `restart_service`: "Restart service... Use this when user explicitly asks to restart"
@@ -189,7 +189,7 @@ if len(msg.ToolCalls) > 0 {
     })
     
     // Send updated history to the model again
-    // Model sees the result and decides what to do next
+    // Model receives the result and decides what to do next
 }
 ```
 
@@ -318,7 +318,7 @@ userInput := "User reports error 500"
 // Model selects: get_ticket_details (gathers context)
 
 // Iteration 2: After receiving ticket details
-// Model sees in context: "Error 500, user_id: 12345"
+// Model receives in context: "Error 500, user_id: 12345"
 // Model selects: search_kb("error 500") (searches for solution)
 
 // Iteration 3: After searching KB
@@ -335,7 +335,7 @@ userInput := "User reports error 500"
 - Parses `ticket_id` from JSON
 - Calls real function `getTicketDetails("TICKET-12345")`
 - Returns result to model as a message with role `tool`
-- Model sees result and continues work
+- Model receives result and continues work
 
 #### Example 3: Data Analytics — Magic vs Reality
 
@@ -451,7 +451,7 @@ userInput := "Why did sales drop in region X?"
 // Model selects: describe_table("sales") (need to understand structure first)
 
 // Iteration 2: After receiving table schema
-// Model sees in context: "columns: date, region, amount"
+// Model receives in context: "columns: date, region, amount"
 // Model selects: sql_select("SELECT region, SUM(amount) FROM sales WHERE region='X' GROUP BY date")
 
 // Iteration 3: After receiving data
@@ -552,7 +552,7 @@ Remaining space: 300 tokens
 
 > **Note:** This is an approximate estimate. Exact token counting depends on the model and library used (e.g., `tiktoken` for OpenAI models).
 
-If history overflows, the agent "forgets" the beginning of the conversation. In practice, this happens either because your runtime trims/summarizes old messages to fit the limit (the model can't see them), or because the API rejects the request with a context-length error if you don't handle overflow.
+If history overflows, the agent "forgets" the beginning of the conversation. In practice, this happens either because your runtime trims/summarizes old messages to fit the limit (the model doesn't receive them), or because the API rejects the request with a context-length error if you don't handle overflow.
 
 **Model is Stateless:** It doesn't remember your previous request if you don't pass it again in `messages`.
 
@@ -563,7 +563,7 @@ messages := []openai.ChatCompletionMessage{
     {Role: "user", Content: "Check server"},
     {Role: "assistant", Content: "Checking..."},
     {Role: "tool", Content: "Server is ONLINE"},
-    {Role: "user", Content: "What about the database?"},  // Agent sees full history!
+    {Role: "user", Content: "What about the database?"},  // Agent receives full history!
 }
 ```
 
@@ -807,7 +807,7 @@ Where:
 
 ### Why Does the Model "Choose" a Tool?
 
-When the model sees in context:
+When the model receives in context:
 - System Prompt: "Use tools when needed"
 - Tools Schema: `[{name: "check_status", description: "..."}]`
 - User Input: "Check server status"

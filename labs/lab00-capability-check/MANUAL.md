@@ -1,4 +1,4 @@
-# Method Guide: Lab 00 — Model Capability Benchmark
+# Manual: Lab 00 — Model Capability Benchmark
 
 ## Why Is This Needed?
 

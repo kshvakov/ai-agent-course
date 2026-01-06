@@ -2,3 +2,4 @@ mkdocs-material>=9.5.0
 mkdocs-static-i18n>=1.0.0
 pymdown-extensions>=10.0.0
 
+

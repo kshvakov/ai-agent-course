@@ -1,4 +1,4 @@
-# Method Guide: Lab 05 — Human-in-the-Loop
+# Manual: Lab 05 — Human-in-the-Loop
 
 ## Why Is This Needed?
 
@@ -27,7 +27,7 @@ Autonomy doesn't mean permissiveness. There are two scenarios when an agent **mu
 
 ### Nested Loops
 
-We use a nested loop structure:
+Use a nested loop structure:
 
 - **Outer loop (`While True`):** Handles communication with user. Reads `stdin`.
 - **Inner loop (Agent Loop):** Handles "thinking". Loops while agent calls tools. As soon as agent outputs text — we exit to outer loop.
@@ -57,12 +57,12 @@ Since this is text, the inner loop breaks, and the question is shown to the user
 
 ### Continuing Conversation
 
-When the user responds *"Yes"*, we add it to history and run the agent again. Now it has in context:
+When the user responds *"Yes"*, add it to history and run the agent again. Now it has in context:
 1. User: "Delete DB"
 2. Assistant: "Are you sure?"
 3. User: "Yes"
 
-The agent sees confirmation and this time generates `ToolCall("delete_db")`.
+The agent receives confirmation and this time generates `ToolCall("delete_db")`.
 
 ## Execution Algorithm
 

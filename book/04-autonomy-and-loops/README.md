@@ -29,10 +29,10 @@ Without an autonomous loop, an agent works like a chatbot: one request → one r
 **ReAct** is an acronym for **Reason + Act** (Reason + Act). This is a pattern where the agent:
 1. **Reason (Reasons):** Analyzes the situation and decides what to do
 2. **Act (Acts):** Performs an action (calls a tool)
-3. **Observe (Observes):** Sees the result of the action
+3. **Observe (Observes):** Receives the result of the action
 4. **Repeats:** Reasons again based on the result
 
-This is not magic — it's simply a loop where the model sees the results of previous actions in context and generates the next step.
+This is not magic — it's simply a loop where the model processes the results of previous actions in context and generates the next step.
 
 An autonomous agent works in a loop:
 
@@ -47,11 +47,11 @@ While (Task not solved):
        c. GOTO 1 (without asking the user!)
 ```
 
-**Key point:** Point 4.c provides the "magic" — the agent looks at the result and decides what to do next. But this is not real magic: the model sees the tool result in context (`messages[]`) and generates the next step based on that context.
+**Key point:** Point 4.c provides the "magic" — the agent looks at the result and decides what to do next. But this is not real magic: the model receives the tool result in context (`messages[]`) and generates the next step based on that context.
 
 ### Closing the Loop
 
-After executing a tool, we **don't ask the user** what to do next. We send the result back to the LLM. The model sees the result of its actions and decides what to do next.
+After executing a tool, **don't ask the user** what to do next. Send the result back to the LLM. The model receives the result of its actions and decides what to do next.
 
 **Example dialogue in memory:**
 
@@ -105,7 +105,7 @@ messages = append(messages, openai.ChatCompletionMessage{
 // Send UPDATED history to model again
 resp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
     Model:    openai.GPT3Dot5Turbo,
-    Messages: messages,  // Model sees check_disk_usage result!
+    Messages: messages,  // Model receives check_disk_usage result!
     Tools:    tools,
 })
 
@@ -134,7 +134,7 @@ messages = append(messages, openai.ChatCompletionMessage{
 // Send again
 resp3, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
     Model:    openai.GPT3Dot5Turbo,
-    Messages: messages,  // Model sees both results!
+    Messages: messages,  // Model receives both results!
     Tools:    tools,
 })
 
@@ -147,8 +147,8 @@ msg3 := resp3.Choices[0].Message
 
 **Why this is not magic:**
 
-1. **The model sees the full history** — it doesn't "remember" the past, it sees it in `messages[]`
-2. **The model sees the tool result** — the result is added as a new message with role `tool`
+1. **The model receives the full history** — it doesn't "remember" the past, it processes it in `messages[]`
+2. **The model receives the tool result** — the result is added as a new message with role `tool`
 3. **The model decides based on context** — seeing "95% usage", the model understands that space needs to be freed
 4. **Runtime manages the loop** — code checks `len(msg.ToolCalls)` and decides whether to continue the loop
 
@@ -160,7 +160,7 @@ msg3 := resp3.Choices[0].Message
 ┌─────────────────────────────────────────────────────────┐
 │ LLM (Model)                                             │
 │                                                         │
-│ 1. Sees in context:                                     │
+│ 1. Receives in context:                                 │
 │    - System Prompt: "You are a DevOps agent"            │
 │    - User Input: "Out of disk space"                    │
 │    - Tools Schema: [{name: "check_disk", ...}]          │
@@ -185,7 +185,7 @@ msg3 := resp3.Choices[0].Message
 ┌─────────────────────────────────────────────────────────┐
 │ LLM (Model) - next iteration                            │
 │                                                         │
-│ 1. Sees in context:                                     │
+│ 1. Receives in context:                                 │
 │    - Previous tool_call                                 │
 │    - Result: "95% usage" ← Runtime added!               │
 │                                                         │
@@ -196,7 +196,7 @@ msg3 := resp3.Choices[0].Message
 └─────────────────────────────────────────────────────────┘
 ```
 
-**Key point:** The LLM doesn't "remember" the past. It sees it in `messages[]`, which Runtime collects.
+**Key point:** The LLM doesn't "remember" the past. It processes it in `messages[]`, which Runtime collects.
 
 ## Loop Implementation
 
@@ -231,8 +231,8 @@ for i := 0; i < maxIterations; i++ {
         })
     }
     // Loop continues automatically!
-    // But this is not magic: we send the updated history (with tool result)
-    // to the model again, and the model sees the result and decides what to do next
+    // But this is not magic: send the updated history (with tool result)
+    // to the model again, and the model receives the result and decides what to do next
 }
 ```
 
@@ -264,7 +264,7 @@ for _, toolCall := range msg.ToolCalls {
 
 1. Tool returns an error: `Error: connection refused`
 2. Error is added to history as tool result
-3. Model sees the error in context
+3. Model receives the error in context
 4. Model can:
    - Try another tool
    - Inform the user about the problem
@@ -277,7 +277,7 @@ Iteration 1:
 Action: check_database_status("prod")
 Observation: Error: connection refused
 
-Iteration 2 (model sees error):
+Iteration 2 (model receives error):
 Thought: "Database is unavailable. I'll check network connectivity"
 Action: ping_host("db-prod.example.com")
 Observation: "Host is unreachable"

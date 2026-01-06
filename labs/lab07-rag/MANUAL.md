@@ -1,4 +1,4 @@
-# Method Guide: Lab 07 — RAG & Knowledge Base
+# Manual: Lab 07 — RAG & Knowledge Base
 
 ## Why Is This Needed?
 

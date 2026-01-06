@@ -21,7 +21,7 @@ Function Calling is a mechanism that allows the model to call real Go functions,
 ### How Does Function Calling Work?
 
 1. **You describe a function** in JSON Schema format
-2. **The LLM sees the description** and decides: "I need to call this function"
+2. **The LLM receives the description** and decides: "I need to call this function"
 3. **The LLM generates JSON** with the function name and arguments
 4. **Your code parses the JSON** and executes the real function
 5. **The result is returned** to the LLM for further processing
@@ -58,7 +58,7 @@ tools := []openai.Tool{
 }
 ```
 
-**What happens:** We describe the tool in JSON Schema format. This description is sent to the model along with the request.
+**What happens:** You describe the tool in JSON Schema format. This description is sent to the model along with the request.
 
 #### Step 2: Request to the Model
 
@@ -71,7 +71,7 @@ messages := []openai.ChatCompletionMessage{
 req := openai.ChatCompletionRequest{
     Model:    openai.GPT3Dot5Turbo,
     Messages: messages,
-    Tools:    tools,  // The model sees the tool descriptions!
+    Tools:    tools,  // The model receives the tool descriptions!
     Temperature: 0,
 }
 
@@ -79,7 +79,7 @@ resp, _ := client.CreateChatCompletion(ctx, req)
 msg := resp.Choices[0].Message
 ```
 
-**What happens:** The model sees:
+**What happens:** The model receives:
 - System prompt (role and instructions)
 - User input (user's request)
 - **Tools schema** (description of available tools)
@@ -102,7 +102,7 @@ The model **does not return text** "I will check ping". It returns a **structure
 }
 ```
 
-**What happens:** The model **generated a tool_call** for the `ping` tool and JSON with arguments. This is **not magic** — the model saw `Description: "Ping a host to check connectivity"` and linked it to the user's request.
+**What happens:** The model **generated a tool_call** for the `ping` tool and JSON with arguments. This is **not magic** — the model processed `Description: "Ping a host to check connectivity"` and linked it to the user's request.
 
 **How does the model choose between multiple tools?**
 
@@ -135,7 +135,7 @@ userInput := "Check availability of google.com"
 
 **Selection process:**
 
-1. The model sees **all three tools** and their `Description`:
+1. The model receives **all three tools** and their `Description`:
    - `ping`: "check network connectivity... Use this when user asks about network reachability"
    - `check_http`: "Check HTTP status... Use this when user asks about website availability"
    - `traceroute`: "Trace network path... Use this when user asks about routing"
@@ -155,7 +155,7 @@ userInput := "Check availability of google.com"
 ```go
 userInput := "Check if the site google.com responds"
 
-// The model sees the same 3 tools
+// The model receives the same 3 tools
 // Matches:
 // - ping: about network availability → not quite right
 // - check_http: "Use this when user asks about website availability" → ✅ CHOOSES THIS
@@ -243,7 +243,7 @@ resp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 })
 ```
 
-**What happens:** The model sees the tool execution result and can:
+**What happens:** The model receives the tool execution result and can:
 - Formulate a final response to the user
 - Call another tool if needed
 - Ask a clarifying question
@@ -576,7 +576,7 @@ Practice: **[Lab 02: Tools](../../labs/lab02-tools/README.md)**, **[Lab 04: Auto
 
 **Key points:**
 
-1. **The model sees descriptions of ALL tools** — it doesn't "know" about tools out of the box, it sees their `Description` in JSON Schema. The model selects the right tool by matching the user's request with descriptions.
+1. **The model receives descriptions of ALL tools** — it doesn't "know" about tools out of the box, it processes their `Description` in JSON Schema. The model selects the right tool by matching the user's request with descriptions.
 
 2. **Selection mechanism is based on semantics** — the model looks for a match between:
    - User's request ("Check availability")
@@ -587,7 +587,7 @@ Practice: **[Lab 02: Tools](../../labs/lab02-tools/README.md)**, **[Lab 04: Auto
 
 4. **Runtime does all the work** — parsing, validation, execution, returning result
 
-5. **The model sees the result** — it receives the result as a new message in history and continues working
+5. **The model receives the result** — it processes the result as a new message in history and continues working
 
 **Example of choosing between similar tools:**
 

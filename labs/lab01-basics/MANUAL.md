@@ -1,4 +1,4 @@
-# Method Guide: Lab 01 — Hello, LLM!
+# Manual: Lab 01 — Hello, LLM!
 
 ## Why Is This Needed?
 
@@ -22,7 +22,7 @@ In this lab you'll learn the basics of interacting with LLM: sending requests, r
 
 **Stateless** means "without state". Each request to the model is a new request. It doesn't remember what you wrote a second ago.
 
-To create the illusion of dialogue, we send **all** previous messages (history) each time.
+To create the illusion of dialogue, send **all** previous messages (history) each time.
 
 ### Message Structure
 
@@ -41,7 +41,7 @@ messages := []ChatCompletionMessage{
 }
 ```
 
-The model sees the entire history and understands context ("it" = nginx).
+The model processes the entire history and understands context ("it" = nginx).
 
 ## Execution Algorithm
 

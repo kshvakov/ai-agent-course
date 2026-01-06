@@ -9,7 +9,7 @@ Without Human-in-the-Loop, an agent can:
 - Delete important data
 - Apply changes to production without verification
 
-This chapter will teach you to protect the agent from dangerous actions and properly implement confirmation and clarification.
+This chapter teaches you to protect the agent from dangerous actions and properly implement confirmation and clarification.
 
 ### Real-World Case Study
 
@@ -67,7 +67,7 @@ resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 })
 
 msg := resp.Choices[0].Message
-// Model sees that tool requires "region" and "size", but they're not in the request
+// Model receives that tool requires "region" and "size", but they're not in the request
 // Model does NOT call the tool, but responds with text:
 
 // msg.ToolCalls = []  // Empty!
@@ -89,7 +89,7 @@ if len(msg.ToolCalls) == 0 {
 ```
 
 **Why this is not magic:**
-- Model sees `required: ["region", "size"]` in JSON Schema
+- Model receives `required: ["region", "size"]` in JSON Schema
 - System Prompt explicitly says: "If required parameters are missing, ask"
 - Model generates text instead of tool call because it cannot fill required fields
 
@@ -136,7 +136,7 @@ resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 })
 
 msg := resp.Choices[0].Message
-// Model sees "CRITICAL" and "Requires confirmation" in Description
+// Model receives "CRITICAL" and "Requires confirmation" in Description
 // Model does NOT call the tool immediately, but asks:
 
 // msg.ToolCalls = []  // Empty!
@@ -169,14 +169,14 @@ messages = append(messages, openai.ChatCompletionMessage{
     ToolCallID: msg.ToolCalls[0].ID,
 })
 
-// Model sees this and generates text with confirmation question
+// Model receives this and generates text with confirmation question
 ```
 
 **Why this is not magic:**
 - System Prompt explicitly talks about confirmation
 - Tool `Description` contains "CRITICAL" and "Requires confirmation"
 - Runtime can additionally check risk and block execution
-- Model sees "REQUIRES_CONFIRMATION" result and generates question
+- Model receives "REQUIRES_CONFIRMATION" result and generates question
 
 **Complete confirmation protocol:**
 
@@ -191,7 +191,7 @@ messages = append(messages, openai.ChatCompletionMessage{
     Content: "yes",
 })
 
-// Step 6: Send again - now model sees confirmation and can call the tool
+// Step 6: Send again - now model receives confirmation and can call the tool
 resp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
     Model:    openai.GPT3Dot5Turbo,
     Messages: messages,  // Now includes confirmation!
@@ -205,7 +205,7 @@ msg2 := resp2.Choices[0].Message
 
 ### Combining Loops (Nested Loops)
 
-To implement Human-in-the-Loop, we use a **nested loops** structure:
+To implement Human-in-the-Loop, use a **nested loops** structure:
 
 - **Outer loop (`While True`):** Handles user communication. Reads `stdin`.
 - **Inner loop (Agent Loop):** Handles "thinking". Runs until agent calls tools. As soon as agent outputs text — we exit to outer loop.
@@ -285,13 +285,13 @@ for {
 **How it works:**
 
 1. User writes: "Delete database test_db"
-2. Inner loop starts: model sees "CRITICAL" and generates text "Are you sure?"
+2. Inner loop starts: model receives "CRITICAL" and generates text "Are you sure?"
 3. Inner loop breaks (text, not tool call), question is shown to user
 4. User responds: "yes"
 5. Outer loop adds "yes" to history and starts inner loop again
-6. Now model sees confirmation and generates `tool_call("delete_db")`
+6. Now model receives confirmation and generates `tool_call("delete_db")`
 7. Tool executes, result is added to history
-8. Inner loop continues, model sees successful execution and generates final response
+8. Inner loop continues, model receives successful execution and generates final response
 9. Inner loop breaks, response is shown to user
 10. Outer loop waits for next input
 

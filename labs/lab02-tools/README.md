@@ -21,7 +21,7 @@ Process:
 1.  **Request:** You send history + function descriptions (Tools Definitions).
 2.  **Decision:** Model decides: "Need to call a function".
 3.  **Response:** Model returns `ToolCalls` flag (instead of text).
-4.  **Execution:** Your code sees this flag and executes the function.
+4.  **Execution:** Your code detects this flag and executes the function.
 
 ## Task
 We have a stub function `GetServerStatus(ip string)`.

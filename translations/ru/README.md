@@ -54,13 +54,13 @@
 2. **Начните с Lab 00:** Проверьте, подходит ли ваша модель для курса.
    ```bash
    cd labs/lab00-capability-check
-   # Прочитайте METHOD.md перед выполнением
+   # Прочитайте MANUAL.md перед выполнением
    go run main.go
    ```
 
 3. **Проходите лабораторные по порядку:**
    - Переходите в папку лабораторной (например, `cd labs/lab01-basics`)
-   - **Читайте `METHOD.md`** — это методическое пособие с теорией, алгоритмами и типовыми ошибками
+   - **Читайте `MANUAL.md`** — это методическое пособие с теорией, алгоритмами и типовыми ошибками
    - Читайте `README.md` с заданием
    - Открывайте `main.go`, где уже написан каркас кода
    - Реализуйте недостающие части, отмеченные комментариями `// TODO`
@@ -68,7 +68,7 @@
 
 4. **Запускайте и тестируйте:** После каждой лабы запускайте код и проверяйте работу.
 
-**Важно:** Каждая лабораторная работа имеет свой `METHOD.md` — методическое пособие, которое нужно прочитать перед выполнением. Оно содержит:
+**Важно:** Каждая лабораторная работа имеет свой `MANUAL.md` — методическое пособие, которое нужно прочитать перед выполнением. Оно содержит:
 - Зачем это нужно (реальный кейс)
 - Теорию простыми словами
 - Алгоритм выполнения
@@ -128,21 +128,21 @@
 
 | Lab | Тема | Ключевые навыки | Методичка |
 | :--- | :--- | :--- | :--- |
-| **Lab 00** | **Capability Check** | Проверка модели. Unit-тесты для LLM. | [METHOD.md](./labs/lab00-capability-check/METHOD.md) |
-| **Lab 01** | **Basics** | OpenAI API, Chat Loop, Memory Management. | [METHOD.md](./labs/lab01-basics/METHOD.md) |
-| **Lab 02** | **Tools** | Определение функций (JSON Schema), парсинг ToolCalls. | [METHOD.md](./labs/lab02-tools/METHOD.md) |
-| **Lab 03** | **Architecture** | Интерфейсы Go, паттерн Registry, Mocking. | [METHOD.md](./labs/lab03-real-world/METHOD.md) |
-| **Lab 04** | **Autonomy (ReAct)** | Цикл `Think-Act-Observe`. Обработка результатов. | [METHOD.md](./labs/lab04-autonomy/METHOD.md) |
-| **Lab 05** | **Human-in-the-Loop** | Интерактивность. Уточняющие вопросы. Safety. | [METHOD.md](./labs/lab05-human-interaction/METHOD.md) |
-| **Lab 06** | **Incident (SOP)** | Сложное планирование. Внедрение SOP в промпт. | [METHOD.md](./labs/lab06-incident/METHOD.md) |
-| **Lab 07** | **RAG** | Работа с документацией. Поиск знаний перед действием. | [METHOD.md](./labs/lab07-rag/METHOD.md) |
-| **Lab 08** | **Multi-Agent** | Оркестрация. Делегирование задач. Изоляция контекста. | [METHOD.md](./labs/lab08-multi-agent/METHOD.md) |
-| **Lab 09** | **Context Optimization** | Подсчет токенов, саммаризация, адаптивное управление контекстом. | [METHOD.md](./labs/lab09-context-optimization/METHOD.md) |
-| **Lab 10** | **Planning & Workflow** | Декомпозиция задач, разрешение зависимостей, выполнение плана с повторами. | [METHOD.md](./labs/lab10-planning-workflows/METHOD.md) |
-| **Lab 11** | **Memory & Context Engineering** | Долговременная память, извлечение фактов, слои контекста. | [METHOD.md](./labs/lab11-memory-context/METHOD.md) |
-| **Lab 12** | **Tool Server Protocol** | stdio/HTTP протоколы, версионирование схем, архитектура tool server. | [METHOD.md](./labs/lab12-tool-server/METHOD.md) |
-| **Lab 13** | **Agent Security Hardening** (Опционально) | Allowlists, risk scoring, защита от prompt injection, аудит. | [METHOD.md](./labs/lab13-security-hardening/METHOD.md) |
-| **Lab 14** | **Evals in CI** (Опционально) | Eval runner, golden dataset, интеграция CI пайплайна. | [METHOD.md](./labs/lab14-evals-in-ci/METHOD.md) |
+| **Lab 00** | **Capability Check** | Проверка модели. Unit-тесты для LLM. | [MANUAL.md](./labs/lab00-capability-check/MANUAL.md) |
+| **Lab 01** | **Basics** | OpenAI API, Chat Loop, Memory Management. | [MANUAL.md](./labs/lab01-basics/MANUAL.md) |
+| **Lab 02** | **Tools** | Определение функций (JSON Schema), парсинг ToolCalls. | [MANUAL.md](./labs/lab02-tools/MANUAL.md) |
+| **Lab 03** | **Architecture** | Интерфейсы Go, паттерн Registry, Mocking. | [MANUAL.md](./labs/lab03-real-world/MANUAL.md) |
+| **Lab 04** | **Autonomy (ReAct)** | Цикл `Think-Act-Observe`. Обработка результатов. | [MANUAL.md](./labs/lab04-autonomy/MANUAL.md) |
+| **Lab 05** | **Human-in-the-Loop** | Интерактивность. Уточняющие вопросы. Safety. | [MANUAL.md](./labs/lab05-human-interaction/MANUAL.md) |
+| **Lab 06** | **Incident (SOP)** | Сложное планирование. Внедрение SOP в промпт. | [MANUAL.md](./labs/lab06-incident/MANUAL.md) |
+| **Lab 07** | **RAG** | Работа с документацией. Поиск знаний перед действием. | [MANUAL.md](./labs/lab07-rag/MANUAL.md) |
+| **Lab 08** | **Multi-Agent** | Оркестрация. Делегирование задач. Изоляция контекста. | [MANUAL.md](./labs/lab08-multi-agent/MANUAL.md) |
+| **Lab 09** | **Context Optimization** | Подсчет токенов, саммаризация, адаптивное управление контекстом. | [MANUAL.md](./labs/lab09-context-optimization/MANUAL.md) |
+| **Lab 10** | **Planning & Workflow** | Декомпозиция задач, разрешение зависимостей, выполнение плана с повторами. | [MANUAL.md](./labs/lab10-planning-workflows/MANUAL.md) |
+| **Lab 11** | **Memory & Context Engineering** | Долговременная память, извлечение фактов, слои контекста. | [MANUAL.md](./labs/lab11-memory-context/MANUAL.md) |
+| **Lab 12** | **Tool Server Protocol** | stdio/HTTP протоколы, версионирование схем, архитектура tool server. | [MANUAL.md](./labs/lab12-tool-server/MANUAL.md) |
+| **Lab 13** | **Agent Security Hardening** (Опционально) | Allowlists, risk scoring, защита от prompt injection, аудит. | [MANUAL.md](./labs/lab13-security-hardening/MANUAL.md) |
+| **Lab 14** | **Evals in CI** (Опционально) | Eval runner, golden dataset, интеграция CI пайплайна. | [MANUAL.md](./labs/lab14-evals-in-ci/MANUAL.md) |
 
 ## Требования
 

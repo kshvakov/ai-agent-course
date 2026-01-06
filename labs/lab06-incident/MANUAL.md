@@ -1,4 +1,4 @@
-# Method Guide: Lab 06 — Incident Management (SOP)
+# Manual: Lab 06 — Incident Management (SOP)
 
 ## Why Is This Needed?
 
@@ -17,7 +17,7 @@ In this lab you'll create an **SRE (Site Reliability Engineer)** level agent. Un
 
 **With SOP:**
 - Agent: Checks HTTP status → 502
-- Agent: Reads logs → Sees "Config syntax error"
+- Agent: Reads logs → Receives "Config syntax error"
 - Agent: Understands restart won't help
 - Agent: Does rollback → Service recovers
 
@@ -27,7 +27,7 @@ In this lab you'll create an **SRE (Site Reliability Engineer)** level agent. Un
 
 ### Planning — breaking task into steps
 
-In this lab we use **explicit planning** (Plan-and-Solve), unlike implicit planning (ReAct) from Lab 04.
+In this lab, you'll use **explicit planning** (Plan-and-Solve), unlike implicit planning (ReAct) from Lab 04.
 
 **Difference:**
 
@@ -111,7 +111,7 @@ SOP for service failure:
 
 **Why does this work?**
 
-Without SOP, the model sees: `User: Fix it`. Its probabilistic mechanism may output: `Call: restart_service`. This is the most "popular" action.
+Without SOP, the model receives: `User: Fix it`. Its probabilistic mechanism may output: `Call: restart_service`. This is the most "popular" action.
 
 With SOP, the model is forced to generate text:
 - "Step 1: I need to check HTTP status." → This increases probability of calling `check_http`
@@ -126,7 +126,7 @@ Note the System Prompt in the solution:
 
 Why is this needed?
 
-Without this prompt, the model sees: `User: Fix it`.  
+Without this prompt, the model receives: `User: Fix it`.  
 Its probabilistic mechanism may output: `Call: restart_service`. This is the most "popular" action.
 
 With this prompt, the model is forced to generate text:

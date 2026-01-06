@@ -43,7 +43,7 @@ messages := []openai.ChatCompletionMessage{
 }
 ```
 
-**Step 2: Model Sees Search Tool Description**
+**Step 2: Model Receives Search Tool Description**
 
 ```go
 tools := []openai.Tool{
@@ -97,7 +97,7 @@ msg1 := resp1.Choices[0].Message
 **Why did the model generate a tool_call for search?**
 - System Prompt says: "Always search knowledge base before actions"
 - Tool Description says: "Use this BEFORE performing actions"
-- Model sees the word "protocol" in the request and links it to the search tool
+- The model identifies the word "protocol" in the request and links it to the search tool
 
 **Step 4: Runtime (Your Code) Executes Search**
 
@@ -134,18 +134,18 @@ messages = append(messages, openai.ChatCompletionMessage{
 // [system, user, assistant(tool_call: search_kb), tool("File: protocols.txt\nContent: ...")]
 ```
 
-**Step 6: Model Sees Documentation and Acts**
+**Step 6: Model Receives Documentation and Acts**
 
 ```go
 // Send updated history (with documentation!) to model
 resp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
     Model:    openai.GPT3Dot5Turbo,
-    Messages: messages,  // Model sees found documentation!
+    Messages: messages,  // Model receives found documentation!
     Tools:    tools,
 })
 
 msg2 := resp2.Choices[0].Message
-// Model sees in context:
+// Model receives in context:
 // "Phoenix server restart protocol:\n1. Turn off load balancer..."
 // Model generates tool calls according to protocol:
 
@@ -157,10 +157,10 @@ msg2 := resp2.Choices[0].Message
 
 **Why this is not magic:**
 
-1. **Model doesn't "know" the protocol** — it sees it in context after search
+1. **Model doesn't "know" the protocol** — it receives it in context after search
 2. **Search is a regular tool** — same as `ping` or `restart_service`
-3. **Search result is added to `messages[]`** — model sees it as a new message
-4. **Model generates actions based on context** — it sees documentation and follows it
+3. **Search result is added to `messages[]`** — model receives it as a new message
+4. **Model generates actions based on context** — it processes documentation and follows it
 
 **Key point:** RAG is not magic "knowledge", but a mechanism for adding relevant information to the model's context through a regular tool call.
 

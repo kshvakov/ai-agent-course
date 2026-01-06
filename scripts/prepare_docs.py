@@ -4,7 +4,7 @@ Prepare documentation structure for MkDocs build.
 
 This script:
 1. Copies README.md files to index.md (for clean URLs)
-2. Copies METHOD.md and SOLUTION.md files as-is
+2. Copies MANUAL.md and SOLUTION.md files as-is
 3. Copies STYLE.md to style.md
 4. Fixes internal links (README.md -> index.md or remove README.md)
 5. Creates structure for both EN and RU versions
@@ -274,8 +274,8 @@ def copy_readme_to_index(src_dir: Path, dst_dir: Path, is_ru: bool = False):
 
 
 def copy_other_files(src_dir: Path, dst_dir: Path):
-    """Copy METHOD.md and SOLUTION.md files."""
-    for filename in ['METHOD.md', 'SOLUTION.md']:
+    """Copy MANUAL.md and SOLUTION.md files."""
+    for filename in ['MANUAL.md', 'SOLUTION.md']:
         src_file = src_dir / filename
         if src_file.exists():
             dst_dir.mkdir(parents=True, exist_ok=True)

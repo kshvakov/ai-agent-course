@@ -4,9 +4,9 @@
 Learn to integrate real infrastructure tools (Proxmox API, Ansible CLI) into agent code. Use interfaces for abstraction.
 
 ## Theory
-To make an agent extensible, we shouldn't hardcode tool logic in `main.go`. We need the **Registry** pattern.
+To make an agent extensible, don't hardcode tool logic in `main.go`. Use the **Registry** pattern.
 
-We'll define a `Tool` interface:
+Define a `Tool` interface:
 ```go
 type Tool interface {
     Name() string
@@ -26,4 +26,4 @@ In `main.go` you'll find a registry structure and stubs for Proxmox/Ansible.
 4.  **Registry:** Register these tools in `ToolRegistry`.
 5.  **CLI:** Implement a simple command parser: if user writes "list vms", find the needed tool in the registry and run it.
 
-*(Here we work WITHOUT LLM for now, checking only "hands")*.
+*(Here you'll work WITHOUT LLM for now, checking only "hands")*.

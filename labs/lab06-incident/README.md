@@ -7,7 +7,7 @@ Create an SRE-level agent capable of independently investigating and resolving i
 
 ### Planning — breaking task into steps
 
-In this lab we use **explicit planning** (Plan-and-Solve), unlike implicit planning (ReAct) from Lab 04.
+In this lab, you'll use **explicit planning** (Plan-and-Solve), unlike implicit planning (ReAct) from Lab 04.
 
 **Difference:**
 
@@ -41,7 +41,7 @@ SOP for service failure:
 
 **Why is SOP important?**
 
-Without SOP, the model sees: `User: Fix it`. Its probabilistic mechanism may output: `Call: restart_service`. This is the most "popular" action.
+Without SOP, the model receives: `User: Fix it`. Its probabilistic mechanism may output: `Call: restart_service`. This is the most "popular" action.
 
 With SOP, the model is forced to generate text:
 - "Step 1: I need to check HTTP status." → This increases probability of calling `check_http`

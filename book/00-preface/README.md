@@ -9,7 +9,7 @@ This textbook will teach you to create autonomous AI agents in Go — systems th
 
 ### Real-World Case Study
 
-**Situation:** You created a chatbot for DevOps. User writes: "We have database issues, investigate"
+**Situation:** You've created a chatbot for DevOps. A user writes: "We have database issues, investigate"
 
 **Problem:** A regular chatbot can only respond with text. It cannot actually check metrics, read logs, or apply fixes.
 
@@ -29,7 +29,7 @@ This textbook will teach you to create autonomous AI agents in Go — systems th
 
 **Example:**
 - **ChatGPT:** "How to restart server?" → Answer: "Use command `systemctl restart nginx`"
-- **Agent:** "Restart server" → Agent itself calls `systemctl restart nginx`, checks status, reports result.
+- **Agent:** "Restart server" → The agent calls `systemctl restart nginx`, checks status, and reports the result.
 
 ## Agent Equation
 
@@ -105,9 +105,9 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) {
 1. **Level 0: Scripting.** Bash/Python scripts. Rigid logic. Any deviation — crash.
 2. **Level 1: Copilot.** "Write me nginx config". Human validates and applies.
 3. **Level 2: Chain.** "Execute deployment": pull -> build -> restart. Agent follows rails, but can (for example) fix compilation error itself.
-4. **Level 3: Autonomous Agent.** "We have database issues, investigate". Agent itself searches logs, checks metrics, builds hypotheses, and (if allowed) applies fixes.
+4. **Level 3: Autonomous Agent.** "We have database issues, investigate". The agent searches logs, checks metrics, builds hypotheses, and (if allowed) applies fixes.
 
-**This course:** We'll go from Level 1 to Level 3, creating our AI agent in Go (using DevOps agent as main example).
+**This course:** You'll progress from Level 1 to Level 3, creating your AI agent in Go (using a DevOps agent as the main example).
 
 ## How to Read This Textbook
 

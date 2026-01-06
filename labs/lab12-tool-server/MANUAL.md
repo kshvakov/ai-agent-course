@@ -1,4 +1,4 @@
-# Method Guide: Lab 12 — Tool Server Protocol
+# Manual: Lab 12 — Tool Server Protocol
 
 ## Why Is This Needed?
 

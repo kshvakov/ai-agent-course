@@ -1,4 +1,4 @@
-# Method Guide: Lab 03 — Real World (Interfaces & Infrastructure)
+# Manual: Lab 03 — Real World (Interfaces & Infrastructure)
 
 ## Why Is This Needed?
 

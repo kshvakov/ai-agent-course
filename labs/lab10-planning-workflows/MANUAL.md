@@ -1,4 +1,4 @@
-# Method Guide: Lab 10 — Planning and Workflows
+# Manual: Lab 10 — Planning and Workflows
 
 ## Why Is This Needed?
 

@@ -1,8 +1,8 @@
-# Method Guide: Lab 02 — Function Calling (Tools)
+# Manual: Lab 02 — Function Calling (Tools)
 
 ## Why Is This Needed?
 
-A regular LLM returns text. But to create an agent, we need the model to be able to call functions (tools). This turns LLM from a "talker" into a "worker".
+A regular LLM returns text. But to create an agent, the model needs to be able to call functions (tools). This turns LLM from a "talker" into a "worker".
 
 ### Real-World Case Study
 
@@ -19,7 +19,7 @@ A regular LLM returns text. But to create an agent, we need the model to be able
 ### How Does Function Calling Work?
 
 1. **You describe a function** in JSON Schema format
-2. **LLM sees the description** and decides: "I need to call this function"
+2. **The LLM receives the description** and decides: "I need to call this function"
 3. **LLM generates JSON** with function name and arguments
 4. **Your code parses JSON** and executes the real function
 5. **Result is returned** to LLM for further processing

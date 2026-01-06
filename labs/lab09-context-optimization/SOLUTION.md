@@ -207,7 +207,7 @@ func adaptiveContextManagement(ctx context.Context, client *openai.Client, messa
 
 ## 🔍 Complete Solution Code
 
-See the full code in the METHOD.md file above. The solution includes all functions for token counting, truncation, summarization, prioritization, and adaptive management.
+See the full code in the MANUAL.md file above. The solution includes all functions for token counting, truncation, summarization, prioritization, and adaptive management.
 
 ## 🎓 Key Points
 

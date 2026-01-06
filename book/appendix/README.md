@@ -30,7 +30,7 @@ This section contains reference information: glossary of terms, checklists, SOP 
 
 **See also:** [Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md#step-3-model-response-tool-call)
 
-**ReAct Loop (Reasoning and Action Loop)** — autonomous agent work pattern: Reason (reasons) → Act (acts) → Observe (observes) → repeats. Agent analyzes situation, performs action, sees result, and decides what to do next.
+**ReAct Loop (Reasoning and Action Loop)** — autonomous agent work pattern: Reason (reasons) → Act (acts) → Observe (observes) → repeats. Agent analyzes situation, performs action, receives result, and decides what to do next.
 
 **Etymology:** ReAct = Reason + Act
 
@@ -311,13 +311,13 @@ SOP for ticket processing:
 ### Q: Agent decides what to do itself. Is this magic?
 
 **A:** No. Agent works by a simple algorithm:
-1. LLM sees tool descriptions in `tools[]`
+1. LLM receives tool descriptions in `tools[]`
 2. LLM generates JSON with tool name and arguments
 3. Your code (Runtime) parses JSON and executes real function
 4. Result is added to history
-5. LLM sees result in context and generates next step
+5. LLM receives result in context and generates next step
 
-This is not magic — it's just a loop where the model sees results of previous actions.
+This is not magic — it's just a loop where the model receives results of previous actions.
 
 **See also:** [Chapter 04: Autonomy](../04-autonomy-and-loops/README.md#magic-vs-reality-how-the-loop-works)
 
@@ -334,7 +334,7 @@ The more accurate the `Description`, the better the selection.
 
 ### Q: Does the model "remember" past conversations?
 
-**A:** No. Model is stateless. It only sees the past in `messages[]` that you pass in each request. If you don't pass history, the model remembers nothing.
+**A:** No. Model is stateless. It only processes the past in `messages[]` that you pass in each request. If you don't pass history, the model remembers nothing.
 
 **See also:** [Chapter 01: LLM Physics](../01-llm-fundamentals/README.md#model-is-stateless)
 

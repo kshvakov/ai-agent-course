@@ -24,7 +24,7 @@ It's more efficient to divide responsibility: create a team of narrow specialist
 4. **Specialists perform tasks** in isolated context
 5. **Results are returned to Supervisor**, who assembles the response
 
-**Key point:** Context isolation — each specialist sees only their task, not the entire Supervisor history. This saves tokens and focuses attention.
+**Key point:** Context isolation — each specialist receives only their task, not the entire Supervisor history. This saves tokens and focuses attention.
 
 ## Supervisor Pattern (Boss-Subordinate)
 
@@ -112,8 +112,8 @@ supervisorMsg := supervisorResp.Choices[0].Message
 ```
 
 **Why did Supervisor call both tools?**
-- Supervisor sees task "check availability" → links to Network Expert
-- Supervisor sees "find out version" → links to DB Expert
+- Supervisor receives task "check availability" → links to Network Expert
+- Supervisor receives "find out version" → links to DB Expert
 - Supervisor understands sequence: first network, then DB
 
 **Step 3: Runtime (Your Code) Calls Worker for Network Expert**
@@ -157,7 +157,7 @@ func askNetworkExpert(question string) string {
     // Execute ping
     pingResult := ping("db-host.example.com")  // "Host is reachable"
     
-    // Worker sees result and formulates response
+    // Worker receives result and formulates response
     workerMessages = append(workerMessages, workerMsg)
     workerMessages = append(workerMessages, openai.ChatCompletionMessage{
         Role:    "tool",
@@ -177,7 +177,7 @@ func askNetworkExpert(question string) string {
 
 **Key isolation point:**
 - Worker **doesn't see** entire Supervisor history
-- Worker sees only its question and its context
+- Worker receives only its question and its context
 - This saves tokens and focuses Worker's attention
 
 **Step 4: Runtime (Your Code) Calls Worker for DB Expert**
@@ -233,7 +233,7 @@ supervisorMessages = append(supervisorMessages, openai.ChatCompletionMessage{
 // Send Worker results to Supervisor
 supervisorResp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
     Model:    openai.GPT4,
-    Messages: supervisorMessages,  // Supervisor sees results from both Workers!
+    Messages: supervisorMessages,  // Supervisor receives results from both Workers!
     Tools:    supervisorTools,
 })
 
@@ -254,13 +254,13 @@ finalMsg := supervisorResp2.Choices[0].Message
 
 ### Error 1: No Context Isolation
 
-**Symptom:** Worker sees entire Supervisor history, leading to context overflow and confusion.
+**Symptom:** Worker receives entire Supervisor history, leading to context overflow and confusion.
 
 **Cause:** Worker receives full Supervisor message history instead of isolated context.
 
 **Solution:**
 ```go
-// BAD: Worker sees entire Supervisor history
+// BAD: Worker receives entire Supervisor history
 workerMessages := supervisorMessages  // Full history!
 
 // GOOD: Worker receives only its question
@@ -355,7 +355,7 @@ supervisorTools := []openai.Tool{
 - Tool descriptions for calling Workers are clear
 
 ❌ **Not completed:**
-- Worker sees entire Supervisor history (no isolation)
+- Worker receives entire Supervisor history (no isolation)
 - Supervisor doesn't know who to call (poor descriptions)
 - Worker doesn't return result to Supervisor
 - Supervisor doesn't collect results from Workers

@@ -1,4 +1,4 @@
-# Method Guide: Lab 04 — The Agent Loop (Autonomy)
+# Manual: Lab 04 — The Agent Loop (Autonomy)
 
 ## Why Is This Needed?
 
@@ -41,7 +41,7 @@ While (Task not solved):
 
 ### Closing the Loop
 
-After executing a tool, we **don't ask the user** what to do next. We send the result back to LLM. The model sees the result of its actions and decides what to do next.
+After executing a tool, **don't ask the user** what to do next. Send the result back to the LLM. The model receives the result of its actions and decides what to do next.
 
 **Example dialogue in memory:**
 

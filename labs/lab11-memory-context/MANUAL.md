@@ -1,4 +1,4 @@
-# Method Guide: Lab 11 — Memory and Context Management
+# Manual: Lab 11 — Memory and Context Management
 
 ## Why Is This Needed?
 

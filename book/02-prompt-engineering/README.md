@@ -10,11 +10,11 @@ Without proper prompting, an agent will:
 - Perform dangerous actions without confirmation
 - Respond in the wrong format
 
-This chapter will teach you to create effective prompts that control agent behavior.
+This chapter teaches you to create effective prompts that control agent behavior.
 
 ### Real-World Case Study
 
-**Situation:** You created an agent for incident handling. User writes: "Service is down, fix it"
+**Situation:** You've created an agent for incident handling. A user writes: "Service is down, fix it"
 
 **Problem:** The agent immediately restarts the service without checking logs. Or vice versa, it will analyze for a long time without applying a fix.
 
@@ -222,7 +222,7 @@ messages := []openai.ChatCompletionMessage{
     {Role: "user", Content: "Access problem"},
 }
 
-// Model sees examples in System Prompt and generates response in the same format:
+// Model processes examples in System Prompt and generates response in the same format:
 // {"action": "check_account", "user_id": "..."}
 ```
 
@@ -244,7 +244,7 @@ User: "Status"
 Assistant: check_status("web-01")  // Another format!
 ```
 
-**Problem:** Model sees three different formats and doesn't understand which to use. Result is unpredictable.
+**Problem:** The model receives three different formats and doesn't understand which to use. Result is unpredictable.
 
 ✅ **Good:** All examples in one format
 
@@ -482,7 +482,7 @@ graph LR
 - System Prompt contains instructions (may contain few-shot examples of tool selection)
 - **Tools Schema is passed as a separate field** `tools[]` (not inside prompt!)
 - User Input — current request
-- Model sees all three parts and **generates tool_call** (tool name + arguments)
+- The model processes all three parts and **generates tool_call** (tool name + arguments)
 - **Runtime (your agent code)** validates tool_call, executes tool and adds result to `messages` with `role = "tool"`. Runtime is the code you write in Go to manage the agent loop (see [Chapter 00: Preface](../00-preface/README.md#runtime-execution-environment))
 - Second request includes tool result, model formulates final answer
 
@@ -490,7 +490,7 @@ graph LR
 
 1. **System Prompt** — this is text in `Messages[0].Content`. Can contain instructions, few-shot examples, SOP.
 
-2. **Tools Schema** — this is a separate field `Tools` in the request. **Not located inside prompt**, but model sees it together with prompt.
+2. **Tools Schema** — this is a separate field `Tools` in the request. **Not located inside prompt**, but the model receives it together with the prompt.
 
 3. **Few-shot examples** — located **inside System Prompt** (text). They show the model response format or tool selection.
 
@@ -545,7 +545,7 @@ Thought: ffmpeg is consuming resources. I'll check what this process is.
 Action: get_process_info(pid=12345)
 ```
 
-The model sees the reasoning format example and follows it. In practice, this happens in a loop: each `Observation` is added by Runtime (your code) to history, and the model sees it on the next iteration.
+The model processes the reasoning format example and follows it. In practice, this happens in a loop: each `Observation` is added by Runtime (your code) to history, and the model receives it on the next iteration.
 
 ### CoT and Agent Loop
 
@@ -556,7 +556,7 @@ The **"Thought-Action-Observation"** format — is a formalization of **Agent Lo
 1. **Thought** — model analyzes situation and thinks what to do next
 2. **Action** — model selects tool and parameters (generates `tool_call`)
 3. **Observation** — Runtime (your code) executes tool and adds result to history (`role = "tool"`)
-4. **Loop repeats:** model sees Observation in context, thinks again (Thought), selects next Action
+4. **Loop repeats:** model receives Observation in context, thinks again (Thought), selects next Action
 
 **Iteration example:**
 
@@ -566,7 +566,7 @@ Iteration 1:
   Action: get_cpu_metrics()
   Observation: "CPU 95%, process: ffmpeg"  ← runtime added to history
 
-Iteration 2 (model sees Observation in context):
+Iteration 2 (model receives Observation in context):
   Thought: "ffmpeg is consuming resources. I'll check process details"
   Action: get_process_info(pid=12345)
   Observation: "This is video conversion"  ← runtime added to history
@@ -576,7 +576,7 @@ Iteration 3:
   Action: [final answer to user]
 ```
 
-**Important:** This is not "magic" — the model simply sees results of previous tools in context (`messages[]`) and generates the next step based on this context.
+**Important:** This is not "magic" — the model simply processes results of previous tools in context (`messages[]`) and generates the next step based on this context.
 
 See more: **[Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md)** — how ReAct Loop and iterative agent process work.
 
@@ -631,7 +631,7 @@ Without SOP, an agent may "wander": immediately restart, then read logs, then re
 
 **Why SOP is important: directing model attention**
 
-Without SOP, the model sees: `User: Fix it`. Its probabilistic mechanism may output: `Call: restart_service`. This is the most "popular" action.
+Without SOP, the model receives: `User: Fix it`. Its probabilistic mechanism may output: `Call: restart_service`. This is the most "popular" action.
 
 With SOP, the model is forced to generate text:
 - "Step 1: I need to check HTTP status." → This increases probability of calling `check_http`
@@ -831,9 +831,9 @@ cotPrompt := `
 
 ### Self-Attention Mechanism
 
-The **Self-Attention** mechanism in the transformer allows the model to "see" connections between tokens in context. When the model sees examples:
+The **Self-Attention** mechanism in the transformer allows the model to identify connections between tokens in context. When the model processes examples:
 
-1. **Intuitively:** Model "adjusts" to the pattern it sees in context
+1. **Intuitively:** Model "adjusts" to the pattern it processes in context
 2. **Mechanically:** Vector representation of tokens shifts toward the needed format, because previous tokens (examples) set this context
 3. **Practically:** Result quality strongly depends on example quality and their consistency
 

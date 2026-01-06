@@ -117,7 +117,7 @@ Agent doesn't create an explicit plan, but plans "on the fly" during execution.
 1. Agent receives a task
 2. Agent thinks: "What do I need to do first?"
 3. Agent performs an action
-4. Agent sees result and thinks: "What to do next?"
+4. Agent receives result and thinks: "What to do next?"
 5. Repeats until task is complete
 
 **Example (DevOps):**
@@ -629,7 +629,7 @@ Runtime is the code that connects LLM with tools.
 
 ### Registry Pattern for Extensibility
 
-To make an agent extensible, we shouldn't hardcode tool logic in `main.go`. We need a **Registry** pattern.
+To make an agent extensible, don't hardcode tool logic in `main.go`. Use a **Registry** pattern.
 
 **Problem without Registry:**
 - Adding a new tool requires changes in dozens of places
@@ -820,7 +820,7 @@ sequenceDiagram
     Tool->>Runtime: "Server is ONLINE"
     Runtime->>Runtime: Adds result to messages[]:<br/>{role: "tool", content: "..."}
     Runtime->>LLM: ChatCompletionRequest<br/>(updated history)
-    LLM->>LLM: Sees tool result<br/>Generates final response
+    LLM->>LLM: Receives tool result<br/>Generates final response
     LLM->>Runtime: Response (content: "Server is running")
     Runtime->>User: "Server is running normally"
 ```

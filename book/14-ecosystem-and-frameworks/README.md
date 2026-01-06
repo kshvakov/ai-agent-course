@@ -4,7 +4,7 @@
 
 When creating AI agents, you face a choice: write everything from scratch or use a framework? Both approaches have pros and cons, and understanding when to choose what is critical for long-term success.
 
-This chapter will help you make informed decisions about agent architecture, avoiding vendor lock-in and using existing solutions where appropriate.
+This chapter helps you make informed decisions about agent architecture, avoiding vendor lock-in and using existing solutions where appropriate.
 
 ### Real-World Case Study
 
