@@ -1,6 +1,7 @@
 # Textbook: Designing Autonomous AI Agents
 
 **Version:** 2.0  
+**Author:** Kirill Shvakov  
 **For Course:** AI Agent Course  
 **Target Audience:** Programmers who want to build production AI agents
 
