@@ -31,6 +31,47 @@ GITHUB_REPO = "kshvakov/ai-agent-course"
 GITHUB_BASE_URL = f"https://github.com/{GITHUB_REPO}/blob/main"
 SITE_BASE_PATH = "/ai-agent-course"
 
+MKDOCS_CONFIG_FILE = REPO_ROOT / "mkdocs.yml"
+
+
+def read_site_url() -> str:
+    """
+    Read `site_url` from mkdocs.yml without adding extra dependencies.
+    Falls back to empty string if not found.
+    """
+    if not MKDOCS_CONFIG_FILE.exists():
+        return ""
+    content = MKDOCS_CONFIG_FILE.read_text(encoding="utf-8")
+    m = re.search(r"(?m)^\s*site_url:\s*(.+?)\s*$", content)
+    if not m:
+        return ""
+    url = m.group(1).strip().strip('"').strip("'")
+    return url
+
+
+def urljoin_base(base: str, path: str) -> str:
+    """Join base URL with a relative path."""
+    if not base:
+        return path
+    return base.rstrip("/") + "/" + path.lstrip("/")
+
+
+def build_sitemap_urls(docs_root: Path, site_url: str) -> list[str]:
+    """
+    Build a minimal sitemap list based on generated `index.md` pages.
+    We intentionally include only `index.md` to keep URLs stable and clean.
+    """
+    urls: list[str] = []
+    for index_md in docs_root.rglob("index.md"):
+        rel_dir = index_md.parent.relative_to(docs_root).as_posix()
+        if rel_dir == ".":
+            rel_dir = ""
+        # Directory URL (use_directory_urls: true)
+        url_path = rel_dir + ("/" if rel_dir else "")
+        urls.append(urljoin_base(site_url, url_path))
+    # Deduplicate + stable order
+    return sorted(set(urls))
+
 
 def fix_links(content: str, is_ru: bool = False) -> str:
     """
@@ -315,6 +356,10 @@ def main():
     if DOCS_DIR.exists():
         shutil.rmtree(DOCS_DIR)
     DOCS_DIR.mkdir(parents=True)
+
+    # Create SEO helper files at site root (copied by MkDocs as static files)
+    site_url = read_site_url()
+    sitemap_url = urljoin_base(site_url, "sitemap.xml") if site_url else "sitemap.xml"
     
     # Copy book/README.md as index.md (EN)
     print("\n[EN] Processing book/ directory...")
@@ -357,6 +402,26 @@ def main():
     
     # Labs are not copied - links will point to GitHub
     
+    # Write robots.txt and sitemap.xml after all pages are generated
+    robots_txt = f"""User-agent: *
+Allow: /
+
+Sitemap: {sitemap_url}
+"""
+    (DOCS_DIR / "robots.txt").write_text(robots_txt, encoding="utf-8")
+
+    sitemap_urls = build_sitemap_urls(DOCS_DIR, site_url)
+    sitemap_xml_lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ]
+    for u in sitemap_urls:
+        sitemap_xml_lines.append("  <url>")
+        sitemap_xml_lines.append(f"    <loc>{u}</loc>")
+        sitemap_xml_lines.append("  </url>")
+    sitemap_xml_lines.append("</urlset>")
+    (DOCS_DIR / "sitemap.xml").write_text("\n".join(sitemap_xml_lines) + "\n", encoding="utf-8")
+
     print("\n✓ Documentation structure prepared successfully!")
     print(f"  Output directory: {DOCS_DIR}")
 

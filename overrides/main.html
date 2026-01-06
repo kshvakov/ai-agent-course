@@ -6,7 +6,121 @@
 
 {% block extrahead %}
   {{ super() }}
-  <meta name="google-site-verification" content="ufsfeeekd71C2pKLoqB1ryWbuSIkJqCmWS1pIgrkSP4" />
+
+  {# --- SEO meta tags (canonical, description, OpenGraph, Twitter) --- #}
+  {%- set base = (config.site_url | default("", true)) -%}
+  {%- if base.endswith('/') -%}{%- set base = base[:-1] -%}{%- endif -%}
+
+  {%- set path = (page.url | default("", true)) -%}
+  {%- if path.startswith('/') -%}{%- set path = path[1:] -%}{%- endif -%}
+
+  {%- if base -%}
+    {%- set canonical = base ~ '/' ~ path -%}
+  {%- else -%}
+    {%- set canonical = '/' ~ path -%}
+  {%- endif -%}
+
+  {%- set is_ru = path.startswith('ru/') -%}
+  {%- set lang = 'ru' if is_ru else 'en' -%}
+  {%- set og_locale = 'ru_RU' if is_ru else 'en_US' -%}
+
+  {%- set page_desc = "" -%}
+  {%- if page.meta and page.meta.description -%}
+    {%- set page_desc = page.meta.description -%}
+  {%- elif config.extra and config.extra.seo and config.extra.seo.description and config.extra.seo.description.get(lang) -%}
+    {%- set page_desc = config.extra.seo.description.get(lang) -%}
+  {%- elif config.site_description -%}
+    {%- set page_desc = config.site_description -%}
+  {%- endif -%}
+
+  {%- set robots_value = "index,follow" -%}
+  {%- if page.meta and page.meta.robots -%}
+    {%- set robots_value = page.meta.robots -%}
+  {%- endif -%}
+
+  {# MkDocs Material already renders canonical/description/hreflang. We add only what it doesn't: robots + OG/Twitter. #}
+  <meta name="robots" content="{{ robots_value | e }}" />
+
+  {# OpenGraph #}
+  <meta property="og:site_name" content="{{ config.site_name | e }}" />
+  <meta property="og:title" content="{{ (config.site_name if page.is_homepage else page.title) | e }}" />
+  <meta property="og:url" content="{{ canonical | e }}" />
+  <meta property="og:type" content="{{ 'website' if page.is_homepage else 'article' }}" />
+  <meta property="og:locale" content="{{ og_locale }}" />
+  {%- if page_desc -%}
+    <meta property="og:description" content="{{ page_desc | e }}" />
+  {%- endif -%}
+
+  {# Twitter #}
+  {%- set social_image = "" -%}
+  {%- if config.extra and config.extra.seo and config.extra.seo.social_image -%}
+    {%- set social_image = config.extra.seo.social_image -%}
+  {%- endif -%}
+
+  {%- if social_image -%}
+    {%- if social_image.startswith('http://') or social_image.startswith('https://') -%}
+      {%- set social_image_abs = social_image -%}
+    {%- elif base -%}
+      {%- set social_image_abs = base ~ '/' ~ (social_image[1:] if social_image.startswith('/') else social_image) -%}
+    {%- else -%}
+      {%- set social_image_abs = social_image -%}
+    {%- endif -%}
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta property="og:image" content="{{ social_image_abs | e }}" />
+    <meta name="twitter:image" content="{{ social_image_abs | e }}" />
+  {%- else -%}
+    <meta name="twitter:card" content="summary" />
+  {%- endif -%}
+
+  <meta name="twitter:title" content="{{ (config.site_name if page.is_homepage else page.title) | e }}" />
+  {%- if page_desc -%}
+    <meta name="twitter:description" content="{{ page_desc | e }}" />
+  {%- endif -%}
+
+  {# Breadcrumbs schema.org (JSON-LD) #}
+  {%- set home_name = 'Оглавление' if is_ru else 'Home' -%}
+  {%- set home_path = 'ru/' if is_ru else '' -%}
+  {%- set home_url = (base ~ '/' ~ home_path) if base else ('/' ~ home_path) -%}
+
+  {%- set breadcrumb_items = [] -%}
+  {%- set _ = breadcrumb_items.append({'name': home_name, 'url': home_url}) -%}
+
+  {# Prefer MkDocs' ancestors (section chain). Fallback to just Home -> Current page. #}
+  {%- if page and page.ancestors -%}
+    {%- for a in page.ancestors -%}
+      {%- if a.url -%}
+        {%- set a_path = a.url -%}
+        {%- if a_path.startswith('/') -%}{%- set a_path = a_path[1:] -%}{%- endif -%}
+        {%- set a_abs = (base ~ '/' ~ a_path) if base else ('/' ~ a_path) -%}
+        {%- set _ = breadcrumb_items.append({'name': a.title, 'url': a_abs}) -%}
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endif -%}
+
+  {# Avoid "Home -> Home" on the homepage #}
+  {%- if canonical != home_url -%}
+    {%- set current_name = (config.site_name if page and page.is_homepage else (page.title if page else config.site_name)) -%}
+    {%- set _ = breadcrumb_items.append({'name': current_name, 'url': canonical}) -%}
+  {%- endif -%}
+
+  {%- set item_list = [] -%}
+  {%- for b in breadcrumb_items -%}
+    {%- set _ = item_list.append({
+      '@type': 'ListItem',
+      'position': loop.index,
+      'name': b.name,
+      'item': b.url
+    }) -%}
+  {%- endfor -%}
+
+  {%- set breadcrumb_schema = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    'itemListElement': item_list
+  } -%}
+  <script type="application/ld+json">{{ breadcrumb_schema | tojson }}</script>
+  {# /Breadcrumbs schema.org #}
+  {# --- /SEO meta tags --- #}
 {% endblock %}
 
 {% block scripts %}
@@ -17,17 +131,28 @@
     {% set ym_id = config.extra.yandex_metrika_id %}
     {% set ym_ecommerce_layer = config.extra.yandex_metrika_ecommerce_layer | default("dataLayer") %}
     <!-- Yandex.Metrika counter -->
+    <span id="ym-config" data-ym-id="{{ ym_id }}" data-ym-ecommerce-layer="{{ ym_ecommerce_layer }}" style="display:none"></span>
     <script type="text/javascript">
-      (function(m,e,t,r,i,k,a){
+      (function(m,e,t,i){
+          var cfg = document.getElementById("ym-config");
+          var ymId = cfg ? Number(cfg.getAttribute("data-ym-id")) : null;
+          var ecommerceLayer = cfg ? (cfg.getAttribute("data-ym-ecommerce-layer") || "dataLayer") : "dataLayer";
+          if (!ymId) { return; }
+
+          var r = "https://mc.yandex.ru/metrika/tag.js?id=" + ymId;
+
           m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
           m[i].l=1*new Date();
           for (var j = 0; j < document.scripts.length; j++) {
               if (document.scripts[j].src === r) { return; }
           }
-          k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)
-      })(window, document, "script", "https://mc.yandex.ru/metrika/tag.js?id={{ ym_id }}", "ym");
+          var k=e.createElement(t),a=e.getElementsByTagName(t)[0];
+          k.async=1;
+          k.src=r;
+          a.parentNode.insertBefore(k,a);
 
-      ym({{ ym_id }}, "init", {ssr:true, clickmap:true, ecommerce:"{{ ym_ecommerce_layer }}", accurateTrackBounce:true, trackLinks:true});
+          m[i](ymId, "init", {ssr:true, clickmap:true, ecommerce:ecommerceLayer, accurateTrackBounce:true, trackLinks:true});
+      })(window, document, "script", "ym");
     </script>
     <noscript>
       <div>

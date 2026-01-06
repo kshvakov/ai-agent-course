@@ -171,4 +171,11 @@ extra:
   yandex_metrika_id: 106153539
   # Used when `ecommerce: "dataLayer"` is enabled
   yandex_metrika_ecommerce_layer: dataLayer
+  seo:
+    description:
+      en: A practical course on building autonomous AI agents in Go
+      ru: Практический курс по созданию автономных AI-агентов на Go
+    # Optional. If set, will be used for OpenGraph/Twitter.
+    # Can be absolute URL or a path relative to site root, e.g. "assets/social-card.png"
+    social_image: ""
 
