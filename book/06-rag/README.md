@@ -216,6 +216,343 @@ Chunk 2: "Step 2: Turn off load balancer..."
 Chunk 3: "Step 3: Restart server..."
 ```
 
+## RAG for Action Space (Tool Retrieval)
+
+So far we've discussed RAG for **documents** (protocols, instructions). But RAG is also needed for **action space** — when an agent has a potentially infinite number of tools.
+
+### The Problem: "Infinite" Tools
+
+**Situation:** An agent needs to work with Linux commands for troubleshooting. Linux has thousands of commands (`grep`, `awk`, `sed`, `jq`, `sort`, `uniq`, `head`, `tail`, etc.), and they can be combined into pipelines.
+
+**Problem:**
+- Can't pass all commands in `tools[]` — that's thousands of tokens
+- Model performs worse with large lists (more hallucinations)
+- Latency increases (more tokens = slower)
+- No security control (which commands are dangerous?)
+
+**Naive solution (doesn't work):**
+```go
+// BAD: One universal tool for everything
+tools := []openai.Tool{
+    {
+        Function: &openai.FunctionDefinition{
+            Name: "run_shell",
+            Description: "Execute any shell command",
+            Parameters: json.RawMessage(`{
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string"}
+                }
+            }`),
+        },
+    },
+}
+```
+
+**Why this is bad:**
+- No validation (could execute `rm -rf /`)
+- No audit trail (unclear which commands were used)
+- No control (model can call anything)
+
+### Solution: Tool RAG (Action-Space Retrieval)
+
+**Idea:** Store a **tool catalog** and retrieve only relevant tools before planning.
+
+**How it works:**
+
+1. **Tool catalog** stores metadata for each tool:
+   - Name and description
+   - Tags/categories (e.g., "text-processing", "network", "filesystem")
+   - Parameters and their types
+   - Risk level (safe/moderate/dangerous)
+   - Usage examples
+
+2. **Before planning**, agent searches for relevant tools:
+   - Based on user query ("find errors in logs")
+   - Retrieves top-k tools (e.g., `grep`, `tail`, `jq`)
+   - Adds only their schemas to `tools[]`
+
+3. **For pipelines**, use a two-level contract:
+   - **JSON DSL** describes the pipeline plan (steps, stdin/stdout, expectations)
+   - **Runtime** maps DSL to tool calls or executes via single `execute_pipeline`
+
+### Example: Tool RAG for Linux Commands
+
+**Step 1: Tool Catalog**
+
+```go
+type ToolDefinition struct {
+    Name        string
+    Description string
+    Tags        []string  // "text-processing", "filtering", "sorting"
+    RiskLevel   string    // "safe", "moderate", "dangerous"
+    Schema      json.RawMessage
+}
+
+var toolCatalog = []ToolDefinition{
+    {
+        Name:        "grep",
+        Description: "Search for patterns in text. Use for filtering lines matching a pattern.",
+        Tags:        []string{"text-processing", "filtering", "search"},
+        RiskLevel:   "safe",
+        Schema: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string"},
+                "input": {"type": "string"}
+            }
+        }`),
+    },
+    {
+        Name:        "sort",
+        Description: "Sort lines of text. Use for ordering output.",
+        Tags:        []string{"text-processing", "sorting"},
+        RiskLevel:   "safe",
+        Schema: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "input": {"type": "string"}
+            }
+        }`),
+    },
+    {
+        Name:        "head",
+        Description: "Show first N lines. Use for limiting output.",
+        Tags:        []string{"text-processing", "filtering"},
+        RiskLevel:   "safe",
+        Schema: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "lines": {"type": "number"},
+                "input": {"type": "string"}
+            }
+        }`),
+    },
+    // ... hundreds more tools
+}
+```
+
+**Step 2: Search for Relevant Tools**
+
+```go
+func searchToolCatalog(query string, topK int) []ToolDefinition {
+    // Simple search by description and tags (in production - vector search)
+    var results []ToolDefinition
+    
+    queryLower := strings.ToLower(query)
+    for _, tool := range toolCatalog {
+        // Search by description
+        if strings.Contains(strings.ToLower(tool.Description), queryLower) {
+            results = append(results, tool)
+            continue
+        }
+        // Search by tags
+        for _, tag := range tool.Tags {
+            if strings.Contains(strings.ToLower(tag), queryLower) {
+                results = append(results, tool)
+                break
+            }
+        }
+    }
+    
+    // Return top-k
+    if len(results) > topK {
+        return results[:topK]
+    }
+    return results
+}
+
+// Example usage
+userQuery := "find errors in logs"
+relevantTools := searchToolCatalog("error log filter", 5)
+// Returns: [grep, tail, jq, ...] - only relevant ones!
+```
+
+**Step 3: Add Only Relevant Tools to Context**
+
+```go
+// Instead of passing all 1000+ tools
+relevantTools := searchToolCatalog(userQuery, 5)
+
+// Convert to OpenAI format
+tools := make([]openai.Tool, 0, len(relevantTools))
+for _, toolDef := range relevantTools {
+    tools = append(tools, openai.Tool{
+        Type: openai.ToolTypeFunction,
+        Function: &openai.FunctionDefinition{
+            Name:        toolDef.Name,
+            Description: toolDef.Description,
+            Parameters:  toolDef.Schema,
+        },
+    })
+}
+
+// Now tools contains only 5 relevant tools instead of 1000+
+```
+
+### Pipelines: JSON DSL + Runtime
+
+For complex tasks (e.g., "find top 10 errors in logs"), the agent must build **pipelines** from multiple commands.
+
+**Approach 1: JSON DSL Pipeline**
+
+Agent generates a formalized pipeline plan:
+
+```go
+type PipelineStep struct {
+    Tool    string                 `json:"tool"`
+    Args    map[string]interface{} `json:"args"`
+    Input   string                 `json:"input,omitempty"`  // stdin from previous step
+    Output  string                 `json:"output,omitempty"` // expected format
+}
+
+type Pipeline struct {
+    Steps         []PipelineStep `json:"steps"`
+    ExpectedOutput string        `json:"expected_output"`
+    RiskLevel     string         `json:"risk_level"` // "safe", "moderate", "dangerous"
+}
+
+// Example: Agent generates this JSON
+pipelineJSON := `{
+    "steps": [
+        {
+            "tool": "grep",
+            "args": {"pattern": "ERROR"},
+            "input": "logs.txt"
+        },
+        {
+            "tool": "sort",
+            "args": {},
+            "input": "{{step_0.output}}"
+        },
+        {
+            "tool": "head",
+            "args": {"lines": 10},
+            "input": "{{step_1.output}}"
+        }
+    ],
+    "expected_output": "Top 10 error lines, sorted",
+    "risk_level": "safe"
+}`
+```
+
+**Approach 2: Runtime Executes Pipeline**
+
+```go
+func executePipeline(pipelineJSON string, inputData string) (string, error) {
+    var pipeline Pipeline
+    if err := json.Unmarshal([]byte(pipelineJSON), &pipeline); err != nil {
+        return "", err
+    }
+    
+    // Validation: check risk
+    if pipeline.RiskLevel == "dangerous" {
+        return "", fmt.Errorf("dangerous pipeline requires confirmation")
+    }
+    
+    // Execute steps sequentially
+    currentInput := inputData
+    for i, step := range pipeline.Steps {
+        // Substitute result from previous step
+        if strings.Contains(step.Input, "{{step_") {
+            step.Input = currentInput
+        }
+        
+        // Execute step (in reality - call corresponding tool)
+        result, err := executeToolStep(step.Tool, step.Args, step.Input)
+        if err != nil {
+            return "", fmt.Errorf("step %d failed: %v", i, err)
+        }
+        
+        currentInput = result
+    }
+    
+    return currentInput, nil
+}
+```
+
+**Approach 3: `execute_pipeline` Tool**
+
+Agent calls a single tool with pipeline JSON:
+
+```go
+tools := []openai.Tool{
+    {
+        Function: &openai.FunctionDefinition{
+            Name: "execute_pipeline",
+            Description: "Execute a pipeline of tools. Provide pipeline JSON with steps, expected output, and risk level.",
+            Parameters: json.RawMessage(`{
+                "type": "object",
+                "properties": {
+                    "pipeline": {"type": "string", "description": "JSON pipeline definition"},
+                    "input_data": {"type": "string", "description": "Input data (e.g., log file content)"}
+                },
+                "required": ["pipeline", "input_data"]
+            }`),
+        },
+    },
+}
+
+// Agent generates tool call:
+// execute_pipeline({
+//     "pipeline": "{\"steps\":[...], \"risk_level\": \"safe\"}",
+//     "input_data": "log content here"
+// })
+```
+
+### Practical Patterns
+
+**Tool Discovery via Tool Servers:**
+
+In production, tools are often provided via [Tool Servers](../18-tool-protocols-and-servers/README.md). The catalog can be retrieved dynamically:
+
+```go
+// Tool Server provides ListTools()
+toolServer := connectToToolServer("http://localhost:8080")
+allTools, _ := toolServer.ListTools()
+
+// Filter by task
+relevantTools := filterToolsByQuery(allTools, userQuery, topK=5)
+```
+
+**Validation and Security:**
+
+```go
+func validatePipeline(pipeline Pipeline) error {
+    // Check risk
+    if pipeline.RiskLevel == "dangerous" {
+        return fmt.Errorf("dangerous pipeline requires human approval")
+    }
+    
+    // Check tool allowlist
+    allowedTools := map[string]bool{
+        "grep": true, "sort": true, "head": true,
+        // rm, dd and other dangerous ones - NOT in allowlist
+    }
+    
+    for _, step := range pipeline.Steps {
+        if !allowedTools[step.Tool] {
+            return fmt.Errorf("tool %s not allowed", step.Tool)
+        }
+    }
+    
+    return nil
+}
+```
+
+**Observability:**
+
+```go
+// Log selected tools and reasons
+log.Printf("Tool retrieval: query=%s, selected=%v, reason=%s",
+    userQuery,
+    []string{"grep", "sort", "head"},
+    "matched tags: text-processing, filtering")
+
+// Store pipeline JSON for audit
+auditLog.StorePipeline(userID, pipelineJSON, result)
+```
+
 ## Common Errors
 
 ### Error 1: Agent Doesn't Search Knowledge Base
@@ -260,6 +597,83 @@ query := "Phoenix server restart protocol"
 chunkSize := 500  // Tokens
 ```
 
+### Error 4: Passing All Tools to Context
+
+**Symptom:** Agent receives a list of 1000+ tools, model performs worse, latency increases.
+
+**Cause:** All tools are passed in `tools[]` without filtering.
+
+**Solution:**
+```go
+// BAD: All tools
+tools := getAllTools()  // 1000+ tools
+
+// GOOD: Only relevant ones
+userQuery := "find errors in logs"
+relevantTools := searchToolCatalog(userQuery, topK=5)  // Only 5 relevant tools
+tools := convertToOpenAITools(relevantTools)
+```
+
+### Error 5: Universal `run_shell` Without Control
+
+**Symptom:** Agent uses a single `run_shell(command)` tool for all commands. No validation, no audit trail.
+
+**Cause:** Simplifying architecture at the expense of security.
+
+**Solution:**
+```go
+// BAD: Universal shell
+tools := []openai.Tool{{
+    Function: &openai.FunctionDefinition{
+        Name: "run_shell",
+        Description: "Execute any shell command",
+    },
+}}
+
+// GOOD: Specific tools + pipeline DSL
+tools := []openai.Tool{
+    {Function: &openai.FunctionDefinition{Name: "grep", ...}},
+    {Function: &openai.FunctionDefinition{Name: "sort", ...}},
+    {Function: &openai.FunctionDefinition{Name: "execute_pipeline", ...}},
+}
+
+// Pipeline JSON is validated before execution
+if err := validatePipeline(pipeline); err != nil {
+    return err
+}
+```
+
+### Error 6: No Pipeline Validation
+
+**Symptom:** Agent generates a pipeline with dangerous commands (`rm -rf`, `dd`), which execute without checks.
+
+**Cause:** No risk level check and allowlist validation before execution.
+
+**Solution:**
+```go
+// GOOD: Validate before execution
+func executePipeline(pipelineJSON string) error {
+    var pipeline Pipeline
+    json.Unmarshal([]byte(pipelineJSON), &pipeline)
+    
+    // Check risk
+    if pipeline.RiskLevel == "dangerous" {
+        return fmt.Errorf("dangerous pipeline requires confirmation")
+    }
+    
+    // Check allowlist
+    allowedTools := map[string]bool{"grep": true, "sort": true}
+    for _, step := range pipeline.Steps {
+        if !allowedTools[step.Tool] {
+            return fmt.Errorf("tool %s not allowed", step.Tool)
+        }
+    }
+    
+    // Execute only after validation
+    return runValidatedPipeline(pipeline)
+}
+```
+
 ## Mini-Exercises
 
 ### Exercise 1: Implement Simple Search
@@ -292,6 +706,39 @@ func chunkDocument(text string, chunkSize int) []string {
 - Function splits document into chunks of specified size
 - Chunks don't overlap (or overlap minimally)
 
+### Exercise 3: Implement Tool Search
+
+Implement a function to search for relevant tools in the catalog:
+
+```go
+func searchToolCatalog(query string, catalog []ToolDefinition, topK int) []ToolDefinition {
+    // Search by description and tags
+    // Return top-k most relevant tools
+}
+```
+
+**Expected result:**
+- Function finds tools relevant to the query
+- Returns no more than topK tools
+- Considers tool descriptions and tags
+
+### Exercise 4: Pipeline Validation
+
+Implement a function to validate a pipeline before execution:
+
+```go
+func validatePipeline(pipeline Pipeline, allowedTools map[string]bool) error {
+    // Check risk level
+    // Check tool allowlist
+    // Return error if pipeline is unsafe
+}
+```
+
+**Expected result:**
+- Function returns error for dangerous pipelines
+- Function returns error if disallowed tools are used
+- Function returns nil for safe pipelines
+
 ## Completion Criteria / Checklist
 
 ✅ **Completed:**
@@ -300,11 +747,17 @@ func chunkDocument(text string, chunkSize int) []string {
 - Documents are split into appropriately sized chunks
 - Search tool has clear description
 - System Prompt instructs agent to use knowledge base
+- For large tool spaces, tool retrieval is used (only relevant tools in context)
+- Pipelines are validated before execution (risk level, allowlist)
+- Dangerous operations require confirmation
 
 ❌ **Not completed:**
 - Agent doesn't search knowledge base (uses only general knowledge)
 - Search queries are too general (doesn't find needed information)
 - Chunks are too large (don't fit in context)
+- All tools are passed to context without filtering (1000+ tools)
+- Universal `run_shell` is used without security controls
+- Pipelines execute without validation
 
 ## Production Notes
 
@@ -318,8 +771,9 @@ More on production readiness: [Chapter 19: Observability](../19-observability-an
 
 ## Connection with Other Chapters
 
-- **Tools:** How search tool integrates into agent, see [Chapter 03: Tools](../03-tools-and-function-calling/README.md)
+- **Tools:** How search tool integrates into agent, see [Chapter 03: Tools](../03-tools-and-function-calling/README.md). The problem of large tool lists is solved via tool retrieval (see "RAG for Action Space" section above).
 - **Autonomy:** How RAG works in the agent loop, see [Chapter 04: Autonomy](../04-autonomy-and-loops/README.md)
+- **Tool Servers:** How to retrieve tool catalogs dynamically via tool servers, see [Chapter 18: Tool Protocols](../18-tool-protocols-and-servers/README.md)
 
 ## What's Next?
 

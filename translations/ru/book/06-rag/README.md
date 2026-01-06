@@ -216,6 +216,343 @@ messages = append(messages, openai.ChatCompletionMessage{
 Чанк 3: "Шаг 3: Перезагрузить сервер..."
 ```
 
+## RAG для пространства действий (Tool Retrieval)
+
+До сих пор мы говорили о RAG для **документов** (регламенты, инструкции). Но RAG нужен и для **пространства действий** — когда у агента потенциально бесконечное количество инструментов.
+
+### Проблема: "Бесконечные" инструменты
+
+**Ситуация:** Агент должен работать с Linux-командами для траблшутинга. В Linux тысячи команд (`grep`, `awk`, `sed`, `jq`, `sort`, `uniq`, `head`, `tail` и т.д.), и они комбинируются в пайплайны.
+
+**Проблема:**
+- Нельзя передать все команды в `tools[]` — это тысячи токенов
+- Модель хуже выбирает из большого списка (больше галлюцинаций)
+- Задержка растет (больше токенов = медленнее)
+- Нет контроля безопасности (какие команды опасны?)
+
+**Наивное решение (не работает):**
+```go
+// ПЛОХО: Один универсальный инструмент для всего
+tools := []openai.Tool{
+    {
+        Function: &openai.FunctionDefinition{
+            Name: "run_shell",
+            Description: "Execute any shell command",
+            Parameters: json.RawMessage(`{
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string"}
+                }
+            }`),
+        },
+    },
+}
+```
+
+**Почему это плохо:**
+- Нет валидации (можно выполнить `rm -rf /`)
+- Нет аудита (непонятно, какие команды использовались)
+- Нет контроля (модель может вызвать что угодно)
+
+### Решение: Tool RAG (Action-Space Retrieval)
+
+**Идея:** Храним **каталог инструментов** и перед планированием извлекаем только релевантные.
+
+**Как это работает:**
+
+1. **Каталог инструментов** хранит метаданные каждого инструмента:
+   - Имя и описание
+   - Теги/категории (например, "text-processing", "network", "filesystem")
+   - Параметры и их типы
+   - Уровень риска (safe/moderate/dangerous)
+   - Примеры использования
+
+2. **Перед планированием** агент ищет релевантные инструменты:
+   - По запросу пользователя ("найди ошибки в логах")
+   - Извлекает top-k инструментов (например, `grep`, `tail`, `jq`)
+   - Добавляет только их схемы в `tools[]`
+
+3. **Для пайплайнов** используем двухуровневый контракт:
+   - **JSON DSL** описывает план пайплайна (steps, stdin/stdout, ожидания)
+   - **Runtime** маппит DSL в tool calls или выполняет через один `execute_pipeline`
+
+### Пример: Tool RAG для Linux-команд
+
+**Шаг 1: Каталог инструментов**
+
+```go
+type ToolDefinition struct {
+    Name        string
+    Description string
+    Tags        []string  // "text-processing", "filtering", "sorting"
+    RiskLevel   string    // "safe", "moderate", "dangerous"
+    Schema      json.RawMessage
+}
+
+var toolCatalog = []ToolDefinition{
+    {
+        Name:        "grep",
+        Description: "Search for patterns in text. Use for filtering lines matching a pattern.",
+        Tags:        []string{"text-processing", "filtering", "search"},
+        RiskLevel:   "safe",
+        Schema: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string"},
+                "input": {"type": "string"}
+            }
+        }`),
+    },
+    {
+        Name:        "sort",
+        Description: "Sort lines of text. Use for ordering output.",
+        Tags:        []string{"text-processing", "sorting"},
+        RiskLevel:   "safe",
+        Schema: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "input": {"type": "string"}
+            }
+        }`),
+    },
+    {
+        Name:        "head",
+        Description: "Show first N lines. Use for limiting output.",
+        Tags:        []string{"text-processing", "filtering"},
+        RiskLevel:   "safe",
+        Schema: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "lines": {"type": "number"},
+                "input": {"type": "string"}
+            }
+        }`),
+    },
+    // ... еще сотни инструментов
+}
+```
+
+**Шаг 2: Поиск релевантных инструментов**
+
+```go
+func searchToolCatalog(query string, topK int) []ToolDefinition {
+    // Простой поиск по описанию и тегам (в продакшене - векторный поиск)
+    var results []ToolDefinition
+    
+    queryLower := strings.ToLower(query)
+    for _, tool := range toolCatalog {
+        // Ищем по описанию
+        if strings.Contains(strings.ToLower(tool.Description), queryLower) {
+            results = append(results, tool)
+            continue
+        }
+        // Ищем по тегам
+        for _, tag := range tool.Tags {
+            if strings.Contains(strings.ToLower(tag), queryLower) {
+                results = append(results, tool)
+                break
+            }
+        }
+    }
+    
+    // Возвращаем top-k
+    if len(results) > topK {
+        return results[:topK]
+    }
+    return results
+}
+
+// Пример использования
+userQuery := "найди ошибки в логах"
+relevantTools := searchToolCatalog("error log filter", 5)
+// Возвращает: [grep, tail, jq, ...] - только релевантные!
+```
+
+**Шаг 3: Добавляем только релевантные tools в контекст**
+
+```go
+// Вместо передачи всех 1000+ инструментов
+relevantTools := searchToolCatalog(userQuery, 5)
+
+// Преобразуем в формат OpenAI
+tools := make([]openai.Tool, 0, len(relevantTools))
+for _, toolDef := range relevantTools {
+    tools = append(tools, openai.Tool{
+        Type: openai.ToolTypeFunction,
+        Function: &openai.FunctionDefinition{
+            Name:        toolDef.Name,
+            Description: toolDef.Description,
+            Parameters:  toolDef.Schema,
+        },
+    })
+}
+
+// Теперь tools содержит только 5 релевантных инструментов вместо 1000+
+```
+
+### Пайплайны: JSON DSL + Runtime
+
+Для сложных задач (например, "найди топ-10 ошибок в логах") агент должен строить **пайплайны** из нескольких команд.
+
+**Подход 1: JSON DSL пайплайна**
+
+Агент генерирует формализованный план пайплайна:
+
+```go
+type PipelineStep struct {
+    Tool    string                 `json:"tool"`
+    Args    map[string]interface{} `json:"args"`
+    Input   string                 `json:"input,omitempty"`  // stdin от предыдущего шага
+    Output  string                 `json:"output,omitempty"` // ожидаемый формат
+}
+
+type Pipeline struct {
+    Steps         []PipelineStep `json:"steps"`
+    ExpectedOutput string        `json:"expected_output"`
+    RiskLevel     string         `json:"risk_level"` // "safe", "moderate", "dangerous"
+}
+
+// Пример: Агент генерирует такой JSON
+pipelineJSON := `{
+    "steps": [
+        {
+            "tool": "grep",
+            "args": {"pattern": "ERROR"},
+            "input": "logs.txt"
+        },
+        {
+            "tool": "sort",
+            "args": {},
+            "input": "{{step_0.output}}"
+        },
+        {
+            "tool": "head",
+            "args": {"lines": 10},
+            "input": "{{step_1.output}}"
+        }
+    ],
+    "expected_output": "Top 10 error lines, sorted",
+    "risk_level": "safe"
+}`
+```
+
+**Подход 2: Runtime выполняет пайплайн**
+
+```go
+func executePipeline(pipelineJSON string, inputData string) (string, error) {
+    var pipeline Pipeline
+    if err := json.Unmarshal([]byte(pipelineJSON), &pipeline); err != nil {
+        return "", err
+    }
+    
+    // Валидация: проверяем риск
+    if pipeline.RiskLevel == "dangerous" {
+        return "", fmt.Errorf("dangerous pipeline requires confirmation")
+    }
+    
+    // Выполняем шаги последовательно
+    currentInput := inputData
+    for i, step := range pipeline.Steps {
+        // Подставляем результат предыдущего шага
+        if strings.Contains(step.Input, "{{step_") {
+            step.Input = currentInput
+        }
+        
+        // Выполняем шаг (в реальности - вызов соответствующего инструмента)
+        result, err := executeToolStep(step.Tool, step.Args, step.Input)
+        if err != nil {
+            return "", fmt.Errorf("step %d failed: %v", i, err)
+        }
+        
+        currentInput = result
+    }
+    
+    return currentInput, nil
+}
+```
+
+**Подход 3: Инструмент `execute_pipeline`**
+
+Агент вызывает один инструмент с JSON пайплайна:
+
+```go
+tools := []openai.Tool{
+    {
+        Function: &openai.FunctionDefinition{
+            Name: "execute_pipeline",
+            Description: "Execute a pipeline of tools. Provide pipeline JSON with steps, expected output, and risk level.",
+            Parameters: json.RawMessage(`{
+                "type": "object",
+                "properties": {
+                    "pipeline": {"type": "string", "description": "JSON pipeline definition"},
+                    "input_data": {"type": "string", "description": "Input data (e.g., log file content)"}
+                },
+                "required": ["pipeline", "input_data"]
+            }`),
+        },
+    },
+}
+
+// Агент генерирует tool call:
+// execute_pipeline({
+//     "pipeline": "{\"steps\":[...], \"risk_level\": \"safe\"}",
+//     "input_data": "log content here"
+// })
+```
+
+### Практические паттерны
+
+**Tool Discovery через Tool Servers:**
+
+В production инструменты часто предоставляются через [Tool Servers](../18-tool-protocols-and-servers/README.md). Каталог можно получать динамически:
+
+```go
+// Tool Server предоставляет ListTools()
+toolServer := connectToToolServer("http://localhost:8080")
+allTools, _ := toolServer.ListTools()
+
+// Фильтруем по задаче
+relevantTools := filterToolsByQuery(allTools, userQuery, topK=5)
+```
+
+**Валидация и безопасность:**
+
+```go
+func validatePipeline(pipeline Pipeline) error {
+    // Проверяем риск
+    if pipeline.RiskLevel == "dangerous" {
+        return fmt.Errorf("dangerous pipeline requires human approval")
+    }
+    
+    // Проверяем allowlist инструментов
+    allowedTools := map[string]bool{
+        "grep": true, "sort": true, "head": true,
+        // rm, dd и другие опасные - НЕ в allowlist
+    }
+    
+    for _, step := range pipeline.Steps {
+        if !allowedTools[step.Tool] {
+            return fmt.Errorf("tool %s not allowed", step.Tool)
+        }
+    }
+    
+    return nil
+}
+```
+
+**Наблюдаемость:**
+
+```go
+// Логируем выбранные инструменты и причины
+log.Printf("Tool retrieval: query=%s, selected=%v, reason=%s",
+    userQuery,
+    []string{"grep", "sort", "head"},
+    "matched tags: text-processing, filtering")
+
+// Сохраняем pipeline JSON для аудита
+auditLog.StorePipeline(userID, pipelineJSON, result)
+```
+
 ## Типовые ошибки
 
 ### Ошибка 1: Агент не ищет в базе знаний
@@ -260,6 +597,83 @@ query := "Phoenix server restart protocol"
 chunkSize := 500  // Токенов
 ```
 
+### Ошибка 4: Передача всех инструментов в контекст
+
+**Симптом:** Агент получает список из 1000+ инструментов, модель хуже выбирает, растет задержка.
+
+**Причина:** Все инструменты передаются в `tools[]` без фильтрации.
+
+**Решение:**
+```go
+// ПЛОХО: Все инструменты
+tools := getAllTools()  // 1000+ инструментов
+
+// ХОРОШО: Только релевантные
+userQuery := "найди ошибки в логах"
+relevantTools := searchToolCatalog(userQuery, topK=5)  // Только 5 релевантных
+tools := convertToOpenAITools(relevantTools)
+```
+
+### Ошибка 5: Универсальный `run_shell` без контроля
+
+**Симптом:** Агент использует один инструмент `run_shell(command)` для всех команд. Нет валидации, нет аудита.
+
+**Причина:** Упрощение архитектуры за счет безопасности.
+
+**Решение:**
+```go
+// ПЛОХО: Универсальный shell
+tools := []openai.Tool{{
+    Function: &openai.FunctionDefinition{
+        Name: "run_shell",
+        Description: "Execute any shell command",
+    },
+}}
+
+// ХОРОШО: Конкретные инструменты + pipeline DSL
+tools := []openai.Tool{
+    {Function: &openai.FunctionDefinition{Name: "grep", ...}},
+    {Function: &openai.FunctionDefinition{Name: "sort", ...}},
+    {Function: &openai.FunctionDefinition{Name: "execute_pipeline", ...}},
+}
+
+// Pipeline JSON валидируется перед выполнением
+if err := validatePipeline(pipeline); err != nil {
+    return err
+}
+```
+
+### Ошибка 6: Нет валидации пайплайна
+
+**Симптом:** Агент генерирует пайплайн с опасными командами (`rm -rf`, `dd`), которые выполняются без проверки.
+
+**Причина:** Нет проверки risk level и allowlist перед выполнением.
+
+**Решение:**
+```go
+// ХОРОШО: Валидация перед выполнением
+func executePipeline(pipelineJSON string) error {
+    var pipeline Pipeline
+    json.Unmarshal([]byte(pipelineJSON), &pipeline)
+    
+    // Проверяем риск
+    if pipeline.RiskLevel == "dangerous" {
+        return fmt.Errorf("dangerous pipeline requires confirmation")
+    }
+    
+    // Проверяем allowlist
+    allowedTools := map[string]bool{"grep": true, "sort": true}
+    for _, step := range pipeline.Steps {
+        if !allowedTools[step.Tool] {
+            return fmt.Errorf("tool %s not allowed", step.Tool)
+        }
+    }
+    
+    // Выполняем только после валидации
+    return runValidatedPipeline(pipeline)
+}
+```
+
 ## Мини-упражнения
 
 ### Упражнение 1: Реализуйте простой поиск
@@ -292,6 +706,39 @@ func chunkDocument(text string, chunkSize int) []string {
 - Функция разбивает документ на чанки заданного размера
 - Чанки не перекрываются (или перекрываются минимально)
 
+### Упражнение 3: Реализуйте поиск инструментов
+
+Реализуйте функцию поиска релевантных инструментов в каталоге:
+
+```go
+func searchToolCatalog(query string, catalog []ToolDefinition, topK int) []ToolDefinition {
+    // Ищите по описанию и тегам
+    // Верните top-k наиболее релевантных инструментов
+}
+```
+
+**Ожидаемый результат:**
+- Функция находит инструменты, релевантные запросу
+- Возвращает не более topK инструментов
+- Учитывает описание и теги инструментов
+
+### Упражнение 4: Валидация пайплайна
+
+Реализуйте функцию валидации пайплайна перед выполнением:
+
+```go
+func validatePipeline(pipeline Pipeline, allowedTools map[string]bool) error {
+    // Проверьте risk level
+    // Проверьте allowlist инструментов
+    // Верните ошибку, если пайплайн небезопасен
+}
+```
+
+**Ожидаемый результат:**
+- Функция возвращает ошибку для dangerous пайплайнов
+- Функция возвращает ошибку, если используются неразрешенные инструменты
+- Функция возвращает nil для безопасных пайплайнов
+
 ## Критерии сдачи / Чек-лист
 
 ✅ **Сдано:**
@@ -300,11 +747,17 @@ func chunkDocument(text string, chunkSize int) []string {
 - Документы разбиты на чанки подходящего размера
 - Инструмент поиска имеет четкое описание
 - System Prompt инструктирует агента использовать базу знаний
+- Для большого пространства инструментов используется tool retrieval (только релевантные tools в контексте)
+- Пайплайны валидируются перед выполнением (risk level, allowlist)
+- Опасные операции требуют подтверждения
 
 ❌ **Не сдано:**
 - Агент не ищет в базе знаний (использует только общие знания)
 - Поисковые запросы слишком общие (не находит нужную информацию)
 - Чанки слишком большие (не влезают в контекст)
+- Все инструменты передаются в контекст без фильтрации (1000+ tools)
+- Используется универсальный `run_shell` без контроля безопасности
+- Пайплайны выполняются без валидации
 
 ## Прод-заметки
 
@@ -318,8 +771,9 @@ func chunkDocument(text string, chunkSize int) []string {
 
 ## Связь с другими главами
 
-- **Инструменты:** Как инструмент поиска интегрируется в агента, см. [Главу 03: Инструменты](../03-tools-and-function-calling/README.md)
+- **Инструменты:** Как инструмент поиска интегрируется в агента, см. [Главу 03: Инструменты](../03-tools-and-function-calling/README.md). Проблема большого списка инструментов решается через tool retrieval (см. раздел "RAG для пространства действий" выше).
 - **Автономность:** Как RAG работает в цикле агента, см. [Главу 04: Автономность](../04-autonomy-and-loops/README.md)
+- **Tool Servers:** Как получать каталог инструментов динамически через tool servers, см. [Главу 18: Протоколы Инструментов](../18-tool-protocols-and-servers/README.md)
 
 ## Что дальше?
 

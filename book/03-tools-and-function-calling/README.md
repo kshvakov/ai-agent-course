@@ -861,6 +861,8 @@ if !allowedFunctions[call.Function.Name] {
 }
 ```
 
+**Note:** If you have a large tool space (hundreds or thousands of tools), use **tool retrieval** — dynamically select only relevant tools before planning. For more details, see [Chapter 06: RAG](../06-rag/README.md#rag-for-action-space-tool-retrieval).
+
 ### Error 4: Poor Tool Description
 
 **Symptom:** Model selects the wrong tool or doesn't select one at all.
