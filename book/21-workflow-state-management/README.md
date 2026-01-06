@@ -26,7 +26,7 @@ Workflow is a sequence of steps to complete a task. Each step has state (pending
 
 ### What Is State Management?
 
-State Management is saving agent state between restarts. This allows:
+State Management is about saving agent state between restarts. This allows:
 - Resume execution after failure
 - Track task progress
 - Guarantee idempotency

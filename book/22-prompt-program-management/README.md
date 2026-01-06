@@ -8,7 +8,7 @@ You changed the prompt, and the agent works worse. But you cannot understand wha
 - Test new versions before deployment
 - Rollback bad changes
 
-Prompt and Program Management is control over agent behavior. Without it, you cannot safely change prompts in production.
+Prompt and Program Management provides control over agent behavior. Without it, you cannot safely change prompts in production.
 
 ### Real-World Case Study
 
@@ -22,7 +22,7 @@ Prompt and Program Management is control over agent behavior. Without it, you ca
 
 ### What Is Prompt Versioning?
 
-Prompt versioning is storing all prompt versions with metadata (author, date, change description). This allows rolling back changes or comparing versions.
+Prompt versioning is the practice of storing all prompt versions with metadata (author, date, change description). This allows rolling back changes or comparing versions.
 
 ### What Are Prompt Regressions?
 

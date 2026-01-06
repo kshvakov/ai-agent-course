@@ -26,11 +26,11 @@ Without an autonomous loop, an agent works like a chatbot: one request → one r
 
 ### ReAct Loop (Autonomy Cycle)
 
-**ReAct** is an acronym for **Reason + Act** (Reason + Act). This is a pattern where the agent:
-1. **Reason (Reasons):** Analyzes the situation and decides what to do
-2. **Act (Acts):** Performs an action (calls a tool)
-3. **Observe (Observes):** Receives the result of the action
-4. **Repeats:** Reasons again based on the result
+**ReAct** is an acronym for **Reason + Act**. This is a pattern where the agent:
+1. **Reason:** Analyzes the situation and decides what to do
+2. **Act:** Performs an action (calls a tool)
+3. **Observe:** Receives the result of the action
+4. **Repeat:** Reasons again based on the result
 
 This is not magic — it's simply a loop where the model processes the results of previous actions in context and generates the next step.
 
@@ -47,7 +47,7 @@ While (Task not solved):
        c. GOTO 1 (without asking the user!)
 ```
 
-**Key point:** Point 4.c provides the "magic" — the agent looks at the result and decides what to do next. But this is not real magic: the model receives the tool result in context (`messages[]`) and generates the next step based on that context.
+**Key point:** Point 4.c provides the "magic" — the agent looks at the result and decides what to do next. But this isn't real magic: the model receives the tool result in context (`messages[]`) and generates the next step based on that context.
 
 ### Closing the Loop
 

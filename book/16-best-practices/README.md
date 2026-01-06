@@ -4,7 +4,7 @@
 
 This chapter examines best practices for creating and maintaining agents, as well as application areas where agents can be most effective.
 
-Knowing theory and examples is good, but without understanding best practices you may make common mistakes and create an inefficient or unsafe agent.
+Knowing theory and examples is good, but without understanding best practices, you may make common mistakes and create an inefficient or unsafe agent.
 
 ### Real-World Case Study
 

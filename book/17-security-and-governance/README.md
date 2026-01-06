@@ -8,7 +8,7 @@ An agent performs critical operations without confirmation. User writes "delete 
 - Audit agent actions
 - Protect against prompt injection
 
-Security is not an option, but a mandatory requirement for production agents. Without it, an agent can cause irreparable damage.
+Security isn't optional—it's a mandatory requirement for production agents. Without it, an agent can cause irreparable damage.
 
 ### Real-World Case Study
 
@@ -22,7 +22,7 @@ Security is not an option, but a mandatory requirement for production agents. Wi
 
 ### What Is Threat Modeling?
 
-Threat Modeling is risk assessment for each tool. Tools are divided into risk levels:
+Threat Modeling is risk assessment for each tool. Tools are categorized into risk levels:
 - **Low risk:** reading logs, checking status
 - **Medium risk:** restarting services, changing settings
 - **High risk:** deleting data, changing critical configs

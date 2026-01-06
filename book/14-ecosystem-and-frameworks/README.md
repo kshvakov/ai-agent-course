@@ -2,7 +2,7 @@
 
 ## Why This Chapter?
 
-When creating AI agents, you face a choice: write everything from scratch or use a framework? Both approaches have pros and cons, and understanding when to choose what is critical for long-term success.
+When creating AI agents, you face a choice: write everything from scratch or use a framework? Both approaches have pros and cons, and understanding when to choose which is critical for long-term success.
 
 This chapter helps you make informed decisions about agent architecture, avoiding vendor lock-in and using existing solutions where appropriate.
 
@@ -22,7 +22,7 @@ This chapter helps you make informed decisions about agent architecture, avoidin
 
 ### What Are Agent Frameworks?
 
-Agent frameworks are libraries or platforms that provide:
+Agent frameworks are libraries or platforms that provide the following:
 - **Tool execution infrastructure** — handling function calling, validation, error handling
 - **Memory management** — context windows, summarization, state persistence
 - **Planning patterns** — ReAct loops, workflow orchestration, task decomposition

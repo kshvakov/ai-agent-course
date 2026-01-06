@@ -2,9 +2,9 @@
 
 ## Why This Chapter?
 
-How do you know that an agent hasn't degraded after a prompt change? Without testing, you can't be sure that changes improved the agent rather than worsened it.
+How do you know that an agent hasn't degraded after a prompt change? Without testing, you can't be sure that changes improved the agent rather than made it worse.
 
-**Evals (Evaluations)** are a set of Unit tests for an agent. They check that the agent correctly handles various scenarios and doesn't degrade after prompt or code changes.
+**Evals (Evaluations)** are a set of unit tests for an agent. They check that the agent correctly handles various scenarios and doesn't degrade after prompt or code changes.
 
 ### Real-World Case Study
 
@@ -18,7 +18,7 @@ How do you know that an agent hasn't degraded after a prompt change? Without tes
 
 ### What Are Evals?
 
-Evals are tests for agents, similar to Unit tests for regular code. They check:
+Evals are tests for agents, similar to unit tests for regular code. They check:
 - Does the agent select tools correctly
 - Does the agent request confirmation for critical actions
 - Does the agent handle multi-step tasks correctly
@@ -27,7 +27,7 @@ Evals are tests for agents, similar to Unit tests for regular code. They check:
 
 ## Evals (Evaluations) — Agent Testing
 
-**Evals** are a set of Unit tests for an agent. They check that the agent correctly handles various scenarios and doesn't degrade after prompt or code changes.
+**Evals** are a set of unit tests for an agent. They check that the agent correctly handles various scenarios and doesn't degrade after prompt or code changes.
 
 ### Why Are Evals Needed?
 

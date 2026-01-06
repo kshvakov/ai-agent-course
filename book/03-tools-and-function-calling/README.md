@@ -58,7 +58,7 @@ tools := []openai.Tool{
 }
 ```
 
-**What happens:** You describe the tool in JSON Schema format. This description is sent to the model along with the request.
+**What happens:** You describe the tool in JSON Schema format. This description gets sent to the model along with the request.
 
 #### Step 2: Request to the Model
 
@@ -79,14 +79,14 @@ resp, _ := client.CreateChatCompletion(ctx, req)
 msg := resp.Choices[0].Message
 ```
 
-**What happens:** The model receives:
+**What happens:** The model receives the following:
 - System prompt (role and instructions)
 - User input (user's request)
 - **Tools schema** (description of available tools)
 
 #### Step 3: Model Response (Tool Call)
 
-The model **does not return text** "I will check ping". It returns a **structured tool call**:
+The model **doesn't return text** like "I will check ping". Instead, it returns a **structured tool call**:
 
 ```go
 // msg.ToolCalls contains:
@@ -810,7 +810,7 @@ func executeTool(name string, args json.RawMessage) (string, error) {
 **Symptom:** Agent receives a text response from the model instead of `tool_calls`. The model responds with text instead of calling a tool.
 
 **Cause:** 
-- Model is not trained on function calling
+- The model is not trained on function calling
 - Poor tool description (`Description` is unclear)
 - `Temperature > 0` (too random)
 

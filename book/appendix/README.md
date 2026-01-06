@@ -8,23 +8,23 @@ This section contains reference information: glossary of terms, checklists, SOP 
 
 ### Core Concepts
 
-**Agent** — a system using LLM as a "reasoning engine" to perceive environment, make decisions, and perform actions. Consists of: LLM (brain) + Tools (hands) + Memory (memory) + Planning (planning).
+**Agent** — a system that uses an LLM as a "reasoning engine" to perceive the environment, make decisions, and perform actions. Consists of: LLM (brain) + Tools (hands) + Memory (memory) + Planning (planning).
 
 **See also:** [Chapter 00: Preface](../00-preface/README.md#what-is-an-ai-agent)
 
-**Runtime (Execution Environment)** — agent code you write in Go. Connects LLM with tools and manages agent work loop. Performs LLM response parsing, validation, tool execution, and dialogue history management.
+**Runtime (Execution Environment)** — the agent code you write in Go. It connects the LLM with tools and manages the agent work loop. It performs LLM response parsing, validation, tool execution, and dialogue history management.
 
 **Important:** Runtime is not a separate system or framework. It's your code in `main.go` or separate modules.
 
 **See also:** [Chapter 09: Agent Anatomy](../09-agent-architecture/README.md#runtime-execution-environment)
 
-**Tool** — a Go function, API call, or command that an agent can execute to interact with the real world. Described in JSON Schema format and passed to the model in `tools[]` field.
+**Tool** — a Go function, API call, or command that an agent can execute to interact with the real world. It's described in JSON Schema format and passed to the model in the `tools[]` field.
 
 **Synonyms:** Function (in Function Calling context)
 
 **See also:** [Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md)
 
-**Tool Call / Function Call** — structured JSON request that LLM generates to call a tool. Contains tool name and arguments in JSON format. Returned in `tool_calls` field of model response.
+**Tool Call / Function Call** — a structured JSON request that the LLM generates to call a tool. It contains the tool name and arguments in JSON format. It's returned in the `tool_calls` field of the model response.
 
 **Note:** "Tool Call" and "Function Call" are the same. "Function Calling" is the mechanism name in API, "Tool Call" is a specific tool invocation.
 

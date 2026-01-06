@@ -2,7 +2,7 @@
 
 ## Why This Chapter?
 
-An agent works with user personal data (email, phone, address). This data gets into logs and sent to LLM API. Without data protection, you violate GDPR and risk data leakage.
+An agent works with user personal data (email, phone, address). This data gets into logs and is sent to the LLM API. Without data protection, you violate GDPR and risk data leakage.
 
 ### Real-World Case Study
 
@@ -20,7 +20,7 @@ PII (Personally Identifiable Information) is data that allows identifying a pers
 
 ### What Is Redaction?
 
-Redaction is removing sensitive data from logs before saving.
+Redaction is the process of removing sensitive data from logs before saving.
 
 ## How It Works (Step by Step)
 

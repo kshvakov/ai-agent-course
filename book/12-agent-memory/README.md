@@ -2,7 +2,7 @@
 
 ## Why This Chapter?
 
-Agents need memory to maintain context between conversations, learn from past interactions, and avoid repeating mistakes. Without proper memory management, agents forget important information and waste tokens re-explaining.
+Agents need memory to maintain context between conversations, learn from past interactions, and avoid repeating mistakes. Without proper memory management, agents forget important information and waste tokens re-explaining things.
 
 This chapter covers memory systems that help agents remember, retrieve, and forget information efficiently.
 

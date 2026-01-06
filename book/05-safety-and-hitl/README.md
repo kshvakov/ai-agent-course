@@ -2,7 +2,7 @@
 
 ## Why This Chapter?
 
-Autonomy does not mean permissiveness. There are two scenarios where an agent **must** return control to a human.
+Autonomy doesn't mean permissiveness. There are two scenarios where an agent **must** return control to a human.
 
 Without Human-in-the-Loop, an agent can:
 - Execute dangerous actions without confirmation

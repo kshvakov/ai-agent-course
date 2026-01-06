@@ -4,7 +4,7 @@
 
 You completed the main course and understand agent basics. Now you need to transition from a "learning agent" to a "production agent" that works reliably, safely, and efficiently in real environments.
 
-This chapter is a **prioritization guide** and quick reference to production topics. It helps understand what to implement first and provides quick links to detailed chapters.
+This chapter is a **prioritization guide** and quick reference to production topics. It helps you understand what to implement first and provides quick links to detailed chapters.
 
 ### Real-World Case Study
 

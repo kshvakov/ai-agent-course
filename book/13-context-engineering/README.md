@@ -15,7 +15,7 @@ This chapter covers techniques for efficient context management: layers, summari
 - Include only recent: Loses important context from early
 - No strategy: Agent gets confused or misses critical information
 
-**Solution:** Context engineering: Context layers (working memory, summaries, facts), selective retrieval of relevant information, summarization of old conversations while preserving key facts.
+**Solution:** Context engineering uses context layers (working memory, summaries, facts), selective retrieval of relevant information, and summarization of old conversations while preserving key facts.
 
 ## Theory in Simple Terms
 

@@ -2,7 +2,7 @@
 
 ## Why Is This Needed?
 
-Before building complex agents, we must **scientifically confirm** that our model (especially local) has the necessary capabilities. In engineering, this is called **Characterization**.
+Before building complex agents, we must **scientifically confirm** that our model (especially local) has the necessary capabilities. In engineering, this is called **characterization**.
 
 We don't trust labels ("Super-Pro-Max Model"). We trust tests.
 
@@ -36,7 +36,7 @@ We don't trust labels ("Super-Pro-Max Model"). We trust tests.
 
 ### Why Don't All Models Know Tools?
 
-LLM (Large Language Model) is a probabilistic text generator. It doesn't "know" about functions.
+An LLM (Large Language Model) is a probabilistic text generator. It doesn't "know" about functions.
 
 The **Function Calling** mechanism is a result of special training (Fine-Tuning). Model developers add thousands of examples to the training set:
 
@@ -71,8 +71,8 @@ Tests will output a report:
 
 ### Step 3: Interpretation
 
-- **If all tests passed:** Model is ready for the course. You can continue.
-- **If Function Calling failed:** Model is not suitable for Lab 02-08. You need a different model.
+- **If all tests passed:** The model is ready for the course. You can continue.
+- **If Function Calling failed:** The model is not suitable for Lab 02-08. You need a different model.
 
 ## Common Errors
 
@@ -87,7 +87,7 @@ Tests will output a report:
 
 ### Error 2: "Function Calling - FAILED"
 
-**Cause:** Model is not trained on Function Calling.
+**Cause:** The model is not trained on Function Calling.
 
 **Solution:**
 1. Download a model with tools support:

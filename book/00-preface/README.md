@@ -2,8 +2,8 @@
 
 ## Why Is This Needed?
 
-In classical programming you write an algorithm: `if A then B`. You know exactly what will happen.  
-In AI Engineering you describe a **Goal** and provide **Tools**. The agent builds the algorithm to achieve the goal in real time.
+In classical programming, you write an algorithm: `if A then B`. You know exactly what will happen.  
+In AI engineering, you describe a **goal** and provide **tools**. The agent builds the algorithm to achieve the goal in real time.
 
 This textbook will teach you to create autonomous AI agents in Go — systems that can independently solve complex tasks, interact with the real world, and learn from the results of their actions.
 
@@ -17,7 +17,7 @@ This textbook will teach you to create autonomous AI agents in Go — systems th
 
 ## What Is an AI Agent?
 
-**Agent** is a system using LLM as a "reasoning engine" (Reasoning Engine) to perceive the environment, make decisions, and perform actions.
+An **agent** is a system that uses an LLM as a "reasoning engine" to perceive the environment, make decisions, and perform actions.
 
 ### Difference from ChatGPT
 
@@ -39,14 +39,14 @@ Agent = Brain (LLM) + Tools (Hands) + Memory (Context) + Planning (Process)
 
 ### Components
 
-- **🧠 Brain (LLM):** Agent's "brain". Makes decisions based on context.
-- **🛠 Tools:** Agent's "hands". Allow interaction with the real world.
+- **🧠 Brain (LLM):** The agent's "brain" that makes decisions based on context.
+- **🛠 Tools:** The agent's "hands" that enable interaction with the real world.
 - **📝 Memory:** Dialogue history and long-term memory (RAG).
-- **📋 Planning:** Ability to break task into steps.
+- **📋 Planning:** The ability to break tasks into steps.
 
 ### Runtime (Execution Environment)
 
-**Runtime** is the agent code you write in Go. It connects LLM with tools and manages the agent's work loop.
+**Runtime** is the agent code you write in Go. It connects the LLM with tools and manages the agent's work loop.
 
 **What Runtime does:**
 - Parses LLM responses (determines if model wants to call a tool)
@@ -114,9 +114,9 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) {
 ### Recommended Path
 
 1. **Read sequentially** — each chapter builds on previous ones
-2. **Practice in parallel** — after each chapter complete corresponding lab
-3. **Use as reference** — return to needed sections when working on projects
-4. **Study examples** — each chapter has examples from different domains
+2. **Practice alongside reading** — complete the corresponding lab after each chapter
+3. **Use as a reference** — return to relevant sections when working on projects
+4. **Study examples** — each chapter includes examples from different domains
 
 ### Chapter Structure
 
@@ -136,12 +136,12 @@ Each chapter follows a unified template:
 - **Local LLM** (recommended) or OpenAI API Key
   - Install [LM Studio](https://lmstudio.ai/) or [Ollama](https://ollama.com/)
   - Start local server (usually on port 1234 or 11434)
-- **Basic programming knowledge** — course is designed for programmers
-- **Understanding of DevOps basics** (desirable but not required)
+- **Basic programming knowledge** — this course is designed for programmers
+- **Understanding of DevOps basics** (helpful but not required)
 
 ## Environment Setup
 
-To work with local model (e.g., in LM Studio):
+To work with a local model (e.g., in LM Studio):
 
 ```bash
 export OPENAI_BASE_URL="http://localhost:1234/v1"
@@ -151,7 +151,7 @@ export OPENAI_API_KEY="any-string" # Local models usually don't care about key
 ## What's Next?
 
 After reading the preface, proceed to:
-- **[01. LLM Physics](../01-llm-fundamentals/README.md)** — foundation for understanding everything else
+- **[01. LLM Physics](../01-llm-fundamentals/README.md)** — the foundation for understanding everything else
 
 ---
 

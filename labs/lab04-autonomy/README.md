@@ -7,7 +7,7 @@ Put it all together: Brain + Tools + Memory. Implement the **ReAct** pattern (Re
 
 ### Planning — ability to break a task into steps
 
-**Planning** is the agent's ability to break a complex task into a sequence of simple steps and execute them in the correct order.
+**Planning** is the agent's ability to break down a complex task into a sequence of simple steps and execute them in the correct order.
 
 **Example:**
 - **Without planning:** Agent receives "Out of space" and may immediately try to delete files without checking how much space is used.

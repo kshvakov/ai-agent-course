@@ -15,7 +15,7 @@
 
 ### Part I: Fundamentals
 
-- **[00. Preface](./00-preface/README.md)** — How to read the textbook, requirements, what is an agent
+- **[00. Preface](./00-preface/README.md)** — How to use this textbook, requirements, and what an agent is
 - **[01. LLM Physics](./01-llm-fundamentals/README.md)** — Tokens, context, temperature, determinism, probabilistic nature
 - **[02. Prompting as Programming](./02-prompt-engineering/README.md)** — ICL, Few-Shot, CoT, task structuring, SOP
 
@@ -67,16 +67,16 @@
 
 ### For Beginners (recommended path — practice-first)
 
-1. **Start with [Preface](./00-preface/README.md)** — learn what an agent is and how to work with the textbook
+1. **Start with [Preface](./00-preface/README.md)** — learn what an agent is and how to use this textbook
 2. **Study [LLM Physics](./01-llm-fundamentals/README.md)** — the foundation for understanding everything else
-3. **Master [Prompting](./02-prompt-engineering/README.md)** — this is the foundation of working with agents
+3. **Master [Prompting](./02-prompt-engineering/README.md)** — the foundation of working with agents
 4. **Build a working agent:**
    - [Tools and Function Calling](./03-tools-and-function-calling/README.md) — the agent's "hands"
-   - [Autonomy and Loops](./04-autonomy-and-loops/README.md) — how an agent works in a loop
-   - [Safety and Human-in-the-Loop](./05-safety-and-hitl/README.md) — protection from dangerous actions
+   - [Autonomy and Loops](./04-autonomy-and-loops/README.md) — how agents work in loops
+   - [Safety and Human-in-the-Loop](./05-safety-and-hitl/README.md) — protecting against dangerous actions
 5. **Expand capabilities:**
-   - [RAG and Knowledge Base](./06-rag/README.md) — using documentation
-   - [Multi-Agent Systems](./07-multi-agent/README.md) — a team of specialized agents
+   - [RAG and Knowledge Base](./06-rag/README.md) — working with documentation
+   - [Multi-Agent Systems](./07-multi-agent/README.md) — teams of specialized agents
    - [Evals and Reliability](./08-evals-and-reliability/README.md) — testing agents
 6. **Dive deeper into architecture:**
    - [Agent Anatomy](./09-agent-architecture/README.md) — components and their interactions
@@ -84,7 +84,7 @@
    - [State Management](./11-state-management/README.md) — execution reliability
    - [Agent Memory Systems](./12-agent-memory/README.md) — long-term memory
    - [Context Engineering](./13-context-engineering/README.md) — context management
-7. **Practice:** Complete laboratory assignments in parallel with reading chapters
+7. **Practice:** Complete laboratory assignments alongside reading chapters
 
 ### For Experienced Programmers
 
@@ -191,11 +191,11 @@ After studying chapters 1-16, proceed to:
 ## 📖 How to Use This Textbook
 
 1. **Read sequentially** — each chapter builds on previous ones
-2. **Practice in parallel** — after each chapter, complete the corresponding laboratory assignment
+2. **Practice alongside reading** — complete the corresponding laboratory assignment after each chapter
 3. **Use as a reference** — return to relevant sections when working on projects
-4. **Study examples** — each chapter has examples from different domains (DevOps, Support, Data, Security, Product)
+4. **Study examples** — each chapter includes examples from different domains (DevOps, Support, Data, Security, Product)
 5. **Complete exercises** — mini-exercises in each chapter help reinforce the material
-6. **Check yourself** — use checklists for self-assessment
+6. **Check your understanding** — use checklists for self-assessment
 
 ---
 

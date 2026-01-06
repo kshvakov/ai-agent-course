@@ -16,7 +16,7 @@ You changed the prompt or code, and the agent works worse. But you only learn ab
 
 ### What Are Quality Gates?
 
-Quality Gates are quality checks that block deployment if metrics degraded.
+Quality Gates are quality checks that block deployment if metrics have degraded.
 
 ## How It Works (Step by Step)
 

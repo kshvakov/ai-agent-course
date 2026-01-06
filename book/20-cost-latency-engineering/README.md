@@ -7,7 +7,7 @@ An agent works, but the LLM API bill grows uncontrollably. One request costs $5,
 - Optimize expensive requests
 - Guarantee response time to user
 
-Cost & Latency Engineering is budget and performance control. Without it, you risk spending thousands of dollars on simple requests or getting a slow agent that users won't use.
+Cost & Latency Engineering provides budget and performance control. Without it, you risk spending thousands of dollars on simple requests or ending up with a slow agent that users won't use.
 
 ### Real-World Case Study
 
@@ -21,7 +21,7 @@ Cost & Latency Engineering is budget and performance control. Without it, you ri
 
 ### What Is Cost Engineering?
 
-Cost Engineering is control and optimization of LLM API usage cost. Main levers:
+Cost Engineering is the control and optimization of LLM API usage costs. Main levers:
 1. **Model selection** — GPT-4 is 15x more expensive than GPT-3.5
 2. **Token count** — larger context = more expensive
 3. **Request count** — each LLM call costs money

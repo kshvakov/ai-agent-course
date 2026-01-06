@@ -2,7 +2,7 @@
 
 ## Why This Chapter?
 
-A single "jack-of-all-trades" agent often gets confused with tools. When an agent has too many tools (20+), the model starts getting confused in selection and makes mistakes.
+A single "jack-of-all-trades" agent often gets confused with tools. When an agent has too many tools (20+), the model starts getting confused during selection and makes mistakes.
 
 It's more efficient to divide responsibility: create a team of narrow specialists, managed by a main agent (Supervisor). Each specialist knows only their tools and focuses on their area.
 
@@ -24,7 +24,7 @@ It's more efficient to divide responsibility: create a team of narrow specialist
 4. **Specialists perform tasks** in isolated context
 5. **Results are returned to Supervisor**, who assembles the response
 
-**Key point:** Context isolation — each specialist receives only their task, not the entire Supervisor history. This saves tokens and focuses attention.
+**Key point:** Context isolation — each specialist receives only their task, not the entire Supervisor history. This saves tokens and helps focus attention.
 
 ## Supervisor Pattern (Boss-Subordinate)
 

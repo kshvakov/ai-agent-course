@@ -2,7 +2,7 @@
 
 ## Why Is This Needed?
 
-A prompt is code for a neural network. But unlike regular code, a prompt works through probability management.
+A prompt is code for a neural network. Unlike regular code, a prompt works through probability management.
 
 Without proper prompting, an agent will:
 - Perform actions randomly, without logic
@@ -22,12 +22,12 @@ This chapter teaches you to create effective prompts that control agent behavior
 
 ## TL;DR: What to Remember
 
-- **System Prompt** — this is the agent behavior specification. Consists of: Role, Goal, Constraints, Format, SOP.
+- **System Prompt** — the agent behavior specification. Consists of: Role, Goal, Constraints, Format, SOP.
 - **In-Context Learning (ICL)**: Zero-shot (instruction-only) — compact, flexible, but model may misinterpret format. Few-shot (demonstration) — instruction + examples, more accurate for complex formats. In practice — combination.
 - **CoT (Chain-of-Thought)**: forces the model to think step by step. Critical for agents.
-- **SOP**: action algorithm encoded in the prompt. Sets the process, CoT helps follow it.
+- **SOP**: an action algorithm encoded in the prompt. It sets the process, and CoT helps follow it.
 - **Task Decomposition**: complex tasks are broken down into subtasks.
-- **Tools Schema** is passed as a separate field `tools[]`, not inside System Prompt.
+- **Tools Schema** is passed as a separate field `tools[]`, not inside the System Prompt.
 - **Few-shot examples** must be consistent — one format, otherwise the model will get confused.
 
 ## System Prompt Structure
@@ -139,7 +139,7 @@ SOP for analysis:
 
 After we've defined the System Prompt structure, the question arises: **how to best convey the desired behavior to the model?**
 
-**In-Context Learning (ICL)** — is the model's ability to adapt behavior based on examples *within the prompt*, without changing model weights.
+**In-Context Learning (ICL)** is the model's ability to adapt behavior based on examples *within the prompt*, without changing model weights.
 
 ICL works in two modes:
 
@@ -244,7 +244,7 @@ User: "Status"
 Assistant: check_status("web-01")  // Another format!
 ```
 
-**Problem:** The model receives three different formats and doesn't understand which to use. Result is unpredictable.
+**Problem:** The model receives three different formats and doesn't understand which to use. The result is unpredictable.
 
 ✅ **Good:** All examples in one format
 
@@ -506,7 +506,7 @@ See detailed protocol: **[Chapter 03: Tools and Function Calling](../03-tools-an
 
 ## Chain-of-Thought (CoT): Think Step by Step
 
-**Chain-of-Thought (CoT)** — is the "Think step by step" technique. For agents, CoT is critical.
+**Chain-of-Thought (CoT)** is the "Think step by step" technique. For agents, CoT is critical.
 
 ### When Is CoT Needed?
 

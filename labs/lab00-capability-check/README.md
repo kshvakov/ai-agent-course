@@ -2,7 +2,7 @@
 
 ## 🎯 Goal
 
-Before building complex agents, we must scientifically confirm that our model (LLM) has the necessary cognitive capabilities. In engineering, this is called **Characterization**.
+Before building complex agents, we must scientifically confirm that our model (LLM) has the necessary cognitive capabilities. In engineering, this is called **characterization**.
 
 We don't trust labels ("Super-Pro-Max Model"). We trust tests.
 

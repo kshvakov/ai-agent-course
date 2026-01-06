@@ -14,7 +14,7 @@ This chapter explains the basics of how LLMs work in simple terms, without exces
 
 **Situation:** You've created a DevOps agent. The user writes: "Check the status of server web-01"
 
-**Problem:** The agent sometimes responds with text "Server is working", and sometimes calls the `check_status` tool. Behavior is unpredictable.
+**Problem:** The agent sometimes responds with text "Server is working" and sometimes calls the `check_status` tool. The behavior is unpredictable.
 
 **Solution:** Understanding the probabilistic nature of LLMs and setting `Temperature = 0` makes behavior deterministic. Understanding the context window helps manage conversation history.
 
@@ -39,7 +39,7 @@ $$P(x_{t+1} | x_1, ..., x_t)$$
 
 **✅ Reality (how it actually works):**
 
-**1. What is sent to the model:**
+**1. What gets sent to the model:**
 
 ```go
 // System Prompt (sets role and behavior)
@@ -516,7 +516,7 @@ If you don't know something, say "I don't know" or use a tool.`
 
 ### What Is a Token?
 
-**Token** is a unit of text that the model processes.
+A **token** is a unit of text that the model processes.
 - One token ≈ 0.75 words (in English)
 - In Russian: one word ≈ 1.5 tokens
 
@@ -528,7 +528,7 @@ Tokens: ["Check", " server", " status"]  // ~3 tokens
 
 ### Context Window
 
-**Context window** is the model's "working memory".
+The **context window** is the model's "working memory".
 
 **Examples of context window sizes (at time of writing):**
 - GPT-3.5: 4k tokens (~3000 words)
@@ -569,7 +569,7 @@ messages := []openai.ChatCompletionMessage{
 
 ## Temperature
 
-**Temperature** is a parameter of probability distribution entropy.
+**Temperature** is a parameter that controls the entropy of the probability distribution.
 
 ```go
 Temperature = 0  // Deterministic (for agents!)
@@ -653,7 +653,7 @@ req := openai.ChatCompletionRequest{
 
 **Symptom:** Agent "forgets" the beginning of the conversation. After N messages, stops remembering what was discussed at the start.
 
-**Cause:** Conversation history exceeds the model's context window size. Old messages are "pushed out" of context.
+**Cause:** Conversation history exceeds the model's context window size. Old messages get "pushed out" of context.
 
 **Solution:**
 
@@ -723,7 +723,7 @@ See more: section "Context Optimization" in [Chapter 09: Agent Anatomy](../09-ag
 
 **Symptom:** Model invents facts. For example, says "use flag `--force`" for a command that doesn't support it.
 
-**Cause:** Model strives to generate *plausible* text, not *true*. It doesn't know real facts about your system.
+**Cause:** The model strives to generate *plausible* text, not necessarily *true* text. It doesn't know real facts about your system.
 
 **Solution:**
 ```go
@@ -792,7 +792,7 @@ func trimHistory(messages []ChatCompletionMessage, maxTokens int) []ChatCompleti
 
 ### Formal Definition of LLM
 
-LLM is a function `NextToken(Context) -> Distribution`:
+An LLM is a function `NextToken(Context) -> Distribution`:
 
 $$P(x_{t+1} | x_1, ..., x_t)$$
 

@@ -90,7 +90,7 @@ See [Chapter 06: RAG](../06-rag/README.md)
 
 ## Planning
 
-**Planning** is the agent's ability to break a complex task into a sequence of simple steps and execute them in the correct order.
+**Planning** is the agent's ability to break down a complex task into a sequence of simple steps and execute them in the correct order.
 
 ### Why Is Planning Needed?
 
@@ -618,7 +618,7 @@ Action: read_file_sudo("/etc/nginx/nginx.conf")
 
 ## Runtime (Execution Environment)
 
-Runtime is the code that connects LLM with tools.
+Runtime is the code that connects the LLM with tools.
 
 **Main Runtime functions:**
 

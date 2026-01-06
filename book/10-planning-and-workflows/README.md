@@ -22,7 +22,7 @@ This chapter covers planning patterns that help agents efficiently handle comple
 
 ### What Is Planning?
 
-Planning is the process of breaking a complex task into smaller, manageable steps with clear dependencies and execution order.
+Planning is the process of breaking down a complex task into smaller, manageable steps with clear dependencies and execution order.
 
 **Key components:**
 1. **Task decomposition** — Break large task into steps

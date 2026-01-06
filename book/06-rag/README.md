@@ -2,7 +2,7 @@
 
 ## Why This Chapter?
 
-A regular agent only knows what it was taught during training (up to the cut-off date). It doesn't know your local instructions like "How to restart Phoenix server according to protocol #5".
+A regular agent only knows what it was trained on (up to the cut-off date). It doesn't know your local instructions like "How to restart Phoenix server according to protocol #5".
 
 **RAG (Retrieval Augmented Generation)** is a "cheat sheet lookup" mechanism. The agent first searches for information in the knowledge base, then acts.
 

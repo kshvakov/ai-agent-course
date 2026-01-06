@@ -8,7 +8,7 @@ An agent executes a long task (e.g., application deployment), and the server reb
 - Handle errors with retry
 - Set deadlines for long tasks
 
-State Management is reliability for long-lived agents. Without it, an agent cannot work with tasks that take minutes or hours.
+State Management provides reliability for long-lived agents. Without it, an agent cannot work with tasks that take minutes or hours.
 
 ### Real-World Case Study
 
@@ -22,7 +22,7 @@ State Management is reliability for long-lived agents. Without it, an agent cann
 
 ### What Is State Management?
 
-State Management is saving agent state between restarts. This allows:
+State Management is about saving agent state between restarts. This allows:
 - Resume execution after failure
 - Track task progress
 - Guarantee idempotency
