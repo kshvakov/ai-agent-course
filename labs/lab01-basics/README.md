@@ -1,10 +1,10 @@
 # Lab 01: Hello, LLM! (Basics & Memory)
 
 ## Goal
-Learn to work with OpenAI API (or compatible local API) in Go, implement a basic chat loop and memory mechanism (History).
+Learn how to work with the OpenAI API (or compatible local API) in Go, and implement a basic chat loop and memory mechanism (History).
 
 ## Theory
-Any communication with an LLM (ChatGPT, Llama 3) is a stateless process. The model doesn't remember what you wrote a second ago. To create the illusion of dialogue, we send **all** previous messages (history) each time.
+Any communication with an LLM (ChatGPT, Llama 3) is a stateless process. The model doesn't remember what you wrote a second ago. To create the illusion of dialogue, we send **all** previous messages (history) with each request.
 
 Message structure is usually:
 *   `System`: Instruction for the role ("You are a DevOps engineer...").

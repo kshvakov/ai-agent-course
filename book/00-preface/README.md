@@ -1,11 +1,11 @@
 # 00. Preface
 
-## Why Is This Needed?
+## Why This Chapter?
 
 In classical programming, you write an algorithm: `if A then B`. You know exactly what will happen.  
 In AI engineering, you describe a **goal** and provide **tools**. The agent builds the algorithm to achieve the goal in real time.
 
-This textbook will teach you to create autonomous AI agents in Go — systems that can independently solve complex tasks, interact with the real world, and learn from the results of their actions.
+This textbook teaches you how to create autonomous AI agents in Go — systems that can independently solve complex tasks, interact with the real world, and learn from the results of their actions.
 
 ### Real-World Case Study
 
@@ -23,7 +23,7 @@ An **agent** is a system that uses an LLM as a "reasoning engine" to perceive th
 
 | ChatGPT (Chatbot) | AI Agent |
 |------------------|----------|
-| Passive. Answers question and waits. | Active. Has a loop. |
+| Passive. Answers questions and waits. | Active. Operates in a loop. |
 | One request → one response. | Can perform 10 actions in a row to solve one task. |
 | No access to real world. | Has tools for interacting with systems. |
 
@@ -49,10 +49,10 @@ Agent = Brain (LLM) + Tools (Hands) + Memory (Context) + Planning (Process)
 **Runtime** is the agent code you write in Go. It connects the LLM with tools and manages the agent's work loop.
 
 **What Runtime does:**
-- Parses LLM responses (determines if model wants to call a tool)
+- Parses LLM responses (determines whether the model wants to call a tool)
 - Executes tools (calls real Go functions)
 - Manages dialogue history (adds results to `messages[]`)
-- Manages loop (determines when to stop)
+- Manages the loop (determines when to stop)
 
 **Important:** Runtime is not a separate system or framework. It's your code that you write in `main.go` or in separate modules.
 
@@ -102,9 +102,9 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) {
 
 ## Autonomy Levels
 
-1. **Level 0: Scripting.** Bash/Python scripts. Rigid logic. Any deviation — crash.
-2. **Level 1: Copilot.** "Write me nginx config". Human validates and applies.
-3. **Level 2: Chain.** "Execute deployment": pull -> build -> restart. Agent follows rails, but can (for example) fix compilation error itself.
+1. **Level 0: Scripting.** Bash/Python scripts with rigid logic. Any deviation causes a crash.
+2. **Level 1: Copilot.** "Write me nginx config". The human validates and applies.
+3. **Level 2: Chain.** "Execute deployment": pull -> build -> restart. The agent follows a predefined path but can (for example) fix compilation errors itself.
 4. **Level 3: Autonomous Agent.** "We have database issues, investigate". The agent searches logs, checks metrics, builds hypotheses, and (if allowed) applies fixes.
 
 **This course:** You'll progress from Level 1 to Level 3, creating your AI agent in Go (using a DevOps agent as the main example).

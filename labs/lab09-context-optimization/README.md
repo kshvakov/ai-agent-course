@@ -1,7 +1,7 @@
 # Lab 09: Context Optimization
 
 ## Goal
-Learn to manage LLM context window: count tokens, apply optimization techniques (truncation, summarization) and implement adaptive context management.
+Learn how to manage the LLM context window: count tokens, apply optimization techniques (truncation, summarization), and implement adaptive context management.
 
 ## Theory
 
@@ -10,9 +10,9 @@ Learn to manage LLM context window: count tokens, apply optimization techniques 
 When an agent works in a long dialogue or executes many steps in an autonomous loop, message history grows. Sooner or later it doesn't fit in the model's context window (e.g., 4k tokens for GPT-3.5-turbo).
 
 **What happens:**
-- Model doesn't see beginning of conversation
-- Model "forgets" important details
-- API returns error "context length exceeded"
+- The model doesn't see the beginning of the conversation
+- The model "forgets" important details
+- The API returns an error "context length exceeded"
 
 ### Optimization Techniques
 

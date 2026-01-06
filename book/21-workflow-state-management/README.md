@@ -33,7 +33,7 @@ State Management is about saving agent state between restarts. This allows:
 
 ### What Is Idempotency?
 
-Idempotency is a property of an operation: repeated call gives the same result as the first. For example, "create file" is not idempotent (creates duplicate), but "create file if it doesn't exist" is idempotent.
+Idempotency is a property of an operation: a repeated call gives the same result as the first. For example, "create file" isn't idempotent (creates duplicates), but "create file if it doesn't exist" is idempotent.
 
 ## How It Works (Step by Step)
 

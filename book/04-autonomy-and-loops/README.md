@@ -32,7 +32,7 @@ Without an autonomous loop, an agent works like a chatbot: one request → one r
 3. **Observe:** Receives the result of the action
 4. **Repeat:** Reasons again based on the result
 
-This is not magic — it's simply a loop where the model processes the results of previous actions in context and generates the next step.
+This isn't magic — it's simply a loop where the model processes the results of previous actions in context and generates the next step.
 
 An autonomous agent works in a loop:
 
@@ -51,7 +51,7 @@ While (Task not solved):
 
 ### Closing the Loop
 
-After executing a tool, **don't ask the user** what to do next. Send the result back to the LLM. The model receives the result of its actions and decides what to do next.
+After executing a tool, **don't ask the user** what to do next. Instead, send the result back to the LLM. The model receives the result of its actions and decides what to do next.
 
 **Example dialogue in memory:**
 
@@ -145,7 +145,7 @@ msg3 := resp3.Choices[0].Message
 // This is the final response - exit loop
 ```
 
-**Why this is not magic:**
+**Why this isn't magic:**
 
 1. **The model receives the full history** — it doesn't "remember" the past, it processes it in `messages[]`
 2. **The model receives the tool result** — the result is added as a new message with role `tool`
@@ -231,7 +231,7 @@ for i := 0; i < maxIterations; i++ {
         })
     }
     // Loop continues automatically!
-    // But this is not magic: send the updated history (with tool result)
+    // But this isn't magic: send the updated history (with tool result)
     // to the model again, and the model receives the result and decides what to do next
 }
 ```

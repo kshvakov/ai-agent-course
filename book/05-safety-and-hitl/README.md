@@ -9,7 +9,7 @@ Without Human-in-the-Loop, an agent can:
 - Delete important data
 - Apply changes to production without verification
 
-This chapter teaches you to protect the agent from dangerous actions and properly implement confirmation and clarification.
+This chapter teaches you how to protect the agent from dangerous actions and properly implement confirmation and clarification.
 
 ### Real-World Case Study
 
@@ -80,7 +80,7 @@ msg := resp.Choices[0].Message
 
 ```go
 if len(msg.ToolCalls) == 0 {
-    // This is not a tool call, but a clarifying question
+    // This isn't a tool call, but a clarifying question
     fmt.Println(msg.Content)  // Show to user
     // Wait for user response
     // When user responds, add their response to history
@@ -88,10 +88,10 @@ if len(msg.ToolCalls) == 0 {
 }
 ```
 
-**Why this is not magic:**
-- Model receives `required: ["region", "size"]` in JSON Schema
-- System Prompt explicitly says: "If required parameters are missing, ask"
-- Model generates text instead of tool call because it cannot fill required fields
+**Why this isn't magic:**
+- The model receives `required: ["region", "size"]` in JSON Schema
+- The System Prompt explicitly says: "If required parameters are missing, ask"
+- The model generates text instead of a tool call because it cannot fill required fields
 
 ### 2. Confirmation — Magic vs Reality
 

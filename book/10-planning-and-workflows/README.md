@@ -2,7 +2,7 @@
 
 ## Why This Chapter?
 
-Simple ReAct loops work well for straightforward tasks, but complex multi-step operations require planning. An agent needs to break a large task into smaller steps, execute them in order (or in parallel), handle failures, and track progress.
+Simple ReAct loops work well for straightforward tasks, but complex multi-step operations require planning. An agent needs to break down a large task into smaller steps, execute them in order (or in parallel), handle failures, and track progress.
 
 This chapter covers planning patterns that help agents efficiently handle complex, long-running tasks.
 
@@ -25,10 +25,10 @@ This chapter covers planning patterns that help agents efficiently handle comple
 Planning is the process of breaking down a complex task into smaller, manageable steps with clear dependencies and execution order.
 
 **Key components:**
-1. **Task decomposition** — Break large task into steps
+1. **Task decomposition** — Break down large tasks into steps
 2. **Dependency graph** — Understand which steps depend on others
-3. **Execution order** — Determine sequence (or parallel execution)
-4. **State tracking** — Know what's done, what's in progress, what failed
+3. **Execution order** — Determine the sequence (or parallel execution)
+4. **State tracking** — Know what's done, what's in progress, and what failed
 5. **Failure handling** — Retry, skip, or abort on errors
 
 ### Planning Patterns

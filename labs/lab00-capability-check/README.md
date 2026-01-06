@@ -27,6 +27,6 @@ A specific model skill to recognize function definitions and generate a special 
 Run `main.go`. This is an automated test suite. It will run the model through a series of tests and output a report:
 *   ✅ Basic Chat
 *   ✅ JSON Capability
-*   ❌ Function Calling (CRITICAL FAIL) -> **Conclusion: Model is not suitable for Lab 02-08.**
+*   ❌ Function Calling (CRITICAL FAIL) -> **Conclusion: Model isn't suitable for Lab 02-08.**
 
-You should run this tool every time you change models (e.g., downloaded a new GGUF in LM Studio).
+You should run this tool every time you change models (e.g., when you download a new GGUF in LM Studio).

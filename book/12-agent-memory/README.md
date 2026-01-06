@@ -19,9 +19,9 @@ This chapter covers memory systems that help agents remember, retrieve, and forg
 ### Memory Types
 
 **Short-term memory:**
-- Current conversation history (stored in runtime, not long-term storage)
-- Limited by LLM context window
-- Lost when conversation ends
+- Current conversation history (stored in runtime, not in long-term storage)
+- Limited by the LLM context window
+- Lost when the conversation ends
 - **Note:** Short-term memory management (summarization, selection) is described in [Context Engineering](../13-context-engineering/README.md). The term "working memory" is used in Context Engineering to denote recent conversation turns in context.
 
 **Long-term memory (persistent storage):**

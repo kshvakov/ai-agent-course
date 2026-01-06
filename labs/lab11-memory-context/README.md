@@ -1,7 +1,7 @@
 # Lab 11: Memory and Context Management
 
 ## Goal
-Learn to implement memory systems: long-term storage, retrieval, fact extraction, and context layers.
+Learn how to implement memory systems: long-term storage, retrieval, fact extraction, and context layers.
 
 ## Theory
 

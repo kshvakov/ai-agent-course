@@ -10,7 +10,7 @@ Note the use of `NewClientWithConfig`. This is the standard pattern for all labs
 **Before starting this lab, be sure to run Lab 00!** It will check if your model supports Function Calling.
 
 **If Lab 00 failed:**
-- Model is not trained on Function Calling
+- Model isn't trained on Function Calling
 - Need a different model (e.g., `Hermes-2-Pro-Llama-3`, `Mistral-7B-Instruct-v0.2`)
 
 **If Lab 00 passed, but in this lab model doesn't call functions:**
@@ -74,7 +74,7 @@ if args.IP == "" {
 **Symptom:** `len(msg.ToolCalls) == 0`, model responds with text.
 
 **Diagnosis:**
-1. Run Lab 00 — if failed, model is not suitable
+1. Run Lab 00 — if failed, the model isn't suitable
 2. Check `Description` — make it specific
 3. Set `Temperature = 0`
 

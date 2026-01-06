@@ -28,7 +28,7 @@ Agent frameworks are libraries or platforms that provide the following:
 - **Planning patterns** — ReAct loops, workflow orchestration, task decomposition
 - **Multi-agent coordination** — supervisor patterns, context isolation, routing
 
-**Key point:** Frameworks abstract common patterns, but they also impose constraints. Understanding these constraints helps decide when to use them and when to build custom.
+**Key point:** Frameworks abstract common patterns, but they also impose constraints. Understanding these constraints helps you decide when to use them and when to build custom solutions.
 
 ### Custom Runtime vs Framework
 

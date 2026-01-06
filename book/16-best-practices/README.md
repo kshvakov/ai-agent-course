@@ -12,7 +12,7 @@ Knowing theory and examples is good, but without understanding best practices, y
 
 **Problem:** You didn't implement input validation and security checks. The agent performed a dangerous action without confirmation.
 
-**Solution:** Following best practices (validation, safety checks, evals) prevents such problems. This chapter teaches you to create safe and efficient agents.
+**Solution:** Following best practices (validation, safety checks, evals) prevents such problems. This chapter teaches you how to create safe and efficient agents.
 
 ## Best Practices: Creating Agents
 
@@ -42,7 +42,7 @@ systemPrompt = addSOP(systemPrompt, incidentSOP)
 
 ### 2. Clearly Define Responsibility Boundaries
 
-**Problem:** Agent tries to do everything and gets confused.
+**Problem:** The agent tries to do everything and gets confused.
 
 **Solution:** Clearly define what the agent MUST do and what it MUST NOT do.
 
@@ -79,7 +79,7 @@ YOU MUST NOT:
 }
 ```
 
-**Why important:** Model selects tools based on `Description`. The more accurate the description, the better the selection.
+**Why this is important:** The model selects tools based on `Description`. The more accurate the description, the better the selection.
 
 ### 4. Always Validate Input Data
 
@@ -117,7 +117,7 @@ func executeTool(name string, args json.RawMessage) (string, error) {
 
 ### 5. Implement Loop Protection
 
-**Problem:** Agent may repeat the same action infinitely.
+**Problem:** The agent may repeat the same action infinitely.
 
 **Solution:**
 

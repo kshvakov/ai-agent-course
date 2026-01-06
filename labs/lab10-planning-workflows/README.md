@@ -1,7 +1,7 @@
 # Lab 10: Planning and Workflows
 
 ## Goal
-Learn to implement planning patterns: task decomposition, dependency resolution, plan execution with retries, and state persistence.
+Learn how to implement planning patterns: task decomposition, dependency resolution, plan execution with retries, and state persistence.
 
 ## Theory
 

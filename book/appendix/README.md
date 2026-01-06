@@ -8,7 +8,7 @@ This section contains reference information: glossary of terms, checklists, SOP 
 
 ### Core Concepts
 
-**Agent** — a system that uses an LLM as a "reasoning engine" to perceive the environment, make decisions, and perform actions. Consists of: LLM (brain) + Tools (hands) + Memory (memory) + Planning (planning).
+**Agent** — a system that uses an LLM as a "reasoning engine" to perceive its environment, make decisions, and perform actions. Consists of: LLM (brain) + Tools (hands) + Memory (memory) + Planning (planning).
 
 **See also:** [Chapter 00: Preface](../00-preface/README.md#what-is-an-ai-agent)
 
@@ -114,7 +114,7 @@ This section contains reference information: glossary of terms, checklists, SOP 
 
 ### Planning and Architecture
 
-**Planning** — agent's ability to break a complex task into a sequence of simple steps and execute them in correct order. Levels: implicit (ReAct), explicit (Plan-and-Solve), hierarchical.
+**Planning** — the agent's ability to break down a complex task into a sequence of simple steps and execute them in the correct order. Levels: implicit (ReAct), explicit (Plan-and-Solve), hierarchical.
 
 **See also:** [Chapter 09: Agent Anatomy](../09-agent-architecture/README.md#planning)
 
@@ -317,7 +317,7 @@ SOP for ticket processing:
 4. Result is added to history
 5. LLM receives result in context and generates next step
 
-This is not magic — it's just a loop where the model receives results of previous actions.
+This isn't magic — it's just a loop where the model receives results of previous actions.
 
 **See also:** [Chapter 04: Autonomy](../04-autonomy-and-loops/README.md#magic-vs-reality-how-the-loop-works)
 

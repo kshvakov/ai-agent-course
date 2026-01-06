@@ -1,7 +1,7 @@
 # Lab 03: Real World (Interfaces & Infrastructure)
 
 ## Goal
-Learn to integrate real infrastructure tools (Proxmox API, Ansible CLI) into agent code. Use interfaces for abstraction.
+Learn how to integrate real infrastructure tools (Proxmox API, Ansible CLI) into agent code. Use interfaces for abstraction.
 
 ## Theory
 To make an agent extensible, don't hardcode tool logic in `main.go`. Use the **Registry** pattern.

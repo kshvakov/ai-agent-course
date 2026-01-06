@@ -2,13 +2,13 @@
 
 ## Why This Chapter?
 
-Without observability, you work blind. An agent performed an action, but you cannot understand:
+Without observability, you work blind. An agent performed an action, but you can't understand:
 - Why did it choose this particular tool?
 - How long did execution take?
 - How many tokens were used?
 - Where did the error occur?
 
-Observability is the "vision" for your agent. Without it, you cannot debug problems, optimize performance, or understand agent behavior in production.
+Observability provides "vision" for your agent. Without it, you can't debug problems, optimize performance, or understand agent behavior in production.
 
 ### Real-World Case Study
 

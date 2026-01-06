@@ -1,8 +1,8 @@
 # Manual: Lab 03 — Real World (Interfaces & Infrastructure)
 
-## Why Is This Needed?
+## Why This Lab?
 
-In this lab you'll learn to integrate real infrastructure tools (Proxmox API, Ansible CLI) into agent code. Using interfaces allows making the agent extensible: you can add new tools without changing the main code.
+In this lab you'll learn how to integrate real infrastructure tools (Proxmox API, Ansible CLI) into agent code. Using interfaces allows making the agent extensible: you can add new tools without changing the main code.
 
 ### Real-World Case Study
 
@@ -103,7 +103,7 @@ if tool, exists := registry[toolName]; exists {
 
 ### Error 1: Incorrect Interface Implementation
 
-**Symptom:** Compiler complains: "does not implement Tool".
+**Symptom:** The compiler complains: "does not implement Tool".
 
 **Cause:** Not all interface methods are implemented.
 

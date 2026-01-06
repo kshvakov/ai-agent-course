@@ -241,14 +241,14 @@ finalMsg := supervisorResp2.Choices[0].Message
 // finalMsg.Content = "DB server is available (ping successful). PostgreSQL version: 15.2"
 ```
 
-**Why this is not magic:**
+**Why this isn't magic:**
 
-1. **Supervisor calls Workers as regular tools** — this is not "delegation", but a tool call
+1. **Supervisor calls Workers as regular tools** — this isn't "delegation", but a tool call
 2. **Workers are separate agents** — each with its own context and tools
 3. **Context isolation** — Worker doesn't see Supervisor history, only its question
 4. **Runtime manages everything** — it intercepts Supervisor tool calls, runs Workers, collects results
 
-**Key point:** Multi-Agent is not magic "commanding", but a mechanism for calling specialized agents via tool calls with context isolation.
+**Key point:** Multi-Agent isn't magic "commanding", but a mechanism for calling specialized agents via tool calls with context isolation.
 
 ## Common Errors
 

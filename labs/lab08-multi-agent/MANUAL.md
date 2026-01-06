@@ -1,8 +1,8 @@
 # Manual: Lab 08 — Multi-Agent Systems
 
-## Why Is This Needed?
+## Why This Lab?
 
-One agent "jack of all trades" often gets confused with tools. It's more efficient to divide responsibilities: create a team of narrow specialists managed by a main agent (Supervisor).
+A single "jack-of-all-trades" agent often gets confused with tools. It's more efficient to divide responsibilities: create a team of narrow specialists managed by a main agent (Supervisor).
 
 ### Real-World Case Study
 
@@ -30,7 +30,7 @@ One agent "jack of all trades" often gets confused with tools. It's more efficie
 - **Supervisor:** Main brain. Doesn't have tools, but knows who can do what.
 - **Workers:** Specialized agents with narrow tool sets.
 
-**Context isolation:** Worker doesn't see all Supervisor conversation, only its task. This saves tokens and focuses attention.
+**Context isolation:** A Worker doesn't see the entire Supervisor conversation, only its task. This saves tokens and focuses attention.
 
 **Example:**
 
@@ -54,7 +54,7 @@ Supervisor collects results and responds to user
 
 ### Recursion and Isolation
 
-Technically, calling an agent is just a function call. Inside function `runWorkerAgent` we create a **new** dialogue context (new `messages` array). Worker has its own short memory, doesn't see Supervisor-user conversation (context encapsulation).
+Technically, calling an agent is just a function call. Inside function `runWorkerAgent` we create a **new** dialogue context (new `messages` array). A Worker has its own short memory and doesn't see the Supervisor-user conversation (context encapsulation).
 
 ## Execution Algorithm
 
@@ -168,7 +168,7 @@ for i := 0; i < 10; i++ {
 
 ### Error 1: Worker Receives Supervisor Context
 
-**Symptom:** Worker receives all Supervisor history, context overflows.
+**Symptom:** The Worker receives all Supervisor history, causing context overflow.
 
 **Cause:** You're passing Supervisor `messages` to Worker.
 
@@ -183,7 +183,7 @@ runWorkerAgent([]ChatCompletionMessage{systemMsg, questionMsg}, ...)  // Only it
 
 ### Error 2: Supervisor Doesn't Receive Worker Answer
 
-**Symptom:** Supervisor calls Worker but doesn't see result.
+**Symptom:** Supervisor calls Worker but doesn't receive the result.
 
 **Cause:** Worker answer not added to Supervisor history.
 

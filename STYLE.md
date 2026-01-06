@@ -1,6 +1,6 @@
 # Documentation Style Guide
 
-This document describes a unified style for all textbook chapters `book/*`. The goal is to make documentation as simple and educational through practice as lab assignments `labs/*/MANUAL.md`.
+This document describes a unified style for all textbook chapters `book/*`. The goal is to make documentation as simple and educational through practice as the lab assignments in `labs/*/MANUAL.md`.
 
 ## Philosophy
 
@@ -8,7 +8,7 @@ This document describes a unified style for all textbook chapters `book/*`. The 
 
 - **Simple language** — avoid academic jargon without necessity
 - **Through examples** — show how it works in practice
-- **Errors as learning** — common mistakes help understand concept deeper
+- **Errors as learning** — common mistakes help understand concepts more deeply
 - **Self-check** — mini-exercises and checklists for reinforcement
 
 ## Unified Chapter Template
@@ -26,7 +26,7 @@ Each chapter `book/*/README.md` should follow this structure:
 ```markdown
 ## Why This Chapter?
 
-Function Calling turns LLM from a "chatterbox" into a "worker". Without tools, an agent can only respond with text, but cannot interact with the real world.
+Function Calling turns an LLM from a "chatterbox" into a "worker". Without tools, an agent can only respond with text, but can't interact with the real world.
 ```
 
 ### 2. Real-World Case Study (required)
@@ -43,8 +43,8 @@ Short scenario from practice showing the problem and solution.
 ### Real-World Case Study
 
 **Situation:** User writes: "Check status of server web-01"
-**Problem:** Bot cannot actually check the server. It only talks.
-**Solution:** Function Calling allows model to call real Go functions.
+**Problem:** The bot can't actually check the server. It only talks.
+**Solution:** Function Calling allows the model to call real Go functions.
 ```
 
 ### 3. Theory in Simple Terms (required)
@@ -63,10 +63,10 @@ Intuitive explanation of concept without formalization. Use analogies and simple
 ### How Does Function Calling Work?
 
 1. You describe a function in JSON Schema format
-2. LLM receives description and decides: "I need to call this function"
-3. LLM generates JSON with function name and arguments
-4. Your code parses JSON and executes real function
-5. Result is returned to LLM for further processing
+2. The LLM receives the description and decides: "I need to call this function"
+3. The LLM generates JSON with function name and arguments
+4. Your code parses the JSON and executes the real function
+5. The result is returned to the LLM for further processing
 ```
 
 ### 4. How It Works (Step-by-Step) (required)
@@ -97,7 +97,7 @@ tools := []openai.Tool{
 }
 ```
 
-**Important:** `Description` is the most important field! LLM relies on it.
+**Important:** `Description` is the most important field! The LLM relies on it.
 ```
 
 ### 5. Mini Code Example (required)
@@ -177,7 +177,7 @@ Practical assignments for reinforcing material.
 
 ### 8. "Done" Checklist (required)
 
-List of criteria by which reader can check they understood the material.
+List of criteria by which readers can check that they understood the material.
 
 **Format:**
 ```markdown
@@ -194,7 +194,7 @@ List of criteria by which reader can check they understood the material.
 
 ### 9. For the Curious (optional, but recommended)
 
-Formalization, mathematics, deep details. Put at the end so as not to break main flow.
+Formalization, mathematics, deep details. Place at the end so as not to break the main flow.
 
 **Format:**
 ```markdown
@@ -241,7 +241,7 @@ After studying [topic], proceed to:
 
 - **Explain in simple terms first**, then use term
 - **Term consistency** — use one term for one concept
-- **Anglicisms only when necessary** — if there's a good Russian equivalent, use it
+- **Use technical terms consistently** — establish terminology and stick to it
 
 **Example:**
 ```markdown
@@ -380,8 +380,8 @@ Each mistake should follow template:
 **Rule:** One main continuous scenario (DevOps) + 1-2 short examples from other domains only where it enhances understanding.
 
 **When to add examples from other domains:**
-- When concept is universal and examples from different domains show different aspects
-- When need to show that approach works not only in DevOps
+- When the concept is universal and examples from different domains show different aspects
+- When you need to show that the approach works not only in DevOps
 
 **When NOT to add:**
 - If examples duplicate each other

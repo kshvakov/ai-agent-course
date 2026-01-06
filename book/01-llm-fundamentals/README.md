@@ -1,6 +1,6 @@
 # 01. LLM Physics — How the Agent's "Brain" Works
 
-## Why Is This Needed?
+## Why This Chapter?
 
 To control an agent, you need to understand how its "brain" works. Without understanding LLM physics, you won't be able to:
 - Properly configure the model for the agent
@@ -114,7 +114,7 @@ req := openai.ChatCompletionRequest{
 
 **2. What the model returns:**
 
-The model **does not return text** "I will call the tool". It returns a **structured tool call**:
+The model **doesn't return text** like "I will call the tool". Instead, it returns a **structured tool call**:
 
 ```json
 {
@@ -205,7 +205,7 @@ Numbers like "probability 0.85" are **illustrations** for understanding. OpenAI/
 
 **✅ Reality:**
 
-**What is sent:**
+**What gets sent:**
 
 ```go
 systemPrompt := `You are a Customer Support agent.
@@ -345,7 +345,7 @@ userInput := "User reports error 500"
 
 **✅ Reality:**
 
-**What is sent:**
+**What gets sent:**
 
 ```go
 systemPrompt := `You are a Data Analyst.
@@ -474,7 +474,7 @@ userInput := "Why did sales drop in region X?"
 
 #### 1. Non-Determinism
 
-Running the agent twice with the same prompt, you may get different actions.
+If you run the agent twice with the same prompt, you may get different actions.
 
 **Example:**
 ```
@@ -554,7 +554,7 @@ Remaining space: 300 tokens
 
 If history overflows, the agent "forgets" the beginning of the conversation. In practice, this happens either because your runtime trims/summarizes old messages to fit the limit (the model doesn't receive them), or because the API rejects the request with a context-length error if you don't handle overflow.
 
-**Model is Stateless:** It doesn't remember your previous request if you don't pass it again in `messages`.
+**The Model is Stateless:** It doesn't remember your previous request if you don't pass it again in `messages`.
 
 ```go
 // Each request must include the full history
@@ -812,7 +812,7 @@ When the model receives in context:
 - Tools Schema: `[{name: "check_status", description: "..."}]`
 - User Input: "Check server status"
 
-The model generates a sequence of tokens that matches the tool call format. This is not "magic" — it's the result of training on function call examples.
+The model generates a sequence of tokens that matches the tool call format. This isn't "magic" — it's the result of training on function call examples.
 
 ## Connection to Other Chapters
 

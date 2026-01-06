@@ -10,7 +10,7 @@ Without proper prompting, an agent will:
 - Perform dangerous actions without confirmation
 - Respond in the wrong format
 
-This chapter teaches you to create effective prompts that control agent behavior.
+This chapter teaches you how to create effective prompts that control agent behavior.
 
 ### Real-World Case Study
 
@@ -137,7 +137,7 @@ SOP for analysis:
 
 ## In-Context Learning (ICL): Zero-shot and Few-shot
 
-After we've defined the System Prompt structure, the question arises: **how to best convey the desired behavior to the model?**
+After defining the System Prompt structure, the next question is: **how do we best convey the desired behavior to the model?**
 
 **In-Context Learning (ICL)** is the model's ability to adapt behavior based on examples *within the prompt*, without changing model weights.
 
@@ -145,7 +145,7 @@ ICL works in two modes:
 
 ### Zero-Shot (instruction only)
 
-We give the model only **instruction**, without examples:
+We provide the model with only **instruction**, without examples:
 
 ```text
 System Prompt: "You are a DevOps engineer. When the user asks to check logs, use the read_logs tool."
@@ -161,7 +161,7 @@ Assistant: [Model performs task based on instruction]
 
 ### Few-Shot (instruction + examples)
 
-We give the model **instruction + examples** of desired behavior:
+We provide the model with **instruction + examples** of desired behavior:
 
 ```text
 System Prompt: "You are a DevOps engineer. Examples:
@@ -549,7 +549,7 @@ The model processes the reasoning format example and follows it. In practice, th
 
 ### CoT and Agent Loop
 
-The **"Thought-Action-Observation"** format — is a formalization of **Agent Loop** (iterative agent process).
+The **"Thought-Action-Observation"** format is a formalization of the **Agent Loop** (iterative agent process).
 
 **How it works:**
 
@@ -576,7 +576,7 @@ Iteration 3:
   Action: [final answer to user]
 ```
 
-**Important:** This is not "magic" — the model simply processes results of previous tools in context (`messages[]`) and generates the next step based on this context.
+**Important:** This isn't "magic" — the model simply processes results of previous tools in context (`messages[]`) and generates the next step based on this context.
 
 See more: **[Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md)** — how ReAct Loop and iterative agent process work.
 

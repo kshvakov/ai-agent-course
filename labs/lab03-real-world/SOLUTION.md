@@ -1,7 +1,7 @@
 # Lab 03 Solution: Real World (Interfaces & Infrastructure)
 
 ## 🎯 Goal
-Learn to build architecture that allows easily adding new tools without changing the main code. Use Go interfaces to abstract complex external systems (Proxmox, Ansible).
+Learn how to build architecture that allows easily adding new tools without changing the main code. Use Go interfaces to abstract complex external systems (Proxmox, Ansible).
 
 ## 📝 Solution Breakdown
 

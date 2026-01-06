@@ -1,6 +1,6 @@
 # Manual: Lab 00 — Model Capability Benchmark
 
-## Why Is This Needed?
+## Why This Lab?
 
 Before building complex agents, we must **scientifically confirm** that our model (especially local) has the necessary capabilities. In engineering, this is called **characterization**.
 
@@ -72,13 +72,13 @@ Tests will output a report:
 ### Step 3: Interpretation
 
 - **If all tests passed:** The model is ready for the course. You can continue.
-- **If Function Calling failed:** The model is not suitable for Lab 02-08. You need a different model.
+- **If Function Calling failed:** The model isn't suitable for Lab 02-08. You need a different model.
 
 ## Common Errors
 
 ### Error 1: "API Error: connection refused"
 
-**Cause:** Local server (LM Studio/Ollama) is not running.
+**Cause:** The local server (LM Studio/Ollama) isn't running.
 
 **Solution:**
 1. Start LM Studio
@@ -87,7 +87,7 @@ Tests will output a report:
 
 ### Error 2: "Function Calling - FAILED"
 
-**Cause:** The model is not trained on Function Calling.
+**Cause:** The model isn't trained on Function Calling.
 
 **Solution:**
 1. Download a model with tools support:

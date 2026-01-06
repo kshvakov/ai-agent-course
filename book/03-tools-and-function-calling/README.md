@@ -28,7 +28,7 @@ Function Calling is a mechanism that allows the model to call real Go functions,
 
 ## Function Calling — How It Works
 
-**Function Calling** is a mechanism where the LLM returns not text, but structured JSON with the function name and arguments.
+**Function Calling** is a mechanism where the LLM returns structured JSON with the function name and arguments instead of plain text.
 
 ### Complete Cycle: From Definition to Execution
 
@@ -102,7 +102,7 @@ The model **doesn't return text** like "I will check ping". Instead, it returns 
 }
 ```
 
-**What happens:** The model **generated a tool_call** for the `ping` tool and JSON with arguments. This is **not magic** — the model processed `Description: "Ping a host to check connectivity"` and linked it to the user's request.
+**What happens:** The model **generates a tool_call** for the `ping` tool with JSON arguments. This isn't magic — the model processes `Description: "Ping a host to check connectivity"` and links it to the user's request.
 
 **How does the model choose between multiple tools?**
 

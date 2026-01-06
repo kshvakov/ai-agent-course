@@ -1,7 +1,7 @@
 # Lab 02: Function Calling (Tools)
 
 ## Goal
-Understand the Function Calling mechanism. Learn to describe Go functions so that LLM can call them.
+Understand the Function Calling mechanism. Learn how to describe Go functions so that the LLM can call them.
 
 ## Important for Local Models ⚠️
 Not all local models support **Function Calling**.

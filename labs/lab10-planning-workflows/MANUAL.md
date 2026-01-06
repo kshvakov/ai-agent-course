@@ -1,8 +1,8 @@
 # Manual: Lab 10 — Planning and Workflows
 
-## Why Is This Needed?
+## Why This Lab?
 
-In this lab you'll implement **explicit planning** (Plan-and-Solve) — a pattern for complex multi-step tasks. The agent first creates a complete plan, then executes it step by step.
+In this lab you'll learn how to implement **explicit planning** (Plan-and-Solve) — a pattern for complex multi-step tasks. The agent first creates a complete plan, then executes it step by step.
 
 ### Real-World Case Study
 
@@ -213,4 +213,4 @@ func savePlanState(planID string, plan *Plan) error {
 - Steps executed without checking dependencies
 - Cyclic dependencies not detected
 - No state persistence
-- Plan cannot be resumed
+- Plan can't be resumed

@@ -2,7 +2,7 @@
 
 ## Why This Chapter?
 
-You changed the prompt, and the agent works worse. But you cannot understand what exactly changed or rollback changes. Without prompt management, you cannot:
+You changed the prompt, and the agent's performance degraded. But you can't understand what exactly changed or roll back changes. Without prompt management, you can't:
 - Version prompts
 - Track changes and their impact
 - Test new versions before deployment
@@ -113,7 +113,7 @@ func getSystemPrompt() string {
 
 ### Error 1: Prompts Not Versioned
 
-**Symptom:** After changing prompt, agent works worse, but you cannot rollback changes.
+**Symptom:** After changing the prompt, the agent's performance degraded, but you can't roll back changes.
 
 **Solution:** Version prompts in Git or DB.
 

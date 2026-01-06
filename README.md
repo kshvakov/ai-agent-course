@@ -9,13 +9,13 @@
 
 Welcome to a practical course on building autonomous AI agents in Go!
 
-This course is designed for programmers who want to understand how modern LLM agents work "under the hood" and learn to apply them to solve real-world problems.
+This course is designed for programmers who want to understand how modern LLM agents work "under the hood" and learn how to apply them to solve real-world problems.
 
 ### Real-World Case Study
 
 **Situation:** You've created a chatbot for DevOps. A user writes: "We have database issues, investigate"
 
-**Problem:** A regular chatbot can only respond with text. It cannot actually check metrics, read logs, or apply fixes.
+**Problem:** A regular chatbot can only respond with text. It can't actually check metrics, read logs, or apply fixes.
 
 **Solution:** An AI agent with tools can independently check metrics → read logs → form hypotheses → apply fixes → verify results. This course teaches you how to build such agents.
 
@@ -89,7 +89,7 @@ The course consists of a preparatory stage (Lab 00) and 12 main laboratory assig
 **Diagnostics.** Before starting, verify whether your model (especially a local one) is suitable for the course. Run a series of tests on JSON, Instruction Following, and Function Calling.
 
 ### [Lab 01: Hello, LLM!](./labs/lab01-basics)
-**Basics and Memory.** You'll learn to programmatically communicate with LLMs, manage context (memory), and configure the agent's role through system prompts.
+**Basics and Memory.** You'll learn how to programmatically communicate with LLMs, manage context (memory), and configure the agent's role through system prompts.
 
 ### [Lab 02: Agent's Hands](./labs/lab02-tools)
 **Function Calling.** Learn how to turn Go functions into tools that an LLM can call. Implement the Tool Execution mechanism.
@@ -113,7 +113,7 @@ The course consists of a preparatory stage (Lab 00) and 12 main laboratory assig
 **Supervisor Pattern.** Create a system where a main agent (Orchestrator) manages highly specialized sub-agents (Network Admin, DB Admin).
 
 ### [Lab 09: Context Optimization](./labs/lab09-context-optimization)
-**Context Window Management.** Learn to count tokens, apply optimization techniques (truncation, summarization), and implement adaptive context management for long-lived agents.
+**Context Window Management.** Learn how to count tokens, apply optimization techniques (truncation, summarization), and implement adaptive context management for long-lived agents.
 
 ### [Lab 10: Planning & Workflow](./labs/lab10-planning-workflows)
 **Workflow Patterns.** Implement a simple workflow runtime: plan → steps → retries → state persistence (in-memory/file).

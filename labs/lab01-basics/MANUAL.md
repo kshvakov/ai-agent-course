@@ -1,6 +1,6 @@
 # Manual: Lab 01 — Hello, LLM!
 
-## Why Is This Needed?
+## Why This Lab?
 
 In this lab you'll learn the basics of interacting with LLM: sending requests, receiving responses, and, most importantly, **context management**. Without saving context (message history), it's impossible to build a dialogue.
 
@@ -22,7 +22,7 @@ In this lab you'll learn the basics of interacting with LLM: sending requests, r
 
 **Stateless** means "without state". Each request to the model is a new request. It doesn't remember what you wrote a second ago.
 
-To create the illusion of dialogue, send **all** previous messages (history) each time.
+To create the illusion of dialogue, send **all** previous messages (history) with each request.
 
 ### Message Structure
 

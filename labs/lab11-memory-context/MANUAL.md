@@ -1,8 +1,8 @@
 # Manual: Lab 11 — Memory and Context Management
 
-## Why Is This Needed?
+## Why This Lab?
 
-In this lab you'll implement a memory system for the agent: long-term storage, fact extraction, and efficient context management.
+In this lab you'll learn how to implement a memory system for the agent: long-term storage, fact extraction, and efficient context management.
 
 ### Real-World Case Study
 

@@ -2,12 +2,12 @@
 
 ## Why This Chapter?
 
-An agent works, but the LLM API bill grows uncontrollably. One request costs $5, another — $0.10. Why? Without cost control and latency optimization, you cannot:
+An agent works, but the LLM API bill grows uncontrollably. One request costs $5, another — $0.10. Why? Without cost control and latency optimization, you can't:
 - Predict monthly budget
 - Optimize expensive requests
 - Guarantee response time to user
 
-Cost & Latency Engineering provides budget and performance control. Without it, you risk spending thousands of dollars on simple requests or ending up with a slow agent that users won't use.
+Cost and Latency Engineering provides budget and performance control. Without it, you risk spending thousands of dollars on simple requests or ending up with a slow agent that users won't use.
 
 ### Real-World Case Study
 

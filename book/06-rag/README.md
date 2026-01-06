@@ -6,7 +6,7 @@ A regular agent only knows what it was trained on (up to the cut-off date). It d
 
 **RAG (Retrieval Augmented Generation)** is a "cheat sheet lookup" mechanism. The agent first searches for information in the knowledge base, then acts.
 
-Without RAG, an agent cannot use your documentation, protocols, and knowledge base. With RAG, an agent can find the needed information and act according to your instructions.
+Without RAG, an agent can't use your documentation, protocols, and knowledge base. With RAG, an agent can find the needed information and act according to your instructions.
 
 ### Real-World Case Study
 
@@ -155,7 +155,7 @@ msg2 := resp2.Choices[0].Message
 // ]
 ```
 
-**Why this is not magic:**
+**Why this isn't magic:**
 
 1. **Model doesn't "know" the protocol** — it receives it in context after search
 2. **Search is a regular tool** — same as `ping` or `restart_service`
@@ -222,7 +222,7 @@ Chunk 3: "Step 3: Restart server..."
 
 **Symptom:** Agent performs actions without searching the knowledge base, using only general knowledge.
 
-**Cause:** System Prompt doesn't instruct agent to search knowledge base, or search tool description is not clear enough.
+**Cause:** The System Prompt doesn't instruct the agent to search the knowledge base, or the search tool description isn't clear enough.
 
 **Solution:**
 ```go

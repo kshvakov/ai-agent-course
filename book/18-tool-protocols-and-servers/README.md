@@ -50,13 +50,13 @@ This chapter covers tool server patterns: stdio protocols, HTTP API, gRPC, schem
 - Good for distributed systems
 
 **3. gRPC Protocol:**
-- Tool runs as gRPC service
+- Tool runs as a gRPC service
 - Strict contract via Protobuf (IDL)
 - Type safety and backward compatibility of schemas
 - Rich Go ecosystem: client/server code generation, interceptors, reflection
 - Built-in mechanisms: TLS/mTLS, authentication via metadata, deadlines, retries, load balancing
 - Observability: integration with tracing/metrics/logging
-- Practical choice for production tool servers
+- A practical choice for production tool servers
 
 ## How It Works (Step by Step)
 

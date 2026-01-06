@@ -1,7 +1,7 @@
 # Lab 01 Solution: LLM Basics
 
 ## 🎯 Goal
-In this lab we learned the basics of interacting with LLM: sending requests, receiving responses, and, most importantly, **context management**. Without saving context (message history), it's impossible to build a dialogue.
+In this lab we learned the basics of interacting with an LLM: sending requests, receiving responses, and, most importantly, **context management**. Without saving context (message history), it's impossible to build a dialogue.
 
 ## 📝 Solution Breakdown
 
@@ -17,7 +17,7 @@ client := openai.NewClientWithConfig(config)
 ```
 
 ### 2. Memory Management (Context Loop)
-LLM "doesn't remember" previous messages. We must store history ourselves and send it entirely each time.
+An LLM "doesn't remember" previous messages. We must store history ourselves and send it entirely with each request.
 
 ### 🔍 Complete Solution Code
 

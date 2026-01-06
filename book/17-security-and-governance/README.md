@@ -147,7 +147,7 @@ func buildMessages(userInput string, systemPrompt string) []openai.ChatCompletio
 ```
 
 **Why this is important:**
-- System Prompt is never changed by user
+- The System Prompt is never changed by the user
 - Input data is validated and sanitized
 - Context separation (system vs user) prevents injection
 

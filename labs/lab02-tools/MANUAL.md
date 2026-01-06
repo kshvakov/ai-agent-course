@@ -1,6 +1,6 @@
 # Manual: Lab 02 — Function Calling (Tools)
 
-## Why Is This Needed?
+## Why This Lab?
 
 A regular LLM returns text. But to create an agent, the model needs to be able to call functions (tools). This turns LLM from a "talker" into a "worker".
 
@@ -10,7 +10,7 @@ A regular LLM returns text. But to create an agent, the model needs to be able t
 - "Check status of server web-01"
 - Bot responds: "I'll check the status of server web-01 for you..." (text)
 
-**Problem:** Bot cannot actually check the server. It only talks.
+**Problem:** The bot can't actually check the server. It only talks.
 
 **Solution:** Function Calling allows the model to call real Go functions.
 
@@ -20,9 +20,9 @@ A regular LLM returns text. But to create an agent, the model needs to be able t
 
 1. **You describe a function** in JSON Schema format
 2. **The LLM receives the description** and decides: "I need to call this function"
-3. **LLM generates JSON** with function name and arguments
-4. **Your code parses JSON** and executes the real function
-5. **Result is returned** to LLM for further processing
+3. **The LLM generates JSON** with function name and arguments
+4. **Your code parses the JSON** and executes the real function
+5. **The result is returned** to the LLM for further processing
 
 ### Why Don't All Models Know Tools?
 
@@ -56,7 +56,7 @@ tools := []openai.Tool{
 }
 ```
 
-**Important:** `Description` is the most important field! LLM relies on it.
+**Important:** `Description` is the most important field! The LLM relies on it.
 
 ### Step 2: Sending Request with Tools
 

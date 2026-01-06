@@ -1,6 +1,6 @@
 # Manual: Lab 04 — The Agent Loop (Autonomy)
 
-## Why Is This Needed?
+## Why This Lab?
 
 In this lab you'll implement the **ReAct (Reason + Act)** pattern — the heart of an autonomous agent. The agent will learn to independently make decisions, execute actions, and analyze results in a loop, without human intervention.
 
@@ -148,7 +148,7 @@ Action: check_disk()  // And again!
 
 ### Error 2: Tool Result Not Added to History
 
-**Symptom:** Agent doesn't see tool result and continues executing the same action.
+**Symptom:** The agent doesn't see the tool result and continues executing the same action.
 
 **Cause:** You forgot to add result to `messages`.
 

@@ -1,6 +1,6 @@
 # Manual: Lab 05 — Human-in-the-Loop
 
-## Why Is This Needed?
+## Why This Lab?
 
 Autonomy doesn't mean permissiveness. There are two scenarios when an agent **must** return control to a human:
 
@@ -128,7 +128,7 @@ for {
 
 ### Error 1: Agent Doesn't Ask for Confirmation
 
-**Symptom:** Agent immediately deletes database without confirmation.
+**Symptom:** The agent immediately deletes the database without confirmation.
 
 **Cause:** System Prompt not strict enough or model ignores it.
 
@@ -139,7 +139,7 @@ for {
 
 ### Error 2: Agent Doesn't Clarify Parameters
 
-**Symptom:** Agent tries to call tool with incomplete arguments.
+**Symptom:** The agent tries to call a tool with incomplete arguments.
 
 **Example:**
 ```

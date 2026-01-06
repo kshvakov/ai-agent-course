@@ -222,9 +222,9 @@ ALWAYS Think step by step. Output your thought process before calling a tool.`
 
 ### Troubleshooting
 
-If agent doesn't follow SOP:
+If the agent doesn't follow SOP:
 
-1. **Check model:** Run Lab 00. If Function Calling failed, model is not suitable.
+1. **Check model:** Run Lab 00. If Function Calling failed, the model isn't suitable.
 2. **Strengthen prompt:** Add "CRITICAL:" before important instructions.
 3. **Add Few-Shot:** Show model an example of correct behavior.
 

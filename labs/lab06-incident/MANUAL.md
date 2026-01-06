@@ -1,6 +1,6 @@
 # Manual: Lab 06 — Incident Management (SOP)
 
-## Why Is This Needed?
+## Why This Lab?
 
 In this lab you'll create an **SRE (Site Reliability Engineer)** level agent. Unlike simple tasks, incidents require **strategic thinking** and following a strict algorithm (SOP).
 

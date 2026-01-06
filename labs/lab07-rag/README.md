@@ -7,7 +7,7 @@ Teach the agent to work with internal documentation (Wiki, Man pages, procedures
 
 ### Problem: Agent Doesn't Know Local Instructions
 
-A regular agent only knows what it was taught during training (before cut-off date). It doesn't know your local instructions like "How to restart Phoenix server according to procedure #5".
+A regular agent only knows what it was trained on (up to its cut-off date). It doesn't know your local instructions like "How to restart Phoenix server according to procedure #5".
 
 **RAG (Retrieval Augmented Generation)** is a mechanism for "peeking at a cheat sheet". The agent first searches for information in the knowledge base, then acts.
 

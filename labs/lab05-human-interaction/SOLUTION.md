@@ -14,7 +14,7 @@ If the model deletes database without asking — try strengthening System Prompt
 
 ### 🛡️ Additional Protection: Runtime Confirmation Gate
 
-**Important:** Cannot rely solely on prompt and model quality for safety. Even if the model returned `tool_call` for a dangerous action, **runtime must check risk and block execution** until explicit user confirmation is received.
+**Important:** Can't rely solely on prompt and model quality for safety. Even if the model returned `tool_call` for a dangerous action, **runtime must check risk and block execution** until explicit user confirmation is received.
 
 **Why this is critical:**
 - Small models (7B) may ignore safety instructions

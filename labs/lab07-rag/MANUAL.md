@@ -1,8 +1,8 @@
 # Manual: Lab 07 — RAG & Knowledge Base
 
-## Why Is This Needed?
+## Why This Lab?
 
-A regular agent only knows what it was taught during training (before cut-off date). It doesn't know your local instructions like "How to restart Phoenix server according to procedure #5".
+A regular agent only knows what it was trained on (up to its cut-off date). It doesn't know your local instructions like "How to restart Phoenix server according to procedure #5".
 
 **RAG (Retrieval Augmented Generation)** is a mechanism for "peeking at a cheat sheet". The agent first searches for information in the knowledge base, then acts.
 
@@ -102,7 +102,7 @@ If you don't know the procedure, search first.`
 
 ### Error 1: Agent Doesn't Search Knowledge Base
 
-**Symptom:** Agent immediately executes action without search.
+**Symptom:** The agent immediately executes an action without searching.
 
 **Cause:** System Prompt not strict enough.
 
@@ -125,7 +125,7 @@ If you don't know the procedure, search first.`
 
 ### Error 3: Agent Ignores Found Information
 
-**Symptom:** Agent found procedure but doesn't follow it.
+**Symptom:** The agent found the procedure but doesn't follow it.
 
 **Cause:** Information not added to context correctly.
 

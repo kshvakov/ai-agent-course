@@ -2,7 +2,7 @@
 
 ## Why This Chapter?
 
-An agent is not just an LLM with tools. It's a complex system with memory, planning, and execution environment. Without understanding the architecture, you won't be able to:
+An agent isn't just an LLM with tools. It's a complex system with memory, planning, and an execution environment. Without understanding the architecture, you won't be able to:
 - Properly manage context and dialogue history
 - Implement an autonomous agent work loop
 - Optimize token usage

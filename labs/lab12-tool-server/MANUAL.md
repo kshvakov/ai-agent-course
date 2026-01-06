@@ -1,8 +1,8 @@
 # Manual: Lab 12 — Tool Server Protocol
 
-## Why Is This Needed?
+## Why This Lab?
 
-In this lab you'll implement a tool server — architecture where tools run in separate processes and communicate with agent via protocols (stdio or HTTP). In production, gRPC is also commonly used due to its strict contract via Protobuf and built-in security and observability mechanisms.
+In this lab you'll learn how to implement a tool server — an architecture where tools run in separate processes and communicate with the agent via protocols (stdio or HTTP). In production, gRPC is also commonly used due to its strict contract via Protobuf and built-in security and observability mechanisms.
 
 ### Real-World Case Study
 
@@ -246,7 +246,7 @@ func (c *HTTPToolClient) CallTool(tool string, version string, arguments json.Ra
 
 ### Mistake 2: Protocol Not Implemented
 
-**Symptom:** Agent cannot call tool server.
+**Symptom:** The agent can't call the tool server.
 
 **Cause:** Protocol not implemented or implemented incorrectly.
 
@@ -272,4 +272,4 @@ func (c *HTTPToolClient) CallTool(tool string, version string, arguments json.Ra
 ❌ **Not completed:**
 - Protocol not implemented
 - Version not checked
-- Agent cannot call tool server
+- Agent can't call tool server

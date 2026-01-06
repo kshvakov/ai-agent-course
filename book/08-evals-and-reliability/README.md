@@ -2,7 +2,7 @@
 
 ## Why This Chapter?
 
-How do you know that an agent hasn't degraded after a prompt change? Without testing, you can't be sure that changes improved the agent rather than made it worse.
+How do you know if an agent's performance has degraded after a prompt change? Without testing, you can't be sure whether changes improved the agent or made it worse.
 
 **Evals (Evaluations)** are a set of unit tests for an agent. They check that the agent correctly handles various scenarios and doesn't degrade after prompt or code changes.
 
@@ -31,7 +31,7 @@ Evals are tests for agents, similar to unit tests for regular code. They check:
 
 ### Why Are Evals Needed?
 
-1. **Regressions:** After changing a prompt, you need to ensure the agent doesn't work worse on old tasks
+1. **Regressions:** After changing a prompt, you need to ensure the agent doesn't perform worse on old tasks
 2. **Quality:** Evals help measure agent quality objectively
 3. **CI/CD:** Evals can run automatically on every code change
 
@@ -258,7 +258,7 @@ newMetrics := runEvals(ctx, client, tests)
 
 ### Error 1: No Evals for Critical Scenarios
 
-**Symptom:** Agent works well on regular tasks, but fails critical scenarios (safety, confirmations).
+**Symptom:** The agent works well on regular tasks, but fails critical scenarios (safety, confirmations).
 
 **Cause:** Evals cover only functional tests, but not safety tests.
 

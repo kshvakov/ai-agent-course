@@ -2,7 +2,7 @@
 
 ## Why This Chapter?
 
-An agent works with user personal data (email, phone, address). This data gets into logs and is sent to the LLM API. Without data protection, you violate GDPR and risk data leakage.
+An agent processes user personal data (email, phone, address). This data gets into logs and is sent to the LLM API. Without data protection, you violate GDPR and risk data leakage.
 
 ### Real-World Case Study
 

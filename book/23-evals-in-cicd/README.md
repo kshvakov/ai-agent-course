@@ -2,7 +2,7 @@
 
 ## Why This Chapter?
 
-You changed the prompt or code, and the agent works worse. But you only learn about it after deploying to production. Without evals in CI/CD, you cannot automatically check quality before deployment.
+You changed the prompt or code, and the agent's performance degraded. But you only learn about it after deploying to production. Without evals in CI/CD, you can't automatically check quality before deployment.
 
 ### Real-World Case Study
 

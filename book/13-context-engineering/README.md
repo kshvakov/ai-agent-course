@@ -2,7 +2,7 @@
 
 ## Why This Chapter?
 
-Context windows are limited. As conversations grow, you need to manage what information stays in context and what gets summarized or removed. Poor context management leads to wasted tokens, lost information, or agent confusion.
+Context windows are limited. As conversations grow, you need to manage what information stays in context and what gets summarized or removed. Poor context management leads to wasted tokens, lost information, or confusion for the agent.
 
 This chapter covers techniques for efficient context management: layers, summarization, fact selection, and adaptive context management.
 
@@ -22,9 +22,9 @@ This chapter covers techniques for efficient context management: layers, summari
 ### Context Layers
 
 **Working memory (recent turns):**
-- Last N conversation turns
+- The last N conversation turns
 - Always included
-- Most relevant for current task
+- Most relevant for the current task
 
 **Summary layer:**
 - Summarized old conversations

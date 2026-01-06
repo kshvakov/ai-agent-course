@@ -7,7 +7,7 @@ Create a system of multiple specialized agents managed by a main agent (Supervis
 
 ### Problem: One Agent "Jack of All Trades"
 
-One agent with many tools often gets confused. Context overflows, agent may mix up tools or make wrong decisions.
+A single agent with many tools often gets confused. Context overflows, and the agent may mix up tools or make wrong decisions.
 
 **Solution:** Divide responsibilities among specialized agents.
 
@@ -18,7 +18,7 @@ One agent with many tools often gets confused. Context overflows, agent may mix 
 - **Supervisor:** Main brain. Doesn't have infrastructure tools, but knows who can do what.
 - **Workers:** Specialized agents with narrow tool sets.
 
-**Context isolation:** Worker doesn't see all Supervisor conversation, only its task. This saves tokens and focuses attention.
+**Context isolation:** A Worker doesn't see the entire Supervisor conversation, only its task. This saves tokens and focuses attention.
 
 **Example:**
 

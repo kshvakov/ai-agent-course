@@ -1,8 +1,8 @@
 # Manual: Lab 09 — Context Optimization
 
-## Why Is This Needed?
+## Why This Lab?
 
-In this lab you'll learn to manage the LLM context window — a critical skill for creating long-lived agents.
+In this lab you'll learn how to manage the LLM context window — a critical skill for creating long-lived agents.
 
 ### Real-World Case Study
 

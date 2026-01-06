@@ -2,7 +2,7 @@
 
 ## Why This Chapter?
 
-An agent executes a long task (e.g., application deployment), and the server reboots. The task is lost, the user waits, but nothing happens. Without state management, you cannot:
+An agent executes a long task (e.g., application deployment), and then the server reboots. The task is lost, the user waits, but nothing happens. Without state management, you cannot:
 - Resume execution after failure
 - Guarantee idempotency (repeated call doesn't create duplicates)
 - Handle errors with retry
@@ -29,7 +29,7 @@ State Management is about saving agent state between restarts. This allows:
 
 ### What Is Idempotency?
 
-Idempotency is a property of an operation: repeated call gives the same result as the first. For example, "create file" is not idempotent (creates duplicate), but "create file if it doesn't exist" is idempotent.
+Idempotency is a property of an operation: a repeated call gives the same result as the first. For example, "create file" isn't idempotent (creates duplicates), but "create file if it doesn't exist" is idempotent.
 
 ### Connection with Planning
 

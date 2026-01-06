@@ -4,7 +4,7 @@
 
 This chapter examines examples of agents in different domains with detailed breakdowns of how they operate.
 
-Theory is good, but real examples help you understand how to apply concepts in practice. Here you'll see how all the concepts we've studied (SOP, CoT, Tools, Safety, RAG) work together in real agents.
+Theory is good, but real examples help you understand how to apply concepts in practice. Here you'll see how all the concepts we've studied (SOP, CoT, Tools, Safety, RAG) work together in real-world agents.
 
 ### Real-World Case Study
 
