@@ -319,6 +319,100 @@ func abTestPrompt(promptA, promptB string, tests []EvalTest) {
 - ❌ Production changes without explicit confirmation
 - ❌ Critical operations (delete data, change network configuration)
 
+**Case Study: Virtual Machine (VM) Management**
+
+**Situation:** A company has a large fleet of virtual machines distributed across multiple hosts and clusters. VM operations happen frequently: need to view VM lists, check which hosts they're placed on, assess resource availability for capacity planning, create new VMs, or modify settings (CPU, memory, disk size).
+
+**Problem:** All these operations require an engineer who:
+- May be unavailable when needed (blocking other processes)
+- Must manually gather information from multiple sources
+- May make errors in routine operations
+- Spends time on simple but frequent tasks
+
+**Solution:** The agent takes over routine operations and becomes a **full executor**, not just an assistant:
+
+**Typical tasks the agent handles:**
+
+1. **Inventory and placement:**
+   - "Show list of all VMs"
+   - "Which hosts are VMs from project X placed on?"
+   - "How many VMs are on host web-01?"
+
+2. **Capacity planning:**
+   - "Are there enough resources in the cluster to create 5 new VMs?"
+   - "Which host has the most available resources?"
+   - "How much memory is available in the production cluster?"
+
+3. **VM creation and modification:**
+   - "Create a VM with 4 CPU, 8GB RAM, 100GB disk"
+   - "Increase memory of VM app-01 to 16GB"
+   - "Expand disk of VM db-01 by 50GB"
+
+**Tools for VM management:**
+
+```go
+tools := []openai.Tool{
+    {
+        Function: &openai.FunctionDefinition{
+            Name: "list_vms",
+            Description: "Get list of all virtual machines. Use for inventory and finding VMs by name or project.",
+        },
+    },
+    {
+        Function: &openai.FunctionDefinition{
+            Name: "get_vm_placement",
+            Description: "Get VM placement information: which host/cluster the VM is on. Use for checking load distribution.",
+        },
+    },
+    {
+        Function: &openai.FunctionDefinition{
+            Name: "get_cluster_capacity",
+            Description: "Get information about available cluster resources (CPU, memory, disk). Use for capacity planning before creating new VMs.",
+        },
+    },
+    {
+        Function: &openai.FunctionDefinition{
+            Name: "create_vm",
+            Description: "CRITICAL: Create a new virtual machine. Requires confirmation. Parameters: name, CPU, memory, disk size, host/cluster.",
+        },
+    },
+    {
+        Function: &openai.FunctionDefinition{
+            Name: "resize_vm",
+            Description: "CRITICAL: Modify VM resources (CPU, memory). Requires confirmation. May affect production workloads.",
+        },
+    },
+    {
+        Function: &openai.FunctionDefinition{
+            Name: "expand_disk",
+            Description: "CRITICAL: Expand VM disk. Requires confirmation. Operation is irreversible.",
+        },
+    },
+}
+```
+
+**SOP for critical operations (VM creation/modification):**
+
+```text
+SOP for creating/modifying VMs:
+1. Check capacity: Are there enough resources in cluster/host?
+2. Validation: Verify parameter correctness (CPU, memory, disk)
+3. Confirmation: Request explicit user confirmation
+4. Execution: Create/modify VM
+5. Verification: Verify operation completed successfully
+6. Notification: Notify user of result
+```
+
+**Safety and Best Practices:**
+
+- ✅ **Confirmation for critical operations:** VM creation and resource modifications require explicit confirmation (see [Chapter 05: Safety](../05-safety-and-hitl/README.md))
+- ✅ **Parameter validation:** Runtime validates CPU/RAM/disk correctness before execution
+- ✅ **Evals for critical operations:** Tests verify agent requests confirmation for VM creation/modification
+- ✅ **Logging:** All operations are logged for audit and debugging
+- ✅ **Monitoring:** Resource usage and cost of created VMs are tracked
+
+**Result:** The agent takes over routine VM management operations, freeing engineers for more complex tasks. At the same time, critical operations (creation, resource modifications) require confirmation and go through runtime validation, ensuring safety and control.
+
 #### 2. Customer Support
 
 **What agents do well:**
