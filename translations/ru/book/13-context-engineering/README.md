@@ -37,6 +37,13 @@
 - Постоянны между разговорами
 - **Примечание:** Хранение и извлечение фактов описано в [Memory](../12-agent-memory/README.md), здесь описывается только их использование в контексте
 
+!!! warning "Контекст как якорь (Anchoring Bias)"
+    Если в слой фактов попадают **предпочтения пользователя** ("пользователь считает X", "нам нужен ответ Y") или **гипотезы** без подтверждения, они становятся сильным якорем для модели. Модель может сместить ответ в сторону этих предпочтений, даже если фактические данные указывают на другое.
+    
+    **Проблема:** Предпочтения и гипотезы, включённые в контекст как факты, могут исказить объективный анализ.
+    
+    **Решение:** Разделяйте типы записей: **Fact** (проверенные данные), **Preference** (предпочтения пользователя), **Hypothesis** (гипотезы). Включайте предпочтения и гипотезы в контекст только когда это уместно (персонализация), и исключайте их для аналитических задач, требующих объективности.
+
 **Состояние задачи:**
 - Прогресс текущей задачи
 - Что сделано, что ожидает
@@ -62,10 +69,11 @@ type ContextManager interface {
 }
 
 type Fact struct {
-    Key       string
-    Value     string
-    Source    string // Какой разговор
-    Importance int   // 1-10
+    Key        string
+    Value      string
+    Source     string // Какой разговор
+    Importance int    // 1-10
+    Type       string // "fact", "preference", "hypothesis", "constraint"
 }
 ```
 
@@ -153,17 +161,37 @@ func (c *LayeredContext) Summarize(ctx context.Context, client *openai.Client) e
 **ВАЖНО:** Извлечение и хранение фактов происходит в [Memory](../12-agent-memory/README.md). Здесь мы только используем уже извлечённые факты при сборке контекста.
 
 ```go
-func (c *LayeredContext) GetContext(maxTokens int, memory Memory) ([]openai.ChatCompletionMessage, error) {
+func (c *LayeredContext) GetContext(maxTokens int, memory Memory, includePreferences bool) ([]openai.ChatCompletionMessage, error) {
     var messages []openai.ChatCompletionMessage
     
     // Получаем факты из памяти (не извлекаем здесь!)
     facts, _ := memory.Retrieve("user_preferences", 10)
     
+    // Фильтруем факты по типу в зависимости от задачи
+    var filteredFacts []Fact
+    for _, fact := range facts {
+        if fact.Type == "fact" || fact.Type == "constraint" {
+            // Всегда включаем проверенные факты и ограничения
+            filteredFacts = append(filteredFacts, fact)
+        } else if includePreferences && (fact.Type == "preference" || fact.Type == "hypothesis") {
+            // Предпочтения и гипотезы включаем только если это уместно (персонализация)
+            filteredFacts = append(filteredFacts, fact)
+        }
+        // Иначе исключаем предпочтения/гипотезы для объективного анализа
+    }
+    
     // Добавляем системный промпт с фактами
-    if len(facts) > 0 {
+    if len(filteredFacts) > 0 {
         factsContext := "Важные факты:\n"
-        for _, fact := range facts {
-            factsContext += fmt.Sprintf("- %s: %v\n", fact.Key, fact.Value)
+        for _, fact := range filteredFacts {
+            // Размечаем тип для ясности
+            prefix := ""
+            if fact.Type == "preference" {
+                prefix = "[Предпочтение пользователя] "
+            } else if fact.Type == "hypothesis" {
+                prefix = "[Гипотеза] "
+            }
+            factsContext += fmt.Sprintf("- %s%s: %v\n", prefix, fact.Key, fact.Value)
         }
         messages = append(messages, openai.ChatCompletionMessage{
             Role:    "system",
@@ -212,6 +240,32 @@ func (c *LayeredContext) GetContext(maxTokens int, memory Memory) ([]openai.Chat
 **Причина:** Включение всех фактов независимо от релевантности.
 
 **Решение:** Оценивайте факты по важности, включайте только высокооценённые факты.
+
+### Ошибка 4: Предпочтения включены как факты
+
+**Симптом:** Модель смещает ответ в сторону предпочтений пользователя, даже если фактические данные указывают на другое.
+
+**Причина:** Предпочтения пользователя или гипотезы включены в контекст как факты без различения типов.
+
+**Решение:**
+```go
+// ХОРОШО: Различаем типы
+fact := Fact{
+    Key:   "user_thinks_db_problem",
+    Value: "Пользователь предполагает проблему в БД",
+    Type:  "hypothesis", // Не "fact"!
+}
+
+// При сборке контекста для аналитической задачи:
+if !includePreferences {
+    // Исключаем гипотезы и предпочтения
+    if fact.Type == "fact" || fact.Type == "constraint" {
+        includeInContext(fact)
+    }
+}
+```
+
+**Практика:** Для аналитических задач (инциденты, диагностика) исключайте предпочтения и гипотезы из контекста. Включайте их только для персонализированных ответов (например, рекомендации на основе предпочтений пользователя).
 
 ## Мини-упражнения
 

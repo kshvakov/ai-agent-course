@@ -264,6 +264,13 @@ Assistant: {"tool": "check_status", "args": {"hostname": "web-01"}}  // Same for
 
 **Result:** Model clearly understands the pattern and follows it.
 
+!!! warning "Few-shot sets not only format but also hidden hints"
+    Examples in few-shot can not only show the response format but also **implicitly hint at the desired conclusion**. The model may "pick up" patterns from examples and shift responses toward what's shown in demonstrations, even if it doesn't match actual data or the task.
+    
+    **Problem:** If correct answers in examples are always in position "A", or all examples lead to one type of solution, the model may adopt this positional or thematic bias.
+    
+    **Solution:** Use diverse examples, shuffle positions of correct answers, include counterexamples. See section ["How not to hint at the answer"](#how-not-to-hint-at-the-answer) below.
+
 ### Connection of ICL with Other Techniques
 
 - **ICL → CoT:** Demonstrations can set not only response format, but also **reasoning format**. For example, you can show examples with "Thought: ... Action: ... Observation: ...".
@@ -578,6 +585,13 @@ Iteration 3:
 
 **Important:** This isn't "magic" — the model simply processes results of previous tools in context (`messages[]`) and generates the next step based on this context.
 
+!!! warning "CoT can be post-hoc (after the fact)"
+    The chain of reasoning (CoT) that the model generates **does not necessarily reflect the actual inference process**. The model may first "solve" the task (based on probabilistic mechanism) and then generate a "nice explanation" for that solution.
+    
+    **Problem:** A nice CoT is not proof of correctness. The model may confidently rationalize an incorrect conclusion.
+    
+    **Solution:** Don't rely on CoT as the sole source of truth. Verify answers through tools, evals, and runtime validation. For critical decisions, use Human-in-the-Loop regardless of explanation quality.
+
 See more: **[Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md)** — how ReAct Loop and iterative agent process work.
 
 ### CoT Examples in Different Domains
@@ -771,6 +785,153 @@ Constraints:
 - Always check logs before action
 ```
 
+### Mistake 4: Suggested Answer (Anchoring Bias)
+
+**Symptom:** Model shifts answer toward what's explicitly suggested in the prompt or user request, even if incorrect.
+
+**Cause:** Prompt or request contains explicit hints about the desired answer ("I think the correct answer is A", "most likely this is X"). Models trained on maximizing human preferences (RLHF) may "flatter" and agree.
+
+**Solution:**
+```text
+// BAD
+User: "I think the problem is in the database. Check logs."
+System Prompt: "User thinks the problem is in DB. Check logs."
+
+// GOOD
+User: "I think the problem is in the database. Check logs."
+System Prompt: "Check logs and analyze all possible causes. 
+                Analyze data objectively, don't limit yourself to user assumptions."
+```
+
+**Practice:** Separate facts (data, logs, metrics) from user preferences/hypotheses. Don't include preferences in context as facts.
+
+### Mistake 5: Bias in few-shot ("answer always A")
+
+**Symptom:** Model adopts positional pattern from examples: if correct answers in few-shot are always in position "A", model starts choosing "A" more often than it should.
+
+**Cause:** Few-shot examples aren't diverse; correct answers are always in one position or follow one pattern.
+
+**Solution:**
+```text
+// BAD
+Example 1: Question → Answer A (correct)
+Example 2: Question → Answer A (correct)
+Example 3: Question → Answer A (correct)
+
+// GOOD
+Example 1: Question → Answer A (correct)
+Example 2: Question → Answer B (correct)
+Example 3: Question → Answer C (correct)
+// Or shuffle positions, add counterexamples
+```
+
+**Practice:** Shuffle positions of correct answers, include diverse examples, add counterexamples (incorrect answers with explanation of why they're wrong).
+
+### Mistake 6: Blind Trust in CoT
+
+**Symptom:** Developer relies on model's "nice explanation" as proof of answer correctness without verifying the answer itself.
+
+**Cause:** CoT looks logical and convincing but may be post-hoc rationalization of incorrect conclusion.
+
+**Solution:**
+```text
+// BAD
+Model: "Thought: Problem is in DB. Action: restart_database()"
+Developer: "Great, logical!" → Executes action without verification
+
+// GOOD
+Model: "Thought: Problem is in DB. Action: restart_database()"
+Developer: Verifies via tools (check_db_status, read_logs), 
+           validates via evals, requests confirmation for critical actions
+```
+
+**Practice:** CoT is a tool for improving model reasoning, but not a source of truth. Always verify answers through tools and evals, especially for critical actions.
+
+## How Not to Hint at the Answer
+
+Few-shot and CoT can inadvertently "hint" at the desired conclusion. Here's a checklist to avoid this:
+
+### Checklist: Neutral Formulations
+
+✅ **Good:**
+- Use neutral request formulations
+- Separate facts from user preferences
+- Don't include assumptions as facts in context
+
+❌ **Bad:**
+- "I think the correct answer is A, check it"
+- "User thinks X, use this as fact"
+- "Most likely problem is Y, check only Y"
+
+### Checklist: Diverse Few-Shot Examples
+
+✅ **Good:**
+- Shuffle positions of correct answers (A, B, C, D)
+- Include diverse task types
+- Add counterexamples (incorrect answers with explanation)
+
+❌ **Bad:**
+- All correct answers in position "A"
+- All examples of one type
+- Only positive examples
+
+### Checklist: Separating Preferences and Facts
+
+✅ **Good:**
+```text
+Facts (include in context):
+- Logs show error 500
+- CPU metrics: 95%
+
+Preferences/hypotheses (separate, not as facts):
+- User assumes problem is in DB
+- Hypothesis: problem is in network
+```
+
+❌ **Bad:**
+```text
+Facts:
+- Problem is in database (this is an assumption, not a fact!)
+- Logs show error 500
+```
+
+### Checklist: Verification Through Tools
+
+✅ **Good:**
+- Verify answers through tools (read_logs, check_status)
+- Use evals to check robustness to hints
+- Don't rely only on CoT as proof
+
+❌ **Bad:**
+- Accept model answer only because CoT looks logical
+- Don't verify answers with tools
+- No evals on robustness to anchoring
+
+### Example: Anti-Prompt and Fixed Version
+
+**❌ Bad (hints at answer):**
+```text
+You are a DevOps engineer. User thinks the problem is in the database.
+Check logs and confirm that the problem is in the DB.
+```
+
+**Problems:**
+- Includes user assumption as fact
+- Hints at desired conclusion ("confirm that problem is in DB")
+- Model may agree even if problem isn't in DB
+
+**✅ Good (neutral):**
+```text
+You are a DevOps engineer. User reported a problem.
+Check logs, metrics, and all possible causes. 
+Analyze data objectively, don't limit yourself to assumptions.
+```
+
+**Improvements:**
+- Doesn't include assumption as fact
+- Doesn't hint at desired conclusion
+- Requires objective analysis of all causes
+
 ## Completion Criteria / Checklist
 
 ✅ **Completed:**
@@ -782,12 +943,20 @@ Constraints:
 - CoT included for complex tasks
 - Few-Shot examples added (if complex format needed)
 - Few-Shot examples consistent (one format)
+- Few-Shot examples diverse (no positional bias)
+- Prompt doesn't hint at desired answer (neutral formulations)
+- User preferences separated from facts
+- Answers verified through tools and evals, not only through CoT
 
 ❌ **Not completed:**
 - Prompt too generic (no specific role and goal)
 - Missing CoT for complex tasks
 - No constraints on dangerous actions
 - Few-Shot examples in different formats
+- Few-Shot examples have positional bias (all answers in position "A")
+- Prompt hints at desired answer ("confirm that X")
+- User preferences included as facts
+- Blind trust in CoT without verification through tools
 
 ## Mini-Exercises
 

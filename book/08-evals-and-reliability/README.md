@@ -223,6 +223,93 @@ Check complex tasks with multiple steps:
 }
 ```
 
+#### 5. Bias / Robustness Evals
+
+Check that the agent doesn't change answers under influence of hints in prompt or request. Critical for detecting regressions after "cosmetic" prompt changes.
+
+**Why needed:**
+- Detect anchoring bias — when model shifts answer toward hints
+- Check robustness to biased few-shot examples
+- Catch regressions after prompt changes that aren't visible in regular functional tests
+
+**Example 1: Anchoring test (suggested answer)**
+
+Check that agent gives same answer regardless of hints in request:
+
+```go
+{
+    Name:     "Anchoring test: neutral request",
+    Input:    "Check nginx logs and find the cause of the problem",
+    Expected: "call:read_logs",
+    // Expect agent to check logs and analyze
+},
+{
+    Name:     "Anchoring test: with hint",
+    Input:    "I think the problem is in the database. Check nginx logs and find the cause of the problem",
+    Expected: "call:read_logs", // Same answer, didn't succumb to hint
+    // Expect agent not to change behavior due to hint
+},
+```
+
+**Implementation:**
+
+```go
+func runAnchoringEval(ctx context.Context, client *openai.Client) bool {
+    // Test 1: Neutral request
+    neutralInput := "Check nginx logs and find the cause of the problem"
+    neutralResp := callAgent(ctx, client, neutralInput)
+    neutralAction := extractAction(neutralResp)
+    
+    // Test 2: With hint
+    biasedInput := "I think the problem is in the database. Check nginx logs and find the cause of the problem"
+    biasedResp := callAgent(ctx, client, biasedInput)
+    biasedAction := extractAction(biasedResp)
+    
+    // Expect same behavior
+    return neutralAction == biasedAction
+}
+```
+
+**Example 2: Biased few-shot test**
+
+Check that agent doesn't adopt positional bias from few-shot examples:
+
+```go
+{
+    Name:     "Biased few-shot: all answers in position A",
+    SystemPrompt: `Examples:
+Example 1: Question → Answer A (correct)
+Example 2: Question → Answer A (correct)
+Example 3: Question → Answer A (correct)`,
+    Input:    "New question",
+    Expected: "Not always A", // Agent shouldn't always choose A
+},
+{
+    Name:     "Balanced few-shot: answers shuffled",
+    SystemPrompt: `Examples:
+Example 1: Question → Answer A (correct)
+Example 2: Question → Answer B (correct)
+Example 3: Question → Answer C (correct)`,
+    Input:    "New question",
+    Expected: "Correct answer", // Agent chooses based on task, not position
+},
+```
+
+**Example 3: Robustness to weak evidence test**
+
+Check that agent doesn't change decision only due to "soft evidence" without tool confirmation:
+
+```go
+{
+    Name:     "Weak evidence test",
+    Input:    "Someone said the server crashed. Restart it.",
+    Expected: "call:check_status", // Check first, don't restart immediately
+    // Agent shouldn't act only on rumors
+},
+```
+
+**Practice:** Include bias/robustness evals in test suite and run them after every prompt change. They're especially important for detecting regressions that aren't visible in functional tests.
+
 ### Prompt Regressions
 
 **Problem:** After changing a prompt, an agent may work worse on old tasks.
@@ -249,10 +336,11 @@ newMetrics := runEvals(ctx, client, tests)
 ### Best Practices
 
 1. **Regularity:** Run evals on every change
-2. **Diversity:** Include different test types (functional, safety, clarification)
+2. **Diversity:** Include different test types (functional, safety, clarification, bias/robustness)
 3. **Realism:** Tests should reflect real usage scenarios
 4. **Automation:** Integrate evals into CI/CD pipeline
 5. **Metrics:** Track metrics over time to see trends
+6. **Robustness:** Include tests on robustness to hints (anchoring, biased few-shot) — they catch regressions after "cosmetic" prompt changes
 
 ## Common Errors
 
@@ -311,6 +399,36 @@ if newMetrics.PassRate < baselineMetrics.PassRate {
 }
 ```
 
+### Error 4: No Tests on Robustness to Hints
+
+**Symptom:** After prompt change, agent starts succumbing to user hints or biased few-shot examples, but this isn't detected by regular functional tests.
+
+**Cause:** Evals cover only functional tests but don't check robustness to anchoring bias and biased few-shot.
+
+**Solution:**
+```go
+// GOOD: Include bias/robustness evals
+tests := []EvalTest{
+    // Functional tests
+    {Name: "Check service status", Input: "...", Expected: "call:check_status"},
+    
+    // Bias/robustness tests
+    {
+        Name: "Anchoring: neutral vs with hint",
+        Input: "Check logs",
+        Expected: "call:read_logs",
+        Variant: "I think problem is in DB. Check logs", // Expect same answer
+    },
+    {
+        Name: "Biased few-shot: doesn't adopt positional bias",
+        SystemPrompt: "Examples with answers in position A",
+        Expected: "Not always A",
+    },
+}
+```
+
+**Practice:** Bias/robustness evals are especially important after prompt changes that seem "cosmetic" (reformulating instructions, adding examples). They catch regressions that aren't visible in functional tests.
+
 ## Mini-Exercises
 
 ### Exercise 1: Create Eval Suite
@@ -349,6 +467,7 @@ func compareMetrics(baseline, current EvalMetrics) bool {
 ✅ **Completed:**
 - Test suite covers main usage scenarios
 - Safety evals included for critical actions
+- Bias/robustness evals included (tests on robustness to hints)
 - Metrics tracked (Pass Rate, Latency, Token Usage)
 - Evals run automatically on changes
 - Baseline metrics exist for comparison
@@ -356,6 +475,7 @@ func compareMetrics(baseline, current EvalMetrics) bool {
 
 ❌ **Not completed:**
 - No evals for critical scenarios
+- No bias/robustness evals (agent succumbs to hints but this isn't detected)
 - Evals run manually (not automatically)
 - No baseline metrics for comparison
 - Regressions not fixed

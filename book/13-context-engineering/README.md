@@ -37,6 +37,13 @@ This chapter covers techniques for efficient context management: layers, summari
 - Persistent between conversations
 - **Note:** Storing and retrieving facts is described in [Memory](../12-agent-memory/README.md), here only their use in context is described
 
+!!! warning "Context as an anchor (Anchoring Bias)"
+    If **user preferences** ("user thinks X", "we need answer Y") or **unverified hypotheses** enter the facts layer, they become a strong anchor for the model. The model may shift answers toward these preferences, even if actual data points elsewhere.
+    
+    **Problem:** Preferences and hypotheses included in context as facts can distort objective analysis.
+    
+    **Solution:** Separate entry types: **Fact** (verified data), **Preference** (user preferences), **Hypothesis** (hypotheses). Include preferences and hypotheses in context only when appropriate (personalization), and exclude them for analytical tasks requiring objectivity.
+
 **Task state:**
 - Current task progress
 - What's done, what's pending
@@ -62,10 +69,11 @@ type ContextManager interface {
 }
 
 type Fact struct {
-    Key       string
-    Value     string
-    Source    string // Which conversation
-    Importance int   // 1-10
+    Key        string
+    Value      string
+    Source     string // Which conversation
+    Importance int    // 1-10
+    Type       string // "fact", "preference", "hypothesis", "constraint"
 }
 ```
 
@@ -153,17 +161,37 @@ func (c *LayeredContext) Summarize(ctx context.Context, client *openai.Client) e
 **IMPORTANT:** Fact extraction and storage happens in [Memory](../12-agent-memory/README.md). Here we only use already extracted facts when assembling context.
 
 ```go
-func (c *LayeredContext) GetContext(maxTokens int, memory Memory) ([]openai.ChatCompletionMessage, error) {
+func (c *LayeredContext) GetContext(maxTokens int, memory Memory, includePreferences bool) ([]openai.ChatCompletionMessage, error) {
     var messages []openai.ChatCompletionMessage
     
     // Get facts from memory (don't extract here!)
     facts, _ := memory.Retrieve("user_preferences", 10)
     
+    // Filter facts by type depending on task
+    var filteredFacts []Fact
+    for _, fact := range facts {
+        if fact.Type == "fact" || fact.Type == "constraint" {
+            // Always include verified facts and constraints
+            filteredFacts = append(filteredFacts, fact)
+        } else if includePreferences && (fact.Type == "preference" || fact.Type == "hypothesis") {
+            // Include preferences and hypotheses only when appropriate (personalization)
+            filteredFacts = append(filteredFacts, fact)
+        }
+        // Otherwise exclude preferences/hypotheses for objective analysis
+    }
+    
     // Add system prompt with facts
-    if len(facts) > 0 {
+    if len(filteredFacts) > 0 {
         factsContext := "Important facts:\n"
-        for _, fact := range facts {
-            factsContext += fmt.Sprintf("- %s: %v\n", fact.Key, fact.Value)
+        for _, fact := range filteredFacts {
+            // Mark type for clarity
+            prefix := ""
+            if fact.Type == "preference" {
+                prefix = "[User preference] "
+            } else if fact.Type == "hypothesis" {
+                prefix = "[Hypothesis] "
+            }
+            factsContext += fmt.Sprintf("- %s%s: %v\n", prefix, fact.Key, fact.Value)
         }
         messages = append(messages, openai.ChatCompletionMessage{
             Role:    "system",
@@ -212,6 +240,32 @@ func (c *LayeredContext) GetContext(maxTokens int, memory Memory) ([]openai.Chat
 **Cause:** Including all facts regardless of relevance.
 
 **Solution:** Score facts by importance, include only highly scored facts.
+
+### Error 4: Preferences Included as Facts
+
+**Symptom:** Model shifts answer toward user preferences, even if actual data points elsewhere.
+
+**Cause:** User preferences or hypotheses included in context as facts without distinguishing types.
+
+**Solution:**
+```go
+// GOOD: Distinguish types
+fact := Fact{
+    Key:   "user_thinks_db_problem",
+    Value: "User assumes problem is in DB",
+    Type:  "hypothesis", // Not "fact"!
+}
+
+// When assembling context for analytical task:
+if !includePreferences {
+    // Exclude hypotheses and preferences
+    if fact.Type == "fact" || fact.Type == "constraint" {
+        includeInContext(fact)
+    }
+}
+```
+
+**Practice:** For analytical tasks (incidents, diagnostics), exclude preferences and hypotheses from context. Include them only for personalized responses (e.g., recommendations based on user preferences).
 
 ## Mini-Exercises
 
