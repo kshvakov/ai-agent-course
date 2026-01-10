@@ -23,10 +23,10 @@ This course is designed for programmers who want to understand how modern LLM ag
 
 **📚 Required Reading Before Starting:**
 
-👉 **[TEXTBOOK: Designing Autonomous AI Agents](./book/README.md)**  
-A complete textbook with theory, examples from different domains (DevOps, Support, Data, Security, Product), diagrams, and practical advice. The textbook is divided into chapters for easy study.
+👉 **[HANDBOOK: Designing Autonomous AI Agents](./book/README.md)**  
+A complete handbook with theory, examples from different domains (DevOps, Support, Data, Security, Product), diagrams, and practical advice. The handbook is divided into chapters for easy study.
 
-**What You'll Find in the Textbook:**
+**What You'll Find in the Handbook:**
 - LLM Physics — how the agent's "brain" works
 - Prompting as Programming — controlling behavior through prompts
 - Agent Architecture — components and their interactions
@@ -41,7 +41,7 @@ A complete textbook with theory, examples from different domains (DevOps, Suppor
 
 ## Advanced Study
 
-If you want to transition from a "learning agent" to a "production agent," study **[Chapter 25: Production Readiness Index](./book/25-production-readiness-index/README.md)** in the textbook.
+If you want to transition from a "learning agent" to a "production agent," study **[Chapter 25: Production Readiness Index](./book/25-production-readiness-index/README.md)** in the handbook.
 
 There you'll find a practical guide to production readiness: observability and tracing, cost & latency engineering, workflow and state management, security and governance, prompt management, data/privacy, RAG in production, evals in CI/CD, and other practical topics with step-by-step implementation recipes tied to your code from the laboratory assignments.
 
@@ -49,7 +49,7 @@ There you'll find a practical guide to production readiness: observability and t
 
 **Recommended Path:**
 
-1. **Read the textbook:** Open [`book/README.md`](./book/README.md) and study the theory. This will take 1-2 hours but will give you a fundamental understanding.
+1. **Read the handbook:** Open [`book/README.md`](./book/README.md) and study the theory. This will take 1-2 hours but will give you a fundamental understanding.
 
 2. **Start with Lab 00:** Check if your model is suitable for the course.
    ```bash
@@ -77,8 +77,8 @@ There you'll find a practical guide to production readiness: observability and t
 - Completion criteria
 
 **Theory and Practice Connection:**
-- After each textbook chapter, complete the corresponding laboratory assignment
-- Use the textbook as a reference when working on projects
+- After each handbook chapter, complete the corresponding laboratory assignment
+- Use the handbook as a reference when working on projects
 - Return to relevant sections when questions arise
 
 ## Course Structure
@@ -164,7 +164,7 @@ export OPENAI_API_KEY="any-string" # Local models usually don't need a key, but 
 
 ```
 ai-agent-course/
-├── book/               # Textbook on agent design (English)
+├── book/               # Handbook on agent design (English)
 │   ├── 01-llm-fundamentals/
 │   ├── 02-prompt-engineering/
 │   ├── ...             # Other chapters
@@ -172,7 +172,7 @@ ai-agent-course/
 ├── translations/       # Translations
 │   └── ru/             # Russian translation
 │       ├── README.md   # Russian README
-│       ├── book/       # Russian textbook
+│       ├── book/       # Russian handbook
 │       └── labs/       # Russian labs
 ├── labs/               # Laboratory assignments (English)
 │   ├── lab00-capability-check/

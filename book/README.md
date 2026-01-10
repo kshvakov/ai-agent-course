@@ -1,4 +1,4 @@
-# Textbook: Designing Autonomous AI Agents
+# Handbook: Designing Autonomous AI Agents
 
 **Version:** 2.0  
 **Author:** Kirill Shvakov  
@@ -16,7 +16,7 @@
 
 ### Part I: Fundamentals
 
-- **[00. Preface](./00-preface/README.md)** — How to use this textbook, requirements, and what an agent is
+- **[00. Preface](./00-preface/README.md)** — How to use this handbook, requirements, and what an agent is
 - **[01. LLM Physics](./01-llm-fundamentals/README.md)** — Tokens, context, temperature, determinism, probabilistic nature
 - **[02. Prompting as Programming](./02-prompt-engineering/README.md)** — ICL, Few-Shot, CoT, task structuring, SOP
 
@@ -68,7 +68,7 @@
 
 ### For Beginners (recommended path — practice-first)
 
-1. **Start with [Preface](./00-preface/README.md)** — learn what an agent is and how to use this textbook
+1. **Start with [Preface](./00-preface/README.md)** — learn what an agent is and how to use this handbook
 2. **Study [LLM Physics](./01-llm-fundamentals/README.md)** — the foundation for understanding everything else
 3. **Master [Prompting](./02-prompt-engineering/README.md)** — the foundation of working with agents
 4. **Build a working agent:**
@@ -168,7 +168,7 @@ After studying chapters 1-16, proceed to:
 
 ## 🔗 Connection with Laboratory Assignments
 
-| Textbook Chapter | Corresponding Laboratory Assignments |
+| Handbook Chapter | Corresponding Laboratory Assignments |
 |----------------|-------------------------------------|
 | [01. LLM Physics](./01-llm-fundamentals/README.md) | Lab 00 (Capability Check) |
 | [02. Prompting](./02-prompt-engineering/README.md) | Lab 01 (Basics) |
@@ -189,7 +189,7 @@ After studying chapters 1-16, proceed to:
 
 ---
 
-## 📖 How to Use This Textbook
+## 📖 How to Use This Handbook
 
 1. **Read sequentially** — each chapter builds on previous ones
 2. **Practice alongside reading** — complete the corresponding laboratory assignment after each chapter

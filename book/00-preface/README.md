@@ -5,7 +5,7 @@
 In classical programming, you write an algorithm: `if A then B`. You know exactly what will happen.  
 In AI engineering, you describe a **goal** and provide **tools**. The agent builds the algorithm to achieve the goal in real time.
 
-This textbook teaches you how to create autonomous AI agents in Go — systems that can independently solve complex tasks, interact with the real world, and learn from the results of their actions.
+This handbook teaches you how to create autonomous AI agents in Go — systems that can independently solve complex tasks, interact with the real world, and learn from the results of their actions.
 
 ### Real-World Case Study
 
@@ -109,7 +109,7 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) {
 
 **This course:** You'll progress from Level 1 to Level 3, creating your AI agent in Go (using a DevOps agent as the main example).
 
-## How to Read This Textbook
+## How to Read This Handbook
 
 ### Recommended Path
 

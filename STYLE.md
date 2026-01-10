@@ -1,6 +1,6 @@
 # Documentation Style Guide
 
-This document describes a unified style for all textbook chapters `book/*`. The goal is to make documentation as simple and educational through practice as the lab assignments in `labs/*/MANUAL.md`.
+This document describes a unified style for all handbook chapters `book/*`. The goal is to make documentation as simple and educational through practice as the lab assignments in `labs/*/MANUAL.md`.
 
 ## Philosophy
 

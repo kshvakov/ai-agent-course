@@ -63,4 +63,4 @@
 
 ---
 
-**Следующий шаг:** После завершения Lab 12 вы освоили продвинутые паттерны агентов! Рассмотрите опциональные продвинутые темы из учебника: [Глава 17: Security и Governance](../../book/17-security-and-governance/README.md) или [Глава 23: Evals в CI/CD](../../book/23-evals-in-cicd/README.md).
+**Следующий шаг:** После завершения Lab 12 вы освоили продвинутые паттерны агентов! Рассмотрите опциональные продвинутые темы из руководства: [Глава 17: Security и Governance](../../book/17-security-and-governance/README.md) или [Глава 23: Evals в CI/CD](../../book/23-evals-in-cicd/README.md).

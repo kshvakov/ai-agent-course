@@ -165,4 +165,4 @@ Implement tool client on agent side:
 
 ---
 
-**Next step:** After completing Lab 12 you've mastered advanced agent patterns! Consider optional advanced topics from the textbook: [Chapter 17: Security and Governance](../../book/17-security-and-governance/README.md) or [Chapter 23: Evals in CI/CD](../../book/23-evals-in-cicd/README.md).
+**Next step:** After completing Lab 12 you've mastered advanced agent patterns! Consider optional advanced topics from the handbook: [Chapter 17: Security and Governance](../../book/17-security-and-governance/README.md) or [Chapter 23: Evals in CI/CD](../../book/23-evals-in-cicd/README.md).
