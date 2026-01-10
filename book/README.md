@@ -1,4 +1,4 @@
-# Handbook: Designing Autonomous AI Agents
+# Designing Autonomous AI Agents
 
 **Version:** 2.0  
 **Author:** Kirill Shvakov  
