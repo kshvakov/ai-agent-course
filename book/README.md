@@ -1,6 +1,6 @@
 # Designing Autonomous AI Agents
 
-**Target Audience:** Programmers who want to build production AI agents
+For programmers who want to build production AI agents
 
 ## Translations
 
