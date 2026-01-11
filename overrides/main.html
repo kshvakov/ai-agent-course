@@ -120,6 +120,69 @@
   } -%}
   <script type="application/ld+json">{{ breadcrumb_schema | tojson }}</script>
   {# /Breadcrumbs schema.org #}
+
+  {# Course schema.org (JSON-LD) - only on homepage #}
+  {%- if page.is_homepage -%}
+    {%- set course_name = config.site_name -%}
+    {%- if config.extra and config.extra.seo and config.extra.seo.course and config.extra.seo.course.name and config.extra.seo.course.name.get(lang) -%}
+      {%- set course_name = config.extra.seo.course.name.get(lang) -%}
+    {%- endif -%}
+
+    {%- set provider_name = "Kirill Shvakov" -%}
+    {%- if config.extra and config.extra.seo and config.extra.seo.course and config.extra.seo.course.provider and config.extra.seo.course.provider.name -%}
+      {%- set provider_name = config.extra.seo.course.provider.name -%}
+    {%- endif -%}
+
+    {%- set provider_schema = {
+      '@type': 'Person',
+      'name': provider_name
+    } -%}
+    {%- if config.extra and config.extra.seo and config.extra.seo.course and config.extra.seo.course.provider and config.extra.seo.course.provider.sameAs -%}
+      {%- set _ = provider_schema.update({'sameAs': config.extra.seo.course.provider.sameAs}) -%}
+    {%- endif -%}
+
+    {%- set course_schema = {
+      '@context': 'https://schema.org',
+      '@type': 'Course',
+      'name': course_name,
+      'description': page_desc,
+      'provider': provider_schema,
+      'url': canonical,
+      'inLanguage': lang,
+      'courseMode': 'online'
+    } -%}
+    <script type="application/ld+json">{{ course_schema | tojson }}</script>
+
+    {# WebSite schema.org (JSON-LD) - only on homepage #}
+    {%- set website_schema = {
+      '@context': 'https://schema.org',
+      '@type': 'WebSite',
+      'name': config.site_name,
+      'url': home_url,
+      'description': page_desc,
+      'inLanguage': lang
+    } -%}
+    <script type="application/ld+json">{{ website_schema | tojson }}</script>
+    {# /WebSite schema.org #}
+  {%- endif -%}
+  {# /Course schema.org #}
+
+  {# Person schema.org (JSON-LD) - site-wide #}
+  {%- set person_name = "Kirill Shvakov" -%}
+  {%- if config.extra and config.extra.seo and config.extra.seo.person and config.extra.seo.person.name -%}
+    {%- set person_name = config.extra.seo.person.name -%}
+  {%- endif -%}
+
+  {%- set person_schema = {
+    '@context': 'https://schema.org',
+    '@type': 'Person',
+    'name': person_name
+  } -%}
+  {%- if config.extra and config.extra.seo and config.extra.seo.person and config.extra.seo.person.sameAs -%}
+    {%- set _ = person_schema.update({'sameAs': config.extra.seo.person.sameAs}) -%}
+  {%- endif -%}
+  <script type="application/ld+json">{{ person_schema | tojson }}</script>
+  {# /Person schema.org #}
   {# --- /SEO meta tags --- #}
 {% endblock %}
 

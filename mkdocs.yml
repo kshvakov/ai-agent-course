@@ -178,4 +178,20 @@ extra:
     # Optional. If set, will be used for OpenGraph/Twitter.
     # Can be absolute URL or a path relative to site root, e.g. "assets/social-card.png"
     social_image: ""
+    # Course structured data (schema.org Course)
+    course:
+      name:
+        en: Designing Autonomous AI Agents
+        ru: Проектирование Автономных AI Агентов
+      provider:
+        name: Kirill Shvakov
+        # Optional: sameAs URLs (GitHub, LinkedIn, etc.)
+        sameAs:
+          - https://github.com/kshvakov/ai-agent-course
+    # Site-wide Person structured data (schema.org Person)
+    person:
+      name: Kirill Shvakov
+      # Optional: sameAs URLs (GitHub, LinkedIn, etc.)
+      sameAs:
+        - https://github.com/kshvakov/ai-agent-course
 
