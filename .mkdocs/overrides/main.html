@@ -7,6 +7,16 @@
 {% block extrahead %}
   {{ super() }}
 
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-42YNTP8CJM"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-42YNTP8CJM');
+  </script>
+
   {# --- SEO meta tags (canonical, description, OpenGraph, Twitter) --- #}
   {%- set base = (config.site_url | default("", true)) -%}
   {%- if base.endswith('/') -%}{%- set base = base[:-1] -%}{%- endif -%}
