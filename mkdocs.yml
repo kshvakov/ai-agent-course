@@ -10,7 +10,7 @@ edit_uri: edit/main/
 # Theme configuration
 theme:
   name: material
-  custom_dir: overrides
+  custom_dir: .mkdocs/overrides
   language: en
   palette:
     # Light mode
@@ -42,6 +42,9 @@ theme:
 plugins:
   - search:
       lang: en
+  - auto_description:
+      max_length: 160
+      min_length: 100
   - i18n:
       docs_structure: folder
       fallback_to_default: false
@@ -158,6 +161,10 @@ markdown_extensions:
 
 # Use directory URLs (clean URLs)
 use_directory_urls: true
+
+# Directories configuration
+docs_dir: build/docs
+site_dir: build/site
 
 # Site URL (will be set by GitHub Pages)
 site_url: https://kshvakov.github.io/ai-agent-course/

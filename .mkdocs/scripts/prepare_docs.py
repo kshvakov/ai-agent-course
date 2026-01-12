@@ -16,8 +16,9 @@ import shutil
 from pathlib import Path
 
 # Base paths
-REPO_ROOT = Path(__file__).parent.parent
-DOCS_DIR = REPO_ROOT / "docs"
+# Script is now in .mkdocs/scripts/, so we need to go up 3 levels to reach repo root
+REPO_ROOT = Path(__file__).parent.parent.parent
+DOCS_DIR = REPO_ROOT / "build" / "docs"
 DOCS_RU_DIR = DOCS_DIR / "ru"
 
 # Source paths

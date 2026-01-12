@@ -37,8 +37,11 @@ go.work
 config.local.yaml
 config.local.yml
 
-# MkDocs generated files
-docs/
-site/
+# MkDocs build artifacts
+build/
 .cache/
 .venv/
+
+# Python package build artifacts
+*.egg-info/
+dist/

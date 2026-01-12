@@ -38,7 +38,10 @@
     {%- set robots_value = page.meta.robots -%}
   {%- endif -%}
 
-  {# MkDocs Material already renders canonical/description/hreflang. We add only what it doesn't: robots + OG/Twitter. #}
+  {# MkDocs Material already renders canonical/description/hreflang. We override description to ensure proper escaping. #}
+  {%- if page_desc -%}
+    <meta name="description" content="{{ page_desc | e }}" />
+  {%- endif -%}
   <meta name="robots" content="{{ robots_value | e }}" />
 
   {# OpenGraph #}

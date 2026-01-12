@@ -15,7 +15,7 @@ help: ## Show help for available targets
 	@echo ""
 	@echo "Examples:"
 	@echo "  make setup    # create .venv and install dependencies"
-	@echo "  make prepare  # build docs (scripts/prepare_docs.py)"
+	@echo "  make prepare  # build docs (.mkdocs/scripts/prepare_docs.py)"
 	@echo "  make serve    # run mkdocs locally"
 	@echo ""
 
@@ -24,9 +24,10 @@ venv: ## Create a virtual environment in .venv (if missing)
 
 install: venv ## Install dependencies (requirements.txt) into the venv
 	@"$(PIP)" install -r requirements.txt
+	@"$(PIP)" install -e .
 
-prepare: install ## Prepare documentation (python scripts/prepare_docs.py)
-	@"$(PYTHON)" scripts/prepare_docs.py
+prepare: install ## Prepare documentation (python .mkdocs/scripts/prepare_docs.py)
+	@"$(PYTHON)" .mkdocs/scripts/prepare_docs.py
 
 serve: prepare ## Run local MkDocs server
 	@"$(MKDOCS)" serve
