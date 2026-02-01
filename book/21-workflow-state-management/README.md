@@ -2,7 +2,7 @@
 
 ## Why This Chapter?
 
-**IMPORTANT:** Basic state management concepts (idempotency, retries, deadlines, persist) are described in [Chapter 11: State Management](../11-state-management/README.md). This chapter focuses on **production aspects**: queues, asynchrony, scaling, distributed state.
+**IMPORTANT:** Basic state management concepts (idempotency, retries, deadlines, persistence) are described in [Chapter 11: State Management](../11-state-management/README.md). This chapter focuses on **production realities**: queues, asynchrony, scaling, and distributed state.
 
 In production, agents process thousands of tasks in parallel. Without production-ready workflow, you cannot:
 - Process tasks asynchronously through queues
@@ -16,7 +16,7 @@ In production, agents process thousands of tasks in parallel. Without production
 
 **Problem:** Task is lost. User doesn't know what happened. On restart, agent starts from the beginning, creating duplicates.
 
-**Solution:** State persistence in DB, operation idempotency, retry with backoff, deadlines. Now the agent can resume execution from where it stopped, and repeated calls don't create duplicates.
+**Solution:** Persist state in a DB, make operations idempotent, add retry with backoff, and enforce deadlines. Now the agent can resume from where it stopped, and repeated calls won't create duplicates.
 
 ## Theory in Simple Terms
 

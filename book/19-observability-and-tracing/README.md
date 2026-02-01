@@ -8,7 +8,7 @@ Without observability, you work blind. An agent performed an action, but you can
 - How many tokens were used?
 - Where did the error occur?
 
-Observability provides "vision" for your agent. Without it, you can't debug problems, optimize performance, or understand agent behavior in production.
+Observability gives your agent "vision". Without it, you can't debug problems, optimize performance, or understand how the agent behaves in production.
 
 ### Real-World Case Study
 
@@ -16,7 +16,7 @@ Observability provides "vision" for your agent. Without it, you can't debug prob
 
 **Problem:** You cannot understand why the agent didn't request confirmation. Logs only show "Agent executed delete_database". No information about which tools were available, what prompt was used, what arguments were passed.
 
-**Solution:** Structured logging with tracing shows the full picture: input request → tool selection → execution → result. Now you can understand that the agent didn't receive a tool with confirmation or the prompt was incorrect.
+**Solution:** Structured logging with tracing shows the full picture: input request → tool selection → execution → result. Then you can see whether the agent missed a confirmation tool, or whether the prompt was wrong.
 
 ## Theory in Simple Terms
 
@@ -38,7 +38,7 @@ Each agent run is a chain of events:
 4. Tools execute → log results
 5. Agent formulates response → log final response
 
-All these events are linked through `run_id`, allowing reconstruction of the full execution picture.
+All these events are linked through `run_id`, so you can reconstruct the full execution flow.
 
 ## How It Works (Step by Step)
 

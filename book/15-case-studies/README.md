@@ -2,9 +2,9 @@
 
 ## Why This Chapter?
 
-This chapter examines examples of agents in different domains with detailed breakdowns of how they operate.
+This chapter walks through agent examples in different domains, with a concrete breakdown of how they operate.
 
-Theory is good, but real examples help you understand how to apply concepts in practice. Here you'll see how all the concepts we've studied (SOP, CoT, Tools, Safety, RAG) work together in real-world agents.
+Theory is useful, but real examples show how to apply it. Here you'll see how the pieces (SOP, CoT, Tools, Safety, RAG) work together in practice.
 
 ### Real-World Case Study
 
@@ -12,7 +12,7 @@ Theory is good, but real examples help you understand how to apply concepts in p
 
 **Problem:** You know the theory, but don't understand how to put it all together: what System Prompt to use, what tools are needed, how to organize the work loop.
 
-**Solution:** Studying real case studies shows patterns and best practices. You see how others created successful agents and can apply these patterns to your task.
+**Solution:** Case studies show the patterns that actually work. You can reuse those patterns for your own agent.
 
 ## DevOps Agent
 

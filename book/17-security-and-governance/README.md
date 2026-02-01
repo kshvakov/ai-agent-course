@@ -8,7 +8,7 @@ An agent performs critical operations without confirmation. User writes "delete 
 - Audit agent actions
 - Protect against prompt injection
 
-Security isn't optional—it's a mandatory requirement for production agents. Without it, an agent can cause irreparable damage.
+Security isn't optional. It's a requirement for production agents. Without it, an agent can cause irreparable damage.
 
 ### Real-World Case Study
 
@@ -16,7 +16,7 @@ Security isn't optional—it's a mandatory requirement for production agents. Wi
 
 **Problem:** The database contained important data. No confirmation, no risk assessment, no audit. Impossible to understand who and when deleted the database.
 
-**Solution:** Threat modeling, risk scoring for tools, prompt injection protection, sandboxing, allowlists, RBAC for access control, audit of all operations. Now critical actions require confirmation, and all operations are logged for audit.
+**Solution:** Threat modeling, risk scoring for tools, prompt injection protection, sandboxing, allowlists, RBAC, and auditing. Now critical actions require confirmation, and all operations are logged.
 
 ## Theory in Simple Terms
 

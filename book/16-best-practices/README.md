@@ -2,7 +2,7 @@
 
 ## Why This Chapter?
 
-This chapter examines best practices for creating and maintaining agents, as well as application areas where agents can be most effective.
+This chapter covers practical best practices for building and maintaining agents, plus where they tend to work best.
 
 Knowing theory and examples is good, but without understanding best practices, you may make common mistakes and create an inefficient or unsafe agent.
 
@@ -12,7 +12,7 @@ Knowing theory and examples is good, but without understanding best practices, y
 
 **Problem:** You didn't implement input validation and security checks. The agent performed a dangerous action without confirmation.
 
-**Solution:** Following best practices (validation, safety checks, evals) prevents such problems. This chapter teaches you how to create safe and efficient agents.
+**Solution:** Following best practices (validation, safety checks, evals) prevents such problems. Here we'll focus on what makes agents safer and more efficient in practice.
 
 ## Best Practices: Creating Agents
 

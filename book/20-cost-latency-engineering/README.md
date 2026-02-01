@@ -7,7 +7,7 @@ An agent works, but the LLM API bill grows uncontrollably. One request costs $5,
 - Optimize expensive requests
 - Guarantee response time to user
 
-Cost and Latency Engineering provides budget and performance control. Without it, you risk spending thousands of dollars on simple requests or ending up with a slow agent that users won't use.
+Cost & latency engineering gives you budget and performance control. Without it, you can spend thousands on simple requests—or ship an agent so slow nobody uses it.
 
 ### Real-World Case Study
 

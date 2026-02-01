@@ -2,11 +2,11 @@
 
 ## Why This Chapter?
 
-A regular agent only knows what it was trained on (up to the cut-off date). It doesn't know your local instructions like "How to restart Phoenix server according to protocol #5".
+A regular agent only knows what it was trained on (up to the cut-off date). It won't know your local instructions like "How to restart Phoenix server according to protocol #5" unless you provide them at runtime.
 
-**RAG (Retrieval Augmented Generation)** is a "cheat sheet lookup" mechanism. The agent first searches for information in the knowledge base, then acts.
+**RAG (Retrieval Augmented Generation)** is a "cheat sheet lookup" pattern. The agent first pulls relevant text from a knowledge base, then acts.
 
-Without RAG, an agent can't use your documentation, protocols, and knowledge base. With RAG, an agent can find the needed information and act according to your instructions.
+Without RAG, an agent can't reliably use your documentation, protocols, and knowledge base. With RAG, it can: fetch what's relevant and act according to your instructions.
 
 ### Real-World Case Study
 

@@ -2,13 +2,13 @@
 
 ## Why This Chapter?
 
-To control an agent, you need to understand how its "brain" works. Without understanding LLM physics, you won't be able to:
+To control an agent, it helps to understand how its "brain" works. Without basic LLM physics, you won't be able to:
 - Properly configure the model for the agent
 - Understand why the agent behaves non-deterministically
 - Manage context and conversation history
 - Avoid hallucinations and errors
 
-This chapter explains the basics of how LLMs work in simple terms, without excessive mathematics.
+In this chapter, we'll cover the basics of how LLMs work in simple terms, without excessive math.
 
 ### Real-World Case Study
 

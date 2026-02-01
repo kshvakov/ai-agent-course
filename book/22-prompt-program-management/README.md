@@ -8,15 +8,15 @@ You changed the prompt, and the agent's performance degraded. But you can't unde
 - Test new versions before deployment
 - Rollback bad changes
 
-Prompt and Program Management provides control over agent behavior. Without it, you cannot safely change prompts in production.
+Prompt and program management gives you control over agent behavior. Without it, you can't safely change prompts in production.
 
 ### Real-World Case Study
 
 **Situation:** You updated the system prompt to improve response quality. After a day, users complain that the agent works worse.
 
-**Problem:** No prompt versioning, no evals to check changes. Impossible to understand what exactly changed or rollback changes.
+**Problem:** No prompt versioning and no evals to check changes. It's hard to pinpoint what changed, and rollback is painful.
 
-**Solution:** Prompt versioning in Git, evals to check each version, rollback on metric degradation. Now you can safely experiment with prompts and rollback bad changes.
+**Solution:** Version prompts in Git, run evals for each version, and roll back when metrics degrade. Now you can experiment safely—and undo bad changes fast.
 
 ## Theory in Simple Terms
 

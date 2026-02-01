@@ -2,7 +2,7 @@
 
 ## Why Is This Needed?
 
-A prompt is code for a neural network. Unlike regular code, a prompt works through probability management.
+A prompt is code for a neural network. Unlike regular code, it works by steering probabilities.
 
 Without proper prompting, an agent will:
 - Perform actions randomly, without logic
@@ -10,7 +10,7 @@ Without proper prompting, an agent will:
 - Perform dangerous actions without confirmation
 - Respond in the wrong format
 
-This chapter teaches you how to create effective prompts that control agent behavior.
+In this chapter, we'll focus on prompts that reliably steer agent behavior.
 
 ### Real-World Case Study
 
@@ -18,7 +18,7 @@ This chapter teaches you how to create effective prompts that control agent beha
 
 **Problem:** The agent immediately restarts the service without checking logs. Or vice versa, it will analyze for a long time without applying a fix.
 
-**Solution:** A proper System Prompt with SOP (Standard Operating Procedure) sets the sequence of actions: first check status, then logs, then analysis, then fix, then verification.
+**Solution:** A good System Prompt with an SOP (Standard Operating Procedure) sets the order: status → logs → analysis → fix → verification.
 
 ## TL;DR: What to Remember
 

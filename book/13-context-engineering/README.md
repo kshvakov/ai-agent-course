@@ -2,9 +2,9 @@
 
 ## Why This Chapter?
 
-Context windows are limited. As conversations grow, you need to manage what information stays in context and what gets summarized or removed. Poor context management leads to wasted tokens, lost information, or confusion for the agent.
+Context windows are limited. As conversations grow, you need to decide what stays in context and what gets summarized or dropped. Poor context management wastes tokens, loses important details, and confuses the agent.
 
-This chapter covers techniques for efficient context management: layers, summarization, fact selection, and adaptive context management.
+This chapter covers practical context management techniques: layers, summarization, fact selection, and adaptive context building.
 
 ### Real-World Case Study
 
@@ -15,7 +15,7 @@ This chapter covers techniques for efficient context management: layers, summari
 - Include only recent: Loses important context from early
 - No strategy: Agent gets confused or misses critical information
 
-**Solution:** Context engineering uses context layers (working memory, summaries, facts), selective retrieval of relevant information, and summarization of old conversations while preserving key facts.
+**Solution:** Context engineering uses layers (working memory, summaries, facts), selective retrieval, and summarization of old turns while preserving key facts.
 
 ## Theory in Simple Terms
 

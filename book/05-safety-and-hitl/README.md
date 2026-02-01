@@ -9,7 +9,7 @@ Without Human-in-the-Loop, an agent can:
 - Delete important data
 - Apply changes to production without verification
 
-This chapter teaches you how to protect the agent from dangerous actions and properly implement confirmation and clarification.
+In this chapter, we'll focus on protecting the agent from dangerous actions and implementing confirmation and clarification correctly.
 
 ### Real-World Case Study
 

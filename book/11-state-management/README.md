@@ -2,13 +2,13 @@
 
 ## Why This Chapter?
 
-An agent executes a long task (e.g., application deployment), and then the server reboots. The task is lost, the user waits, but nothing happens. Without state management, you cannot:
+An agent runs a long task (say, a deployment), and then the server reboots. The task is gone. The user waits, but nothing happens. Without state management, you can't:
 - Resume execution after failure
 - Guarantee idempotency (repeated call doesn't create duplicates)
 - Handle errors with retry
 - Set deadlines for long tasks
 
-State Management provides reliability for long-lived agents. Without it, an agent cannot work with tasks that take minutes or hours.
+State management is what makes long-lived agents reliable. Without it, tasks that take minutes or hours fall apart.
 
 ### Real-World Case Study
 
@@ -16,7 +16,7 @@ State Management provides reliability for long-lived agents. Without it, an agen
 
 **Problem:** Task is lost. User doesn't know what happened. On restart, agent starts from the beginning, creating duplicates.
 
-**Solution:** State persistence in DB, operation idempotency, retry with backoff, deadlines. Now the agent can resume execution from where it stopped, and repeated calls don't create duplicates.
+**Solution:** Persist state in a DB, make operations idempotent, add retry with backoff, and enforce deadlines. Now the agent can resume from where it stopped, and repeated calls won't create duplicates.
 
 ## Theory in Simple Terms
 

@@ -2,9 +2,9 @@
 
 ## Why This Chapter?
 
-As agents grow, tools become complex services. Instead of embedding tool code directly, you can run tools as separate processes or services. This requires protocols for communication, versioning, and security.
+As agents grow, tools often turn into services. Instead of embedding everything into one binary, you can run tools as separate processes or services. That requires protocols for communication, versioning, and security.
 
-This chapter covers tool server patterns: stdio protocols, HTTP API, gRPC, schema versioning, and authentication/authorization.
+This chapter covers tool server patterns: stdio, HTTP, gRPC, schema versioning, and authentication/authorization.
 
 ### Real-World Case Study
 
@@ -16,7 +16,7 @@ This chapter covers tool server patterns: stdio protocols, HTTP API, gRPC, schem
 - No isolation between tools
 - Hard to scale individual tools
 
-**Solution:** Tool servers: Each tool runs as a separate process/service. Agent communicates through a standard protocol (stdio, HTTP, or gRPC). Tools can be updated independently, scaled separately, and isolated for security.
+**Solution:** Tool servers: each tool runs as a separate process/service. The agent talks to tools through a standard protocol (stdio, HTTP, or gRPC). Tools can be updated and scaled independently, and isolated for security.
 
 ## Theory in Simple Terms
 

@@ -2,7 +2,7 @@
 
 ## Why This Chapter?
 
-You changed the prompt or code, and the agent's performance degraded. But you only learn about it after deploying to production. Without evals in CI/CD, you can't automatically check quality before deployment.
+You changed the prompt or code, and the agent got worse—but you only learn after deploying to production. Without evals in CI/CD, you can't automatically check quality before deployment.
 
 ### Real-World Case Study
 
@@ -10,7 +10,7 @@ You changed the prompt or code, and the agent's performance degraded. But you on
 
 **Problem:** No automatic quality check before deployment. Changes are deployed without testing.
 
-**Solution:** Evals in CI/CD pipeline, quality gates, blocking deployment on metric degradation. Now bad changes don't reach production.
+**Solution:** Put evals into CI/CD, add quality gates, and block deployment when metrics degrade. Now bad changes don't reach production.
 
 ## Theory in Simple Terms
 

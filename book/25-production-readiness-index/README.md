@@ -2,9 +2,9 @@
 
 ## Why This Chapter?
 
-You completed the main course and understand agent basics. Now you need to transition from a "learning agent" to a "production agent" that works reliably, safely, and efficiently in real environments.
+You completed the main course and understand agent basics. Now it's time to transition from a "learning agent" to a "production agent" that works reliably, safely, and efficiently in real environments.
 
-This chapter serves as a **prioritization guide** and quick reference for production topics. It helps you understand what to implement first and provides quick links to detailed chapters.
+This chapter is a **prioritization guide** and a quick reference for production topics: what to implement first, and where to go for details.
 
 ### Real-World Case Study
 
@@ -15,7 +15,7 @@ This chapter serves as a **prioritization guide** and quick reference for produc
 - Don't know what's critical vs. nice-to-have
 - Need prioritization guide
 
-**Solution:** This index provides a prioritized roadmap: start with mandatory blocks (observability, cost control, security), then add topics as you grow.
+**Solution:** This index gives you a prioritized roadmap: start with mandatory blocks (observability, cost control, security), then add topics as you grow.
 
 ## Prioritization Guide
 

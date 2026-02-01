@@ -2,9 +2,9 @@
 
 ## Why This Chapter?
 
-Simple ReAct loops work well for straightforward tasks, but complex multi-step operations require planning. An agent needs to break down a large task into smaller steps, execute them in order (or in parallel), handle failures, and track progress.
+Simple ReAct loops work well for straightforward tasks. Once the task becomes multi-step, you usually need planning: break the work into steps, respect dependencies, handle failures, and keep track of progress.
 
-This chapter covers planning patterns that help agents efficiently handle complex, long-running tasks.
+This chapter covers planning patterns that help agents handle complex, long-running work without getting lost.
 
 ### Real-World Case Study
 
@@ -16,7 +16,7 @@ This chapter covers planning patterns that help agents efficiently handle comple
 - Not track which steps are completed
 - Fail and start from scratch
 
-**Solution:** Planning pattern: Agent first creates a plan (list of steps with dependencies), then executes steps in order, tracking state and handling failures correctly.
+**Solution:** Use a planning pattern: first create a plan (steps + dependencies), then execute it while tracking state and handling failures.
 
 ## Theory in Simple Terms
 

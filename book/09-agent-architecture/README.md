@@ -8,7 +8,7 @@ An agent isn't just an LLM with tools. It's a complex system with memory, planni
 - Optimize token usage
 - Create an extensible system
 
-This chapter explains agent components and how they interact with each other.
+In this chapter, we'll break down the core components and how they fit together.
 
 ### Real-World Case Study
 
@@ -16,11 +16,11 @@ This chapter explains agent components and how they interact with each other.
 
 **Problem:** Dialogue history overflows the model's context window. Old messages are "pushed out", and the agent loses important information.
 
-**Solution:** Understanding memory architecture allows implementing context optimization through summarization or message prioritization.
+**Solution:** Once you understand memory, you can optimize context: summarize history, or prioritize the messages that matter.
 
 ## Theory in Simple Terms
 
-Agent equation:
+Simplified formula:
 
 $$ Agent = LLM + Memory + Tools + Planning $$
 
@@ -70,7 +70,7 @@ messages := []ChatCompletionMessage{
 
 ### Long-term Memory
 
-This is a vector database (RAG). Allows storing gigabytes of documents and finding what's needed by meaning (Semantic Search).
+This is a vector database (RAG). It can store gigabytes of documents and find what's needed by meaning (Semantic Search).
 
 **How it works:**
 

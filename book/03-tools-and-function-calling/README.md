@@ -6,13 +6,13 @@
 
 Tools turn an LLM from a talker into a worker. Without tools, an agent can only respond with text but cannot interact with the real world.
 
-Function Calling is a mechanism that allows the model to call real Go functions, execute commands, read data, and perform actions.
+Function Calling is the mechanism that gives the model access to real actions: call Go functions, execute commands, and read data.
 
 ### Real-World Case Study
 
 **Situation:** You've created a chatbot for DevOps. A user writes: "Check server status web-01"
 
-**Problem:** The bot cannot actually check the server. It only says: "I will check the server status web-01 for you..." (text)
+**Problem:** The bot cannot actually check the server. It only promises: "I will check the server status web-01..." — but that's just text.
 
 **Solution:** Function Calling allows the model to call real Go functions. The model generates structured JSON with the function name and arguments, your code executes the function and returns the result back to the model.
 

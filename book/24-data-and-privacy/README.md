@@ -10,7 +10,7 @@ An agent processes user personal data (email, phone, address). This data gets in
 
 **Problem:** PII gets into logs and sent to LLM API without masking. On log leakage, personal data falls into wrong hands.
 
-**Solution:** PII detection and masking before logging and sending to LLM, secret protection, log redaction, TTL for storage.
+**Solution:** Detect and mask PII before logging and sending to the LLM, protect secrets, redact logs, and enforce TTL for stored data.
 
 ## Theory in Simple Terms
 
