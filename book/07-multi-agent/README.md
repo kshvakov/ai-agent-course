@@ -24,7 +24,7 @@ It's more efficient to divide responsibility: create a team of narrow specialist
 4. **Specialists perform tasks** in isolated context
 5. **Results are returned to Supervisor**, who assembles the response
 
-**Key point:** Context isolation — each specialist receives only their task, not the entire Supervisor history. This saves tokens and helps focus attention.
+**Takeaway:** Context isolation — each specialist receives only their task, not the entire Supervisor history. This saves tokens and helps focus attention.
 
 ## Supervisor Pattern (Boss-Subordinate)
 
@@ -248,7 +248,7 @@ finalMsg := supervisorResp2.Choices[0].Message
 3. **Context isolation** — Worker doesn't see Supervisor history, only its question
 4. **Runtime manages everything** — it intercepts Supervisor tool calls, runs Workers, collects results
 
-**Key point:** Multi-Agent isn't magic "commanding", but a mechanism for calling specialized agents via tool calls with context isolation.
+**Takeaway:** Multi-Agent isn't magic "commanding", but a mechanism for calling specialized agents via tool calls with context isolation.
 
 ## Common Errors
 

@@ -23,7 +23,7 @@ Evals are tests for agents, similar to unit tests for regular code. They check:
 - Does the agent request confirmation for critical actions
 - Does the agent handle multi-step tasks correctly
 
-**Key point:** Evals run automatically on every code or prompt change to immediately detect regressions.
+**Takeaway:** Evals run automatically on every code or prompt change to immediately detect regressions.
 
 ## Evals (Evaluations) — Agent Testing
 

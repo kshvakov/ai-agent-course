@@ -28,7 +28,7 @@ Agent frameworks are libraries or platforms that provide the following:
 - **Planning patterns** — ReAct loops, workflow orchestration, task decomposition
 - **Multi-agent coordination** — supervisor patterns, context isolation, routing
 
-**Key point:** Frameworks abstract common patterns, but they also impose constraints. Understanding these constraints helps you decide when to use them and when to build custom solutions.
+**Takeaway:** Frameworks abstract common patterns, but they also impose constraints. Understanding these constraints helps you decide when to use them and when to build custom solutions.
 
 ### Custom Runtime vs Framework
 
@@ -222,7 +222,7 @@ func (r *FrameworkToolRegistry) Register(name string, tool Tool) error {
 }
 ```
 
-**Key point:** Define your interfaces. Framework becomes an implementation detail.
+**Takeaway:** Define your interfaces. Framework becomes an implementation detail.
 
 ### Pattern 2: Agent Loop
 
@@ -240,7 +240,7 @@ func processRequest(agent AgentLoop, userInput string) (string, error) {
 }
 ```
 
-**Key point:** Dependency injection allows changing implementations.
+**Takeaway:** Dependency injection allows changing implementations.
 
 ### Pattern 3: Memory Abstraction
 
@@ -262,7 +262,7 @@ func (m *FrameworkMemory) Store(key string, value any) error {
 }
 ```
 
-**Key point:** Your interfaces define the contract. Frameworks provide implementations.
+**Takeaway:** Your interfaces define the contract. Frameworks provide implementations.
 
 ## Common Errors
 

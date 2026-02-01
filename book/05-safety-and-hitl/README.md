@@ -175,7 +175,7 @@ messages = append(messages, openai.ChatCompletionMessage{
 **Why this is not magic:**
 - System Prompt explicitly talks about confirmation
 - Tool `Description` contains "CRITICAL" and "Requires confirmation"
-- Runtime can additionally check risk and block execution
+- Runtime can also check risk and block execution
 - Model receives "REQUIRES_CONFIRMATION" result and generates question
 
 !!! warning "Model explanations don't guarantee safety"

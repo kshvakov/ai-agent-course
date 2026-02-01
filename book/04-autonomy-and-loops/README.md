@@ -32,7 +32,7 @@ Without an autonomous loop, an agent works like a chatbot: one request → one r
 3. **Observe:** Receives the result of the action
 4. **Repeat:** Reasons again based on the result
 
-This isn't magic — it's simply a loop where the model processes the results of previous actions in context and generates the next step.
+There's no magic here — it's simply a loop where the model processes the results of previous actions in context and generates the next step.
 
 An autonomous agent works in a loop:
 
@@ -47,7 +47,7 @@ While (Task not solved):
        c. GOTO 1 (without asking the user!)
 ```
 
-**Key point:** Point 4.c provides the "magic" — the agent looks at the result and decides what to do next. But this isn't real magic: the model receives the tool result in context (`messages[]`) and generates the next step based on that context.
+**Takeaway:** Point 4.c provides the "magic" — the agent looks at the result and decides what to do next. But it's not real magic: the model receives the tool result in context (`messages[]`) and generates the next step based on that context.
 
 ### Closing the Loop
 
@@ -152,7 +152,7 @@ msg3 := resp3.Choices[0].Message
 3. **The model decides based on context** — seeing "95% usage", the model understands that space needs to be freed
 4. **Runtime manages the loop** — code checks `len(msg.ToolCalls)` and decides whether to continue the loop
 
-**Key point:** The model didn't "decide on its own" — it saw the `check_disk_usage` result in context and generated the next tool call based on that context.
+**Takeaway:** The model didn't "decide on its own" — it saw the `check_disk_usage` result in context and generated the next tool call based on that context.
 
 ### Visualization: Who Does What?
 
@@ -196,7 +196,7 @@ msg3 := resp3.Choices[0].Message
 └─────────────────────────────────────────────────────────┘
 ```
 
-**Key point:** The LLM doesn't "remember" the past. It processes it in `messages[]`, which Runtime collects.
+**Takeaway:** The LLM doesn't "remember" the past. It processes it in `messages[]`, which Runtime collects.
 
 ## Loop Implementation
 

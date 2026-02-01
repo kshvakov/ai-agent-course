@@ -162,7 +162,7 @@ msg2 := resp2.Choices[0].Message
 3. **Search result is added to `messages[]`** — model receives it as a new message
 4. **Model generates actions based on context** — it processes documentation and follows it
 
-**Key point:** RAG is not magic "knowledge", but a mechanism for adding relevant information to the model's context through a regular tool call.
+**Takeaway:** RAG is not magic "knowledge", but a mechanism for adding relevant information to the model's context through a regular tool call.
 
 ## Simple RAG vs Vector Search
 

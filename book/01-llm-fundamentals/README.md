@@ -108,7 +108,7 @@ messages := []openai.ChatCompletionMessage{
 req := openai.ChatCompletionRequest{
     Model:    openai.GPT3Dot5Turbo,
     Messages: messages,
-    Tools:    tools,  // Key point: the model receives tool descriptions!
+    Tools:    tools,  // Note: the model receives tool descriptions!
 }
 ```
 
@@ -162,7 +162,7 @@ userInput := "Show the latest errors in nginx logs"
 // tool_calls: [{function: {name: "read_logs", arguments: "{\"service\": \"nginx\", \"lines\": 50}"}}]
 ```
 
-**Key point:** The model selects a tool based on **semantic matching** between the user's request and the tool's `Description`. The more accurate the `Description`, the better the selection.
+**Takeaway:** The model selects a tool based on **semantic matching** between the user's request and the tool's `Description`. The more accurate the `Description`, the better the selection.
 
 **3. What Runtime does:**
 
@@ -326,7 +326,7 @@ userInput := "User reports error 500"
 // Model selects: draft_reply(ticket_id, solution) (creates response)
 ```
 
-**Key point:** The model selects tools sequentially, based on:
+**Takeaway:** The model selects tools sequentially, based on:
 1. **Current user request**
 2. **Results of previous tools** (in context)
 3. **Tool descriptions** (`Description`)
@@ -459,7 +459,7 @@ userInput := "Why did sales drop in region X?"
 // if data quality needs to be checked before output
 ```
 
-**Key point:** The model selects tools based on:
+**Takeaway:** The model selects tools based on:
 1. **Semantic matching** of request and `Description`
 2. **Sequence** (schema first, then query)
 3. **Context** of previous results

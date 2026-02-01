@@ -32,7 +32,7 @@ Function Calling is a mechanism that allows the model to call real Go functions,
 
 ### Complete Cycle: From Definition to Execution
 
-Let's break down the **complete cycle** using the `ping` tool as an example:
+We'll walk through the **complete cycle** using the `ping` tool as an example:
 
 #### Step 1: Tool Definition (Tool Schema)
 
@@ -102,7 +102,7 @@ The model **doesn't return text** like "I will check ping". Instead, it returns 
 }
 ```
 
-**What happens:** The model **generates a tool_call** for the `ping` tool with JSON arguments. This isn't magic — the model processes `Description: "Ping a host to check connectivity"` and links it to the user's request.
+**What happens:** The model **generates a tool_call** for the `ping` tool with JSON arguments. Nothing magical is happening here: the model reads `Description: "Ping a host to check connectivity"` and maps it to the user's request.
 
 **How does the model choose between multiple tools?**
 
@@ -165,7 +165,7 @@ userInput := "Check if the site google.com responds"
 // {"name": "check_http", "arguments": "{\"url\": \"https://google.com\"}"}
 ```
 
-**Key point:** The model selects a tool based on **semantic matching** between the user's request and `Description`. The more precise and specific the `Description`, the better the model selects the right tool.
+**Takeaway:** The model selects a tool based on **semantic matching** between the user's request and `Description`. The more precise and specific the `Description`, the better the model selects the right tool.
 
 #### What Does the LLM Do, and What Does Runtime Do?
 

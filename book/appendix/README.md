@@ -327,7 +327,7 @@ SOP for ticket processing:
 4. Result is added to history
 5. LLM receives result in context and generates next step
 
-This isn't magic — it's just a loop where the model receives results of previous actions.
+There's no magic here — it's just a loop where the model receives results of previous actions.
 
 **See also:** [Chapter 04: Autonomy](../04-autonomy-and-loops/README.md#magic-vs-reality-how-the-loop-works)
 
