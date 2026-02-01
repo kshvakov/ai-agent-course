@@ -30,6 +30,16 @@ This section contains reference information: glossary of terms, checklists, SOP 
 
 **See also:** [Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md#step-3-model-response-tool-call)
 
+**Artifact / artifact_id** — a large tool result (file, logs, JSON, HTML, etc.) that the runtime stores outside `messages[]`. The model only receives a short excerpt plus an `artifact_id`. This reduces cost/latency and helps avoid context overflows.
+
+**See also:** [Chapter 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md)
+
+**AgentState** — a canonical agent run state structure: goal, constraints (including HITL), budgets, plan, known facts, open questions, artifacts, and risk flags. It is a contract between agent loop iterations and between components (for example, an "orchestrator" and an "analyzer").
+
+**StatePatch** — a structured update to `AgentState` (for example: append facts, replace plan, add open questions). It's useful when one component normalizes observations and another decides the next action.
+
+**Risk Level** — classification of side effects used by policy and HITL gates. A typical minimal set is: `read_only`, `write_local`, `external_action`.
+
 **ReAct Loop (Reasoning and Action Loop)** — autonomous agent work pattern: Reason (reasons) → Act (acts) → Observe (observes) → repeats. Agent analyzes situation, performs action, receives result, and decides what to do next.
 
 **Etymology:** ReAct = Reason + Act

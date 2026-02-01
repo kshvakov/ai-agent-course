@@ -803,6 +803,33 @@ func executeTool(name string, args json.RawMessage) (string, error) {
 }
 ```
 
+## Repairing tool call arguments (when JSON/schema is invalid)
+
+In production, you will occasionally get:
+
+- syntactically invalid JSON (missing braces, broken quotes),
+- valid JSON that still fails your JSON Schema (wrong types, missing required fields).
+
+When this happens, do not execute the tool "as is". Add a **repair step**: a separate LLM call (or a dedicated mode/model) that takes:
+
+- the tool name,
+- the tool arguments JSON Schema,
+- the original arguments string,
+
+and returns **only the fixed JSON**, without explanations.
+
+Skeleton:
+
+```go
+if !json.Valid([]byte(call.Function.Arguments)) {
+    // 1) repaired := repairWithLLM(call.Function.Arguments, toolSchema)
+    // 2) validate again (json.Valid + schema)
+    // 3) execute only if validation passes; otherwise fail closed
+}
+```
+
+Key rule: the repair step must not change intent. It only fixes the format to match the schema.
+
 ## Common Errors
 
 ### Error 1: Model Doesn't Generate tool_call

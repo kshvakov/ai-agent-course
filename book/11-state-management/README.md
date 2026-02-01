@@ -37,6 +37,41 @@ State Management is closely related to [Planning](../10-planning-and-workflows/R
 
 ## How It Works (Step by Step)
 
+### Step 0: Agent state as a contract (AgentState)
+
+In the examples below we store a task state (`Task`). For production agents it's often helpful to also define a canonical **agent run** state. This makes long-running loops easier to operate.
+
+What you get:
+
+- resume after restarts,
+- revise the plan when new facts arrive,
+- enforce HITL based on policy,
+- keep the context small by using artifacts.
+
+A minimal shape (simplified):
+
+```json
+{
+  "goal": "Deploy service X to staging",
+  "constraints": {
+    "human_in_the_loop": { "required_for_risk_levels": ["write_local", "external_action"] }
+  },
+  "budget": {
+    "max_steps": 20,
+    "max_wall_time_ms": 300000,
+    "max_llm_tokens": 200000,
+    "max_artifact_bytes_in_context": 8000
+  },
+  "plan": ["Check current status", "Collect config", "Apply changes", "Verify again"],
+  "known_facts": [{ "key": "service", "value": "X", "source": "user" }],
+  "open_questions": ["Which namespace should we deploy to?"],
+  "artifacts": [{ "artifact_id": "log_123", "type": "tool_result.logs", "summary": "nginx error log", "bytes": 48231 }],
+  "risk_flags": ["budget_pressure"]
+}
+```
+
+To update this state between steps, use a **StatePatch**: "append facts", "replace plan", "add open questions". This also supports a clean split of responsibilities: one component normalizes observations, another selects the next action.
+
 ### Step 1: Task Structure with State
 
 Create a structure to store task state:

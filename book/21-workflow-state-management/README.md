@@ -35,6 +35,16 @@ State Management is about saving agent state between restarts. This allows:
 
 Idempotency is a property of an operation: a repeated call gives the same result as the first. For example, "create file" isn't idempotent (creates duplicates), but "create file if it doesn't exist" is idempotent.
 
+### Production pattern: AgentState + artifacts instead of a "fat" context
+
+In production, workflows often outlive a single HTTP request and survive worker restarts. It helps to store **AgentState** as the canonical agent run state (goal, budgets, plan, facts, open questions, risk flags), and keep large tool outputs as **artifacts**:
+
+- the runtime/worker stores raw outputs (logs, JSON, files) in external storage,
+- the state stores `artifact_id + summary + bytes`,
+- the model receives only a short excerpt (top-k lines) plus `artifact_id`.
+
+This keeps costs predictable and prevents context blow-ups on long runs.
+
 ## How It Works (Step by Step)
 
 ### Step 1: Task Structure with State

@@ -89,6 +89,18 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) (str
 }
 ```
 
+### Step 2.5: Artifacts for large tool results
+
+One of the fastest ways to reduce cost and latency is to stop putting large tool outputs directly into `messages[]`.
+
+Pattern:
+
+- store the raw tool output as an artifact in external storage,
+- add only a short excerpt (for example, top-20 lines) plus `artifact_id` to the conversation,
+- fetch the artifact later in slices if needed (`range`/`offset`/`limit`).
+
+This often works better than summarization. You keep the full data, but you keep it out of the context window.
+
 ### Step 3: LLM Result Caching
 
 Cache results for identical requests:

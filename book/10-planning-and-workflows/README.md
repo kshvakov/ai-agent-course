@@ -304,6 +304,52 @@ for _, step := range readySteps {
 wg.Wait()
 ```
 
+## Pattern: Controller + Processor (orchestrator + normalizer)
+
+When a workflow grows, it's useful to separate two concerns:
+
+- **Controller (orchestrator)** selects the next step: call a tool or respond to the user.
+- **Processor (analyzer/normalizer)** turns tool results and user answers into a structured state update (for example: "append facts", "replace plan", "add open questions").
+
+This reduces noise in the agent loop. The controller does not get buried in large outputs. The processor does not decide on side effects.
+
+Mini-trace (read-only search + file read):
+
+1) Controller calls search.
+
+```json
+{
+  "tool_call": {
+    "name": "search_code",
+    "arguments": { "query": "type ClientError struct" }
+  }
+}
+```
+
+2) ToolRunner stores the raw output as an artifact and returns a short payload (top-k matches).
+
+3) Processor returns a `state_patch`:
+
+```json
+{
+  "replace_plan": [
+    "Read the file with the best match",
+    "Write a short explanation for the user"
+  ],
+  "append_known_facts": [
+    {
+      "key": "client_error_candidate",
+      "value": "pkg/errors/client_error.go:12",
+      "source": "tool",
+      "artifact_id": "srch_123",
+      "confidence": 0.9
+    }
+  ]
+}
+```
+
+4) Controller reads the file and produces the final answer.
+
 ## Mini-Exercises
 
 ### Exercise 1: Task Decomposition

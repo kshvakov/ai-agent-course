@@ -215,6 +215,31 @@ msg2 := resp2.Choices[0].Message
 // Now Runtime can execute the action
 ```
 
+### HITL as tools (ask_user / confirm_action)
+
+A text-based "Are you sure?" flow is fine for a CLI and early prototypes. In production, it's often better to make HITL **machine-readable** by introducing dedicated tools:
+
+- `ask_user` — return a UI form with single/multi-select questions so you get structured answers instead of free text.
+- `confirm_action` — request explicit approval before `write_local` / `external_action` and log who approved what.
+
+Minimal trace:
+
+```json
+{
+  "tool_call": {
+    "name": "confirm_action",
+    "arguments": {
+      "action_id": "delete_db_prod",
+      "summary": "Delete prod database. This is irreversible.",
+      "risk_level": "external_action",
+      "requested_effects": ["drop database prod"]
+    }
+  }
+}
+```
+
+If the user denies the action, treat it as a hard stop: update the plan and do not try to bypass the restriction via other tools.
+
 ### Combining Loops (Nested Loops)
 
 To implement Human-in-the-Loop, use a **nested loops** structure:
