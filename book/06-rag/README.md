@@ -14,7 +14,7 @@ Without RAG, an agent can't reliably use your documentation, protocols, and know
 
 **Problem:** The agent doesn't know the Phoenix server restart protocol. It may perform a standard restart that doesn't match your procedures.
 
-**Solution:** RAG allows the agent to find the protocol in the knowledge base before performing the action. The agent finds the document "Phoenix server restart protocol: 1. Turn off load balancer 2. Restart server 3. Turn on load balancer" and follows these steps.
+**Solution:** With RAG, the agent looks up the protocol in the knowledge base before acting. It finds the document "Phoenix server restart protocol: 1. Turn off load balancer 2. Restart server 3. Turn on load balancer" and follows the steps.
 
 ## Theory in Simple Terms
 

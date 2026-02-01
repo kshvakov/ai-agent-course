@@ -994,7 +994,7 @@ cotPrompt := `
 
 ## For the Curious
 
-> This section explains the mechanics of few-shot and CoT at the model level. Can be skipped if you're only interested in practice.
+> This section explains the mechanics of few-shot and CoT at the model level. Skip it if you only care about practical usage.
 
 ### Why Does Few-Shot Work?
 
