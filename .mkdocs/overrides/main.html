@@ -202,6 +202,25 @@
 {% block scripts %}
   {{ super() }}
 
+  {# MathJax (LaTeX) support for pymdownx.arithmatex #}
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [["$", "$"], ["\\(", "\\)"]],
+        displayMath: [["$$", "$$"], ["\\[", "\\]"]],
+        processEscapes: true,
+        processEnvironments: true
+      },
+      options: {
+        ignoreHtmlClass: ".*",
+        processHtmlClass: "arithmatex",
+        skipHtmlTags: ["script", "noscript", "style", "textarea", "pre", "code"]
+      }
+    };
+  </script>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  {# /MathJax #}
+
   {# Yandex.Metrika counter #}
   {% if config.extra.yandex_metrika_id %}
     {% set ym_id = config.extra.yandex_metrika_id %}
