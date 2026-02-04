@@ -12,8 +12,6 @@ theme:
   name: material
   custom_dir: .mkdocs/overrides
   language: en
-  logo: assets/images/logo.svg
-  favicon: assets/images/favicon.svg
   palette:
     # Light mode
     - scheme: default
