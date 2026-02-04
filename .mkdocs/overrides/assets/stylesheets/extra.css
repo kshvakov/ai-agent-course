@@ -31,6 +31,12 @@ body[data-md-color-scheme="slate"] .md-tabs__link:hover {
   color: #ffffff !important;
 }
 
+/* --- Logo --- */
+/* Logo is a full-color SVG; avoid filters that can distort colors. */
+.md-logo img {
+  filter: none;
+}
+
 /* --- Footer navigation (Prev / Next) --- */
 /*
   Material has changed classnames across versions.
