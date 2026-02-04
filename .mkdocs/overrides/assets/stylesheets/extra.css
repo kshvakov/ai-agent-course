@@ -1,0 +1,59 @@
+/*
+  MkDocs Material theme tweaks for this course.
+
+  Goals (both light/dark modes):
+  - Header (top bar) background: #141519
+  - Footer Prev/Next navigation blocks background: #17181f
+*/
+
+/* --- Header (top bar + tabs) --- */
+/* Apply dark header only in Dark mode (scheme: slate) */
+body[data-md-color-scheme="slate"] .md-header,
+body[data-md-color-scheme="slate"] .md-tabs {
+  background-color: #141519 !important;
+}
+
+/* Ensure readable foreground on dark header in BOTH schemes */
+body[data-md-color-scheme="slate"] .md-header,
+body[data-md-color-scheme="slate"] .md-header a,
+body[data-md-color-scheme="slate"] .md-header .md-header__button,
+body[data-md-color-scheme="slate"] .md-header .md-header__title,
+body[data-md-color-scheme="slate"] .md-tabs,
+body[data-md-color-scheme="slate"] .md-tabs a,
+body[data-md-color-scheme="slate"] .md-tabs .md-tabs__link {
+  color: #ffffff !important;
+}
+
+/* Tab states */
+body[data-md-color-scheme="slate"] .md-tabs__link--active,
+body[data-md-color-scheme="slate"] .md-tabs__link:focus,
+body[data-md-color-scheme="slate"] .md-tabs__link:hover {
+  color: #ffffff !important;
+}
+
+/* --- Footer navigation (Prev / Next) --- */
+/*
+  Material has changed classnames across versions.
+  We target a small set of known selectors to keep it robust.
+*/
+/*
+  Material uses these CSS variables for footer colors.
+  Setting variables keeps the default markup and hover/focus behavior intact.
+*/
+body {
+  --md-footer-bg-color: #17181f;
+  --md-footer-bg-color--dark: #141519;
+  --md-footer-fg-color: #ffffff;
+  --md-footer-fg-color--light: rgba(255, 255, 255, 0.72);
+  --md-footer-fg-color--lighter: rgba(255, 255, 255, 0.56);
+}
+
+.md-footer__link,
+.md-footer__link:link,
+.md-footer__link:visited,
+.md-footer-nav__link,
+.md-footer-nav__link:link,
+.md-footer-nav__link:visited {
+  color: inherit;
+}
+

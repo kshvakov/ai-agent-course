@@ -7,6 +7,9 @@
 {% block extrahead %}
   {{ super() }}
 
+  <!-- Theme overrides (see .mkdocs/overrides/assets/stylesheets/extra.css) -->
+  <link rel="stylesheet" href="{{ 'assets/stylesheets/extra.css' | url }}">
+
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-42YNTP8CJM"></script>
   <script>
