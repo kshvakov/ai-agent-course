@@ -447,6 +447,3 @@ tools := []openai.Tool{
 After studying case studies, proceed to:
 - **[16. Best Practices and Application Areas](../16-best-practices/README.md)** — best practices for creating and maintaining agents
 
----
-
-**Navigation:** [← Ecosystem and Frameworks](../14-ecosystem-and-frameworks/README.md) | [Table of Contents](../README.md) | [Best Practices →](../16-best-practices/README.md)

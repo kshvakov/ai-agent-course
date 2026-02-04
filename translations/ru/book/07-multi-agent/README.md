@@ -378,7 +378,4 @@ supervisorTools := []openai.Tool{
 После изучения Multi-Agent переходите к:
 - **[08. Evals и Надежность](../08-evals-and-reliability/README.md)** — как тестировать агентов
 
----
-
-**Навигация:** [← RAG](../06-rag/README.md) | [Оглавление](../README.md) | [Evals →](../08-evals-and-reliability/README.md)
 

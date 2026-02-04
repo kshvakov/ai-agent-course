@@ -799,6 +799,3 @@ func executeToolSandboxed(toolName string, args map[string]any) (any, error) {
 After understanding security and governance, proceed to:
 - **[18. Tool Protocols and Tool Servers](../18-tool-protocols-and-servers/README.md)** — Learn about tool communication protocols
 
----
-
-**Navigation:** [← Best Practices](../16-best-practices/README.md) | [Table of Contents](../README.md) | [Tool Protocols and Tool Servers →](../18-tool-protocols-and-servers/README.md)

@@ -581,6 +581,3 @@ func executeTaskIfNotDone(taskID string) error {
 - **[Chapter 19: Observability and Tracing](../19-observability-and-tracing/README.md)** — Logging task state
 - **[Chapter 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md)** — Cost control for long tasks
 
----
-
-**Navigation:** [← Cost & Latency Engineering](../20-cost-latency-engineering/README.md) | [Table of Contents](../README.md) | [Prompt and Program Management →](../22-prompt-program-management/README.md)

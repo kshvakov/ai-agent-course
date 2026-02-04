@@ -490,7 +490,4 @@ func compareMetrics(baseline, current EvalMetrics) bool {
 После изучения evals переходите к:
 - **[09. Анатомия агента](../09-agent-architecture/README.md)** — компоненты и их взаимодействие
 
----
-
-**Навигация:** [← Multi-Agent](../07-multi-agent/README.md) | [Оглавление](../README.md) | [Анатомия агента →](../09-agent-architecture/README.md)
 

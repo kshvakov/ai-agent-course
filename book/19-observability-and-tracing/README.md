@@ -646,6 +646,3 @@ func (m *Metrics) RecordRun(tokens int, latency time.Duration, err error) {
 - **Tools:** Tool execution studied in [Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md)
 - **Cost Engineering:** Token usage for cost control — [Chapter 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md)
 
----
-
-**Navigation:** [← Tool Protocols and Tool Servers](../18-tool-protocols-and-servers/README.md) | [Table of Contents](../README.md) | [Cost & Latency Engineering →](../20-cost-latency-engineering/README.md)

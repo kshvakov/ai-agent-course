@@ -1034,6 +1034,3 @@ Imagine a task: "What is 23 * 41 + 12?"
 After studying prompting, proceed to:
 - **[03. Tools and Function Calling](../03-tools-and-function-calling/README.md)** — how agent interacts with the real world
 
----
-
-**Navigation:** [← LLM Physics](../01-llm-fundamentals/README.md) | [Table of Contents](../README.md) | [Tools →](../03-tools-and-function-calling/README.md)

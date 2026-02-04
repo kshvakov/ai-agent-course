@@ -378,6 +378,3 @@ When using Multi-Agent systems in production:
 After studying Multi-Agent, proceed to:
 - **[08. Evals and Reliability](../08-evals-and-reliability/README.md)** — how to test agents
 
----
-
-**Navigation:** [← RAG](../06-rag/README.md) | [Table of Contents](../README.md) | [Evals →](../08-evals-and-reliability/README.md)

@@ -153,8 +153,4 @@ export OPENAI_API_KEY="any-string" # Local models usually don't care about key
 After reading the preface, proceed to:
 - **[01. LLM Physics](../01-llm-fundamentals/README.md)** — the foundation for understanding everything else
 
----
-
-**Navigation:** [Table of Contents](../README.md) | [LLM Physics →](../01-llm-fundamentals/README.md)
-
 **Happy learning! 🚀**

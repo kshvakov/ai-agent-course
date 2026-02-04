@@ -490,6 +490,3 @@ func compareMetrics(baseline, current EvalMetrics) bool {
 After studying evals, proceed to:
 - **[09. Agent Anatomy](../09-agent-architecture/README.md)** — components and their interaction
 
----
-
-**Navigation:** [← Multi-Agent](../07-multi-agent/README.md) | [Table of Contents](../README.md) | [Agent Anatomy →](../09-agent-architecture/README.md)

@@ -427,6 +427,3 @@ func executePlanWithRetries(ctx context.Context, plan *Plan, executor StepExecut
 After mastering planning patterns, proceed to:
 - **[11. State Management](../11-state-management/README.md)** — Learn how to guarantee reliable plan execution
 
----
-
-**Navigation:** [← Agent Anatomy](../09-agent-architecture/README.md) | [Table of Contents](../README.md) | [State Management →](../11-state-management/README.md)

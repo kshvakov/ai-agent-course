@@ -1113,7 +1113,4 @@ go run main.go
 После изучения инструментов переходите к:
 - **[04. Автономность и Циклы](../04-autonomy-and-loops/README.md)** — как агент работает в цикле
 
----
-
-**Навигация:** [← Промптинг](../02-prompt-engineering/README.md) | [Оглавление](../README.md) | [Автономность →](../04-autonomy-and-loops/README.md)
 

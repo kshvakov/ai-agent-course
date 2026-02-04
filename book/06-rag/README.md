@@ -819,6 +819,3 @@ More on production readiness: [Chapter 19: Observability](../19-observability-an
 After studying RAG, proceed to:
 - **[07. Multi-Agent Systems](../07-multi-agent/README.md)** — how to create a team of agents
 
----
-
-**Navigation:** [← Safety](../05-safety-and-hitl/README.md) | [Table of Contents](../README.md) | [Multi-Agent →](../07-multi-agent/README.md)

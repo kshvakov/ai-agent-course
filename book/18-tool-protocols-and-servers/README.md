@@ -297,6 +297,3 @@ func main() {
 After understanding tool protocols, proceed to:
 - **[19. Observability and Tracing](../19-observability-and-tracing/README.md)** — Learn production observability
 
----
-
-**Navigation:** [← Security and Governance](../17-security-and-governance/README.md) | [Table of Contents](../README.md) | [Observability and Tracing →](../19-observability-and-tracing/README.md)

@@ -139,6 +139,3 @@ func getSystemPrompt() string {
 - **[Chapter 08: Evals and Reliability](../08-evals-and-reliability/README.md)** — Checking prompt quality
 - **[Chapter 23: Evals in CI/CD](../23-evals-in-cicd/README.md)** — Automatic checking
 
----
-
-**Navigation:** [← Workflow and State Management in Production](../21-workflow-state-management/README.md) | [Table of Contents](../README.md) | [Evals in CI/CD →](../23-evals-in-cicd/README.md)

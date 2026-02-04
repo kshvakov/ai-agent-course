@@ -636,7 +636,4 @@ func executeTaskIfNotDone(taskID string) error {
 После понимания state management переходите к:
 - **[12. Системы Памяти Агента](../12-agent-memory/README.md)** — Узнайте, как агенты запоминают и извлекают информацию
 
----
-
-**Навигация:** [← Planning и Workflow-паттерны](../10-planning-and-workflows/README.md) | [Оглавление](../README.md) | [Системы Памяти Агента →](../12-agent-memory/README.md)
 

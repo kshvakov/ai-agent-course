@@ -621,6 +621,3 @@ After studying best practices, proceed to:
 - **[17. Security and Governance](../17-security-and-governance/README.md)** — security and agent management
 - **[Appendix: Reference Guides](../appendix/README.md)** — glossary, checklists, templates
 
----
-
-**Navigation:** [← Case Studies](../15-case-studies/README.md) | [Table of Contents](../README.md) | [Security and Governance →](../17-security-and-governance/README.md)

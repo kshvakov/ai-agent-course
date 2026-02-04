@@ -1033,6 +1033,3 @@ cotPrompt := `
 После изучения промптинга переходите к:
 - **[03. Инструменты и Function Calling](../03-tools-and-function-calling/README.md)** — как агент взаимодействует с реальным миром
 
----
-
-**Навигация:** [← Физика LLM](../01-llm-fundamentals/README.md) | [Оглавление](../README.md) | [Инструменты →](../03-tools-and-function-calling/README.md)

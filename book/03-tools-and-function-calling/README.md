@@ -1113,6 +1113,3 @@ go run main.go
 After studying tools, proceed to:
 - **[04. Autonomy and Loops](../04-autonomy-and-loops/README.md)** — how the agent works in a loop
 
----
-
-**Navigation:** [← Prompting](../02-prompt-engineering/README.md) | [Table of Contents](../README.md) | [Autonomy →](../04-autonomy-and-loops/README.md)

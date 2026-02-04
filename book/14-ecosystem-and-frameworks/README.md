@@ -461,6 +461,3 @@ Fill the matrix based on your specific requirements.
 After understanding the ecosystem, proceed to:
 - **[15. Real-World Case Studies](../15-case-studies/README.md)** — Study examples of real agents
 
----
-
-**Navigation:** [← Context Engineering](../13-context-engineering/README.md) | [Table of Contents](../README.md) | [Case Studies →](../15-case-studies/README.md)

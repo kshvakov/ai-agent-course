@@ -122,6 +122,3 @@ messages = append(messages, openai.ChatCompletionMessage{
 - **[Chapter 17: Security and Governance](../17-security-and-governance/README.md)** — Data protection
 - **[Chapter 19: Observability and Tracing](../19-observability-and-tracing/README.md)** — Safe logging
 
----
-
-**Navigation:** [← Evals in CI/CD](../23-evals-in-cicd/README.md) | [Table of Contents](../README.md) | [Production Readiness Index →](../25-production-readiness-index/README.md)

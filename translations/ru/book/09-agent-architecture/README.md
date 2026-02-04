@@ -961,7 +961,4 @@ func compressContext(messages []openai.ChatCompletionMessage, maxTokens int) []o
 После изучения архитектуры переходите к:
 - **[10. Planning и Workflow-паттерны](../10-planning-and-workflows/README.md)** — как агент планирует сложные задачи
 
----
-
-**Навигация:** [← Evals и Надежность](../08-evals-and-reliability/README.md) | [Оглавление](../README.md) | [Planning →](../10-planning-and-workflows/README.md)
 

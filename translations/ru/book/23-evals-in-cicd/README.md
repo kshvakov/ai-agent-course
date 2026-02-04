@@ -165,7 +165,4 @@ func main() {
 - **[Глава 08: Evals и Надежность](../08-evals-and-reliability/README.md)** — Базовые концепции evals
 - **[Глава 22: Prompt и Program Management](../22-prompt-program-management/README.md)** — Проверка промптов через evals
 
----
-
-**Навигация:** [← Prompt и Program Management](../22-prompt-program-management/README.md) | [Оглавление](../README.md) | [Data и Privacy →](../24-data-and-privacy/README.md)
 

@@ -415,6 +415,3 @@ fmt.Printf("[Iteration %d] Tool result: %s\n", i, result)
 After studying autonomy, proceed to:
 - **[05. Safety and Human-in-the-Loop](../05-safety-and-hitl/README.md)** — how to protect the agent from dangerous actions
 
----
-
-**Navigation:** [← Tools](../03-tools-and-function-calling/README.md) | [Table of Contents](../README.md) | [Safety →](../05-safety-and-hitl/README.md)

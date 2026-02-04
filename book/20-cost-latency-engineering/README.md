@@ -597,6 +597,3 @@ func setCachedResult(key string, result string, ttl time.Duration) {
 - **Context Optimization:** Managing context size — [Chapter 13: Context Engineering](../13-context-engineering/README.md)
 - **Agent Loop:** Basic agent loop — [Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md)
 
----
-
-**Navigation:** [← Observability and Tracing](../19-observability-and-tracing/README.md) | [Table of Contents](../README.md) | [Workflow and State Management in Production →](../21-workflow-state-management/README.md)

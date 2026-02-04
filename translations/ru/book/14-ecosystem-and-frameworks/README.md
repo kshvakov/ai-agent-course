@@ -461,7 +461,4 @@ func (a *FrameworkToolAdapter) Execute(ctx context.Context, args map[string]any)
 После понимания экосистемы переходите к:
 - **[15. Кейсы из Реальной Практики](../15-case-studies/README.md)** — Изучите примеры реальных агентов
 
----
-
-**Навигация:** [← Context Engineering](../13-context-engineering/README.md) | [Оглавление](../README.md) | [Кейсы →](../15-case-studies/README.md)
 

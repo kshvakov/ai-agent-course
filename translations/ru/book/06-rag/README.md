@@ -819,7 +819,4 @@ func validatePipeline(pipeline Pipeline, allowedTools map[string]bool) error {
 После изучения RAG переходите к:
 - **[07. Multi-Agent Systems](../07-multi-agent/README.md)** — как создать команду агентов
 
----
-
-**Навигация:** [← Безопасность](../05-safety-and-hitl/README.md) | [Оглавление](../README.md) | [Multi-Agent →](../07-multi-agent/README.md)
 

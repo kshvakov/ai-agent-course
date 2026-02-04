@@ -415,7 +415,4 @@ fmt.Printf("[Iteration %d] Tool result: %s\n", i, result)
 После изучения автономности переходите к:
 - **[05. Безопасность и Human-in-the-Loop](../05-safety-and-hitl/README.md)** — как защитить агента от опасных действий
 
----
-
-**Навигация:** [← Инструменты](../03-tools-and-function-calling/README.md) | [Оглавление](../README.md) | [Безопасность →](../05-safety-and-hitl/README.md)
 

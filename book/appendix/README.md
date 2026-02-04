@@ -418,6 +418,3 @@ Create a decision table for your task following the "Decision Tables" section:
 - **Prompting:** How to use SOP in prompts, see [Chapter 02: Prompting](../02-prompt-engineering/README.md)
 - **Case Studies:** Examples of SOP usage in real agents, see [Chapter 15: Case Studies](../15-case-studies/README.md)
 
----
-
-**Navigation:** [← Production Readiness Index](../25-production-readiness-index/README.md) | [Table of Contents](../README.md)

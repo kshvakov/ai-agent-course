@@ -492,7 +492,4 @@ func requiresClarification(toolName string, args json.RawMessage) (bool, []strin
 После изучения безопасности переходите к:
 - **[06. RAG и База Знаний](../06-rag/README.md)** — как агент использует документацию
 
----
-
-**Навигация:** [← Автономность](../04-autonomy-and-loops/README.md) | [Оглавление](../README.md) | [RAG →](../06-rag/README.md)
 

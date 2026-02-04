@@ -310,6 +310,3 @@ func summarizeConversation(messages []openai.ChatCompletionMessage) (string, err
 After mastering context engineering, proceed to:
 - **[14. Ecosystem and Frameworks](../14-ecosystem-and-frameworks/README.md)** — Learn about agent frameworks
 
----
-
-**Navigation:** [← Agent Memory Systems](../12-agent-memory/README.md) | [Table of Contents](../README.md) | [Ecosystem and Frameworks →](../14-ecosystem-and-frameworks/README.md)

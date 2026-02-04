@@ -621,7 +621,4 @@ logAgentRun(log)
 - **[17. Security и Governance](../17-security-and-governance/README.md)** — безопасность и управление агентами
 - **[Приложение: Справочники](../appendix/README.md)** — глоссарий, чек-листы, шаблоны
 
----
-
-**Навигация:** [← Кейсы](../15-case-studies/README.md) | [Оглавление](../README.md) | [Security и Governance →](../17-security-and-governance/README.md)
 

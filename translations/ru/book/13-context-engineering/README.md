@@ -310,7 +310,4 @@ func summarizeConversation(messages []openai.ChatCompletionMessage) (string, err
 После освоения context engineering переходите к:
 - **[14. Экосистема и Фреймворки](../14-ecosystem-and-frameworks/README.md)** — Узнайте о фреймворках для агентов
 
----
-
-**Навигация:** [← Системы Памяти Агента](../12-agent-memory/README.md) | [Оглавление](../README.md) | [Экосистема и Фреймворки →](../14-ecosystem-and-frameworks/README.md)
 

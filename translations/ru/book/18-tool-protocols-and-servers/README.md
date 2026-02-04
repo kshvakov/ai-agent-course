@@ -297,7 +297,4 @@ func main() {
 После понимания протоколов инструментов переходите к:
 - **[19. Observability и Tracing](../19-observability-and-tracing/README.md)** — Узнайте прод-observability
 
----
-
-**Навигация:** [← Security и Governance](../17-security-and-governance/README.md) | [Оглавление](../README.md) | [Observability и Tracing →](../19-observability-and-tracing/README.md)
 

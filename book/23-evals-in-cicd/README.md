@@ -165,6 +165,3 @@ func main() {
 - **[Chapter 08: Evals and Reliability](../08-evals-and-reliability/README.md)** — Basic eval concepts
 - **[Chapter 22: Prompt and Program Management](../22-prompt-program-management/README.md)** — Checking prompts via evals
 
----
-
-**Navigation:** [← Prompt and Program Management](../22-prompt-program-management/README.md) | [Table of Contents](../README.md) | [Data and Privacy →](../24-data-and-privacy/README.md)

@@ -114,6 +114,3 @@ Don't try to study everything at once. Use this algorithm:
 
 After implementing production readiness, your agent is ready for deployment in the real world. Continue monitoring, iterations, and improvements based on production metrics and user feedback.
 
----
-
-**Navigation:** [← Data and Privacy](../24-data-and-privacy/README.md) | [Table of Contents](../README.md) | [Appendix →](../appendix/README.md)

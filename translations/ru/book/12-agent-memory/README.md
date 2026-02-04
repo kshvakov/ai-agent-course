@@ -284,7 +284,4 @@ func (m *Memory) RetrieveSemantic(query string, limit int) ([]MemoryItem, error)
 После понимания систем памяти переходите к:
 - **[13. Context Engineering](../13-context-engineering/README.md)** — Узнайте, как эффективно управлять контекстом из памяти, состояния и retrieval
 
----
-
-**Навигация:** [← State Management](../11-state-management/README.md) | [Оглавление](../README.md) | [Context Engineering →](../13-context-engineering/README.md)
 

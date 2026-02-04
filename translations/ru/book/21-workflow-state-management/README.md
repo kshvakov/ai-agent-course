@@ -581,7 +581,4 @@ func executeTaskIfNotDone(taskID string) error {
 - **[Глава 19: Observability и Tracing](../19-observability-and-tracing/README.md)** — Логирование состояния задач
 - **[Глава 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md)** — Контроль стоимости долгих задач
 
----
-
-**Навигация:** [← Cost & Latency Engineering](../20-cost-latency-engineering/README.md) | [Оглавление](../README.md) | [Prompt и Program Management →](../22-prompt-program-management/README.md)
 

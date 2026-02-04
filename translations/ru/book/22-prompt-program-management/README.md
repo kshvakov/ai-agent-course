@@ -140,7 +140,4 @@ func getSystemPrompt() string {
 - **[Глава 08: Evals и Надежность](../08-evals-and-reliability/README.md)** — Проверка качества промптов
 - **[Глава 23: Evals в CI/CD](../23-evals-in-cicd/README.md)** — Автоматическая проверка
 
----
-
-**Навигация:** [← Workflow и State Management в продакшене](../21-workflow-state-management/README.md) | [Оглавление](../README.md) | [Evals в CI/CD →](../23-evals-in-cicd/README.md)
 

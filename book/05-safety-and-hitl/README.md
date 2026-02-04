@@ -490,6 +490,3 @@ func requiresClarification(toolName string, args json.RawMessage) (bool, []strin
 After studying safety, proceed to:
 - **[06. RAG and Knowledge Base](../06-rag/README.md)** — how the agent uses documentation
 
----
-
-**Navigation:** [← Autonomy](../04-autonomy-and-loops/README.md) | [Table of Contents](../README.md) | [RAG →](../06-rag/README.md)

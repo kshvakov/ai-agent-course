@@ -799,7 +799,4 @@ func executeToolSandboxed(toolName string, args map[string]any) (any, error) {
 После понимания security и governance переходите к:
 - **[18. Протоколы Инструментов и Tool Servers](../18-tool-protocols-and-servers/README.md)** — Узнайте о протоколах коммуникации инструментов
 
----
-
-**Навигация:** [← Best Practices](../16-best-practices/README.md) | [Оглавление](../README.md) | [Протоколы Инструментов и Tool Servers →](../18-tool-protocols-and-servers/README.md)
 

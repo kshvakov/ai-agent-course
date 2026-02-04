@@ -854,6 +854,3 @@ The model generates a sequence of tokens that matches the tool call format. This
 After studying LLM physics, proceed to:
 - **[02. Prompting as Programming](../02-prompt-engineering/README.md)** — how to control model behavior through prompts
 
----
-
-**Navigation:** [← Preface](../00-preface/README.md) | [Table of Contents](../README.md) | [Prompting →](../02-prompt-engineering/README.md)

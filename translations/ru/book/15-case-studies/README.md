@@ -447,7 +447,4 @@ tools := []openai.Tool{
 После изучения кейсов переходите к:
 - **[16. Best Practices и Области Применения](../16-best-practices/README.md)** — лучшие практики создания и поддержки агентов
 
----
-
-**Навигация:** [← Экосистема и Фреймворки](../14-ecosystem-and-frameworks/README.md) | [Оглавление](../README.md) | [Best Practices →](../16-best-practices/README.md)
 
