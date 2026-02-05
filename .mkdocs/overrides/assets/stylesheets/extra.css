@@ -31,6 +31,21 @@ body[data-md-color-scheme="slate"] .md-tabs__link:hover {
   color: #ffffff !important;
 }
 
+/* --- Mobile drawer (left menu) header --- */
+/* In dark mode, Material uses the primary color for the drawer header (site + repo block).
+   Override only the drawer header (for="__drawer") to avoid affecting section titles. */
+body[data-md-color-scheme="slate"] .md-nav--primary .md-nav__title[for="__drawer"],
+body[data-md-color-scheme="slate"] .md-nav--primary .md-nav__source {
+  background-color: #141519 !important;
+}
+
+body[data-md-color-scheme="slate"] .md-nav--primary .md-nav__title[for="__drawer"],
+body[data-md-color-scheme="slate"] .md-nav--primary .md-nav__title[for="__drawer"] a,
+body[data-md-color-scheme="slate"] .md-nav--primary .md-nav__source,
+body[data-md-color-scheme="slate"] .md-nav--primary .md-nav__source a {
+  color: #ffffff !important;
+}
+
 /* --- Logo --- */
 /* Logo is a PNG with transparency; add a subtle shadow for contrast. */
 .md-logo img {

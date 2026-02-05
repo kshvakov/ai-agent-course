@@ -1,0 +1,49 @@
+{#-
+  Based on mkdocs-material v9.7.1: partials/tabs-item.html
+  (the upstream file is auto-generated, so we copy it and apply a tiny change)
+
+  Change: trim "Part X:" / "Часть X:" prefixes ONLY for the top tabs label.
+-#}
+
+{% macro render_content(nav_item, ref) %}
+  {% set ref = ref or nav_item %}
+  {% if nav_item == ref or "navigation.indexes" in features %}
+    {% if nav_item.is_index and nav_item.meta.icon %}
+      {% include ".icons/" ~ nav_item.meta.icon ~ ".svg" %}
+    {% endif %}
+  {% endif %}
+
+  {# Derive a shorter title for top tabs only #}
+  {% set tab_title = ref.title %}
+  {% if (tab_title.startswith("Part ") or tab_title.startswith("Часть ")) and (":" in tab_title) %}
+    {% set tab_title = tab_title.split(":", 1)[1].strip() %}
+  {% endif %}
+
+  {{ tab_title }}
+{% endmacro %}
+
+{% macro render(nav_item, ref) %}
+  {% set ref = ref or nav_item %}
+  {% set class = "md-tabs__item" %}
+  {% if ref.active %}
+    {% set class = class ~ " md-tabs__item--active" %}
+  {% endif %}
+  {% if nav_item.children %}
+    {% set first = nav_item.children | first %}
+    {% if first.children %}
+      {{ render(first, ref) }}
+    {% else %}
+      <li class="{{ class }}">
+        <a href="{{ first.url | url }}" class="md-tabs__link">
+          {{ render_content(first, ref) }}
+        </a>
+      </li>
+    {% endif %}
+  {% else %}
+    <li class="{{ class }}">
+      <a href="{{ nav_item.url | url }}" class="md-tabs__link">
+        {{ render_content(nav_item) }}
+      </a>
+    </li>
+  {% endif %}
+{% endmacro %}
