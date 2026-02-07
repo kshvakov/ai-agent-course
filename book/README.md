@@ -2,11 +2,6 @@
 
 For programmers who want to build production AI agents
 
-## Translations
-
-- **English (EN)** — `main` (this branch)
-- **[Русский (RU)](../translations/ru/book/README.md)** — [Russian version](../translations/ru/book/README.md)
-
 ---
 
 ## Table of contents
