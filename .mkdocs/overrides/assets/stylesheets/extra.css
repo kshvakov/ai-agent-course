@@ -165,3 +165,20 @@ body[data-md-color-scheme="slate"] .md-typeset .mermaid svg .node polygon {
   stroke: #e6edf3 !important;
 }
 
+/* --- Back to top button (Dark mode) --- */
+/*
+  Material renders the "Back to top" button when `navigation.top` is enabled.
+  In dark mode, the default hover can look too bright/contrasty.
+  Keep hover just slightly more prominent than the base state.
+*/
+body[data-md-color-scheme="slate"] .md-top {
+  background-color: #1f232b !important;
+  color: #e6edf3 !important;
+}
+
+body[data-md-color-scheme="slate"] .md-top:hover,
+body[data-md-color-scheme="slate"] .md-top:focus {
+  background-color: #2a3039 !important;
+  color: #ffffff !important;
+}
+
