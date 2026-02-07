@@ -23,11 +23,11 @@ In this chapter, we'll focus on protecting the agent from dangerous actions and 
 
 ### 1. Clarification — Magic vs Reality
 
-**❌ Magic:**
+**Magic:**
 > User: "Create server"  
 > Agent understands on its own that it needs to clarify parameters
 
-**✅ Reality:**
+**Reality:**
 
 **What happens:**
 
@@ -95,10 +95,10 @@ if len(msg.ToolCalls) == 0 {
 
 ### 2. Confirmation — Magic vs Reality
 
-**❌ Magic:**
+**Magic:**
 > Agent understands on its own that deleting a database is dangerous and asks for confirmation
 
-**✅ Reality:**
+**Reality:**
 
 **What happens:**
 
@@ -467,18 +467,18 @@ func requiresClarification(toolName string, args json.RawMessage) (bool, []strin
 
 ## Completion Criteria / Checklist
 
-✅ **Completed:**
-- Critical actions require confirmation
-- Missing parameters are requested from user
-- Protection against Prompt Injection
-- System Prompt explicitly specifies constraints
-- Runtime checks risk before executing actions
+**Completed:**
+- [x] Critical actions require confirmation
+- [x] Missing parameters are requested from user
+- [x] Protection against Prompt Injection
+- [x] System Prompt explicitly specifies constraints
+- [x] Runtime checks risk before executing actions
 
-❌ **Not completed:**
-- Critical actions execute without confirmation
-- Agent guesses missing parameters
-- No protection against Prompt Injection
-- System Prompt doesn't set constraints
+**Not completed:**
+- [ ] Critical actions execute without confirmation
+- [ ] Agent guesses missing parameters
+- [ ] No protection against Prompt Injection
+- [ ] System Prompt doesn't set constraints
 
 ## Connection with Other Chapters
 

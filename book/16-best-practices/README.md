@@ -18,9 +18,9 @@ Knowing theory and examples is good, but without understanding best practices, y
 
 ### 1. Start Simple
 
-**❌ Bad:** Immediately trying to create a complex agent with many tools and multi-step planning.
+**Bad:** Immediately trying to create a complex agent with many tools and multi-step planning.
 
-**✅ Good:** Start with a simple agent with 2-3 tools, then gradually add functionality.
+**Good:** Start with a simple agent with 2-3 tools, then gradually add functionality.
 
 **Evolution example:**
 
@@ -63,7 +63,7 @@ YOU MUST NOT:
 
 ### 3. Use Detailed Tool Descriptions
 
-**❌ Bad:**
+**Bad:**
 ```go
 {
     Name: "check",
@@ -71,7 +71,7 @@ YOU MUST NOT:
 }
 ```
 
-**✅ Good:**
+**Good:**
 ```go
 {
     Name: "check_service_status",
@@ -303,10 +303,10 @@ func abTestPrompt(promptA, promptB string, tests []EvalTest) {
 #### 1. DevOps and Infrastructure
 
 **What agents do well:**
-- ✅ Monitoring and diagnosis (check status, read logs)
-- ✅ Automating routine tasks (restart services, clean logs)
-- ✅ Incident management (triage, gather information, apply fixes)
-- ✅ Configuration management (check, apply changes with confirmation)
+- [x] Monitoring and diagnosis (check status, read logs)
+- [x] Automating routine tasks (restart services, clean logs)
+- [x] Incident management (triage, gather information, apply fixes)
+- [x] Configuration management (check, apply changes with confirmation)
 
 **Example tasks:**
 - "Check status of all services"
@@ -315,9 +315,9 @@ func abTestPrompt(promptA, promptB string, tests []EvalTest) {
 - "Apply configuration to server Y"
 
 **Limitations:**
-- ❌ Complex architectural decisions (require human expertise)
-- ❌ Production changes without explicit confirmation
-- ❌ Critical operations (delete data, change network configuration)
+- [ ] Complex architectural decisions (require human expertise)
+- [ ] Production changes without explicit confirmation
+- [ ] Critical operations (delete data, change network configuration)
 
 **Case Study: Virtual Machine (VM) Management**
 
@@ -405,21 +405,21 @@ SOP for creating/modifying VMs:
 
 **Safety and Best Practices:**
 
-- ✅ **Confirmation for critical operations:** VM creation and resource modifications require explicit confirmation (see [Chapter 05: Safety](../05-safety-and-hitl/README.md))
-- ✅ **Parameter validation:** Runtime validates CPU/RAM/disk correctness before execution
-- ✅ **Evals for critical operations:** Tests verify agent requests confirmation for VM creation/modification
-- ✅ **Logging:** All operations are logged for audit and debugging
-- ✅ **Monitoring:** Resource usage and cost of created VMs are tracked
+- **Confirmation for critical operations:** VM creation and resource modifications require explicit confirmation (see [Chapter 05: Safety](../05-safety-and-hitl/README.md))
+- **Parameter validation:** Runtime validates CPU/RAM/disk correctness before execution
+- **Evals for critical operations:** Tests verify agent requests confirmation for VM creation/modification
+- **Logging:** All operations are logged for audit and debugging
+- **Monitoring:** Resource usage and cost of created VMs are tracked
 
 **Result:** The agent takes over routine VM management operations, freeing engineers for more complex tasks. At the same time, critical operations (creation, resource modifications) require confirmation and go through runtime validation, ensuring safety and control.
 
 #### 2. Customer Support
 
 **What agents do well:**
-- ✅ Processing typical requests (FAQ, knowledge base)
-- ✅ Gathering problem information (software version, OS, browser)
-- ✅ Escalating complex cases
-- ✅ Generating responses based on knowledge base
+- [x] Processing typical requests (FAQ, knowledge base)
+- [x] Gathering problem information (software version, OS, browser)
+- [x] Escalating complex cases
+- [x] Generating responses based on knowledge base
 
 **Example tasks:**
 - "User can't log into system"
@@ -427,17 +427,17 @@ SOP for creating/modifying VMs:
 - "Gather information about ticket #12345"
 
 **Limitations:**
-- ❌ Emotional support (requires human empathy)
-- ❌ Complex technical problems (require expertise)
-- ❌ Legal questions
+- [ ] Emotional support (requires human empathy)
+- [ ] Complex technical problems (require expertise)
+- [ ] Legal questions
 
 #### 3. Data Analytics
 
 **What agents do well:**
-- ✅ Formulating SQL queries from natural language
-- ✅ Data quality checks
-- ✅ Report generation
-- ✅ Trend analysis
+- [x] Formulating SQL queries from natural language
+- [x] Data quality checks
+- [x] Report generation
+- [x] Trend analysis
 
 **Example tasks:**
 - "Show sales for last month by region"
@@ -445,17 +445,17 @@ SOP for creating/modifying VMs:
 - "Why did sales drop in region X?"
 
 **Limitations:**
-- ❌ Data modification (only read-only operations)
-- ❌ Complex statistical analysis (requires expertise)
-- ❌ Result interpretation (requires business context)
+- [ ] Data modification (only read-only operations)
+- [ ] Complex statistical analysis (requires expertise)
+- [ ] Result interpretation (requires business context)
 
 #### 4. Security (SOC)
 
 **What agents do well:**
-- ✅ Security alert triage
-- ✅ Evidence collection (logs, metrics, traffic)
-- ✅ Attack pattern analysis
-- ✅ Incident report generation
+- [x] Security alert triage
+- [x] Evidence collection (logs, metrics, traffic)
+- [x] Attack pattern analysis
+- [x] Incident report generation
 
 **Example tasks:**
 - "Triage alert about suspicious activity"
@@ -463,17 +463,17 @@ SOP for creating/modifying VMs:
 - "Check IP address reputation"
 
 **Limitations:**
-- ❌ Critical actions (host isolation) require confirmation
-- ❌ Complex investigations (require expertise)
-- ❌ Blocking decisions (require context)
+- [ ] Critical actions (host isolation) require confirmation
+- [ ] Complex investigations (require expertise)
+- [ ] Blocking decisions (require context)
 
 #### 5. Product Operations
 
 **What agents do well:**
-- ✅ Release plan preparation
-- ✅ Dependency checking
-- ✅ Documentation generation
-- ✅ Task coordination
+- [x] Release plan preparation
+- [x] Dependency checking
+- [x] Documentation generation
+- [x] Task coordination
 
 **Example tasks:**
 - "Prepare release plan for feature X"
@@ -481,20 +481,20 @@ SOP for creating/modifying VMs:
 - "Create release notes for version 2.0"
 
 **Limitations:**
-- ❌ Strategic decision making (requires business context)
-- ❌ Team management (requires human interaction)
+- [ ] Strategic decision making (requires business context)
+- [ ] Team management (requires human interaction)
 
 ### When NOT to Use Agents
 
 #### 1. Critical Operations Without Confirmation
 
-**❌ Bad:**
+**Bad:**
 ```go
 // Agent deletes production database without confirmation
 agent.Execute("Delete database prod")
 ```
 
-**✅ Good:**
+**Good:**
 ```go
 // Agent requests confirmation
 agent.Execute("Delete database prod")
@@ -591,24 +591,24 @@ logAgentRun(log)
 
 ## Completion Criteria / Checklist
 
-✅ **Completed (production ready):**
-- System prompt clearly defines responsibility boundaries
-- All tools have detailed descriptions
-- Input validation implemented
-- Loop protection implemented
-- Critical operations require confirmation
-- All actions are logged
-- Metrics monitoring configured (Pass Rate, Latency, Errors)
-- Basic eval suite created
-- Prompt A/B testing conducted
-- Known limitations documented
+**Completed (production ready):**
+- [x] System prompt clearly defines responsibility boundaries
+- [x] All tools have detailed descriptions
+- [x] Input validation implemented
+- [x] Loop protection implemented
+- [x] Critical operations require confirmation
+- [x] All actions are logged
+- [x] Metrics monitoring configured (Pass Rate, Latency, Errors)
+- [x] Basic eval suite created
+- [x] Prompt A/B testing conducted
+- [x] Known limitations documented
 
-❌ **Not completed:**
-- No input validation
-- No loop protection
-- No action logging
-- No metrics monitoring
-- No evals for quality checks
+**Not completed:**
+- [ ] No input validation
+- [ ] No loop protection
+- [ ] No action logging
+- [ ] No metrics monitoring
+- [ ] No evals for quality checks
 
 ## Connection with Other Chapters
 

@@ -364,7 +364,7 @@ func requestConfirmation(toolCall openai.ToolCall) bool {
     tool := getToolDefinition(toolCall.Function.Name)
     
     if tool.Risk == RiskHigh {
-        fmt.Printf("⚠️  WARNING: High-risk operation: %s\n", toolCall.Function.Name)
+        fmt.Printf("[WARN] High-risk operation: %s\n", toolCall.Function.Name)
         fmt.Printf("Type 'yes' to confirm: ")
         // ... запрос подтверждения ...
     }
@@ -455,7 +455,7 @@ func requestConfirmation(toolCall openai.ToolCall) bool {
         return true
     }
     
-    fmt.Printf("⚠️  WARNING: High-risk operation: %s\n", toolCall.Function.Name)
+    fmt.Printf("[WARN] High-risk operation: %s\n", toolCall.Function.Name)
     fmt.Printf("Type 'yes' to confirm: ")
     
     reader := bufio.NewReader(os.Stdin)
@@ -769,24 +769,24 @@ func executeToolSandboxed(toolName string, args map[string]any) (any, error) {
 
 ## Критерии сдачи / Чек-лист
 
-✅ **Сдано (готовность к прод):**
-- Реализован threat modeling и risk scoring для инструментов
-- Критичные действия требуют подтверждения
-- Реализована защита от prompt injection (валидация и санитизация)
-- Реализован RBAC для контроля доступа
-- Реализован sandboxing для опасных операций
-- Реализованы allowlists инструментов
-- Реализован policy-as-code (enforcement политик)
-- Все операции логируются для аудита
-- Реализован dry-run режим для тестирования
+**Сдано (готовность к прод):**
+- [x] Реализован threat modeling и risk scoring для инструментов
+- [x] Критичные действия требуют подтверждения
+- [x] Реализована защита от prompt injection (валидация и санитизация)
+- [x] Реализован RBAC для контроля доступа
+- [x] Реализован sandboxing для опасных операций
+- [x] Реализованы allowlists инструментов
+- [x] Реализован policy-as-code (enforcement политик)
+- [x] Все операции логируются для аудита
+- [x] Реализован dry-run режим для тестирования
 
-❌ **Не сдано:**
-- Нет оценки риска
-- Нет защиты от prompt injection
-- Нет RBAC
-- Нет sandboxing
-- Нет аудита
-- Нет allowlists
+**Не сдано:**
+- [ ] Нет оценки риска
+- [ ] Нет защиты от prompt injection
+- [ ] Нет RBAC
+- [ ] Нет sandboxing
+- [ ] Нет аудита
+- [ ] Нет allowlists
 
 ## Связь с другими главами
 

@@ -49,10 +49,10 @@ graph TD
 
 ## DevOps Example — Magic vs Reality
 
-**❌ Magic:**
+**Magic:**
 > Supervisor "thinks" and "delegates" tasks to specialists
 
-**✅ Reality:**
+**Reality:**
 
 ### How Multi-Agent Works in Practice
 
@@ -347,18 +347,18 @@ supervisorTools := []openai.Tool{
 
 ## Completion Criteria / Checklist
 
-✅ **Completed:**
-- Supervisor correctly delegates tasks to specialists
-- Workers operate in isolated context
-- Worker results are returned to Supervisor
-- Supervisor collects results and formulates final response
-- Tool descriptions for calling Workers are clear
+**Completed:**
+- [x] Supervisor correctly delegates tasks to specialists
+- [x] Workers operate in isolated context
+- [x] Worker results are returned to Supervisor
+- [x] Supervisor collects results and formulates final response
+- [x] Tool descriptions for calling Workers are clear
 
-❌ **Not completed:**
-- Worker receives entire Supervisor history (no isolation)
-- Supervisor doesn't know who to call (poor descriptions)
-- Worker doesn't return result to Supervisor
-- Supervisor doesn't collect results from Workers
+**Not completed:**
+- [ ] Worker receives entire Supervisor history (no isolation)
+- [ ] Supervisor doesn't know who to call (poor descriptions)
+- [ ] Worker doesn't return result to Supervisor
+- [ ] Supervisor doesn't collect results from Workers
 
 ## Production Notes
 

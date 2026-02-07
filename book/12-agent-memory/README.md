@@ -260,16 +260,16 @@ func (m *Memory) RetrieveSemantic(query string, limit int) ([]MemoryItem, error)
 
 ## Completion Criteria / Checklist
 
-✅ **Completed:**
-- Understand different memory types
-- Can store and retrieve information
-- Implement TTL and cleanup
-- Integrate memory with agent
+**Completed:**
+- [x] Understand different memory types
+- [x] Can store and retrieve information
+- [x] Implement TTL and cleanup
+- [x] Integrate memory with agent
 
-❌ **Not completed:**
-- No TTL, memory grows infinitely
-- Storing everything without filtering
-- Only simple keyword search
+**Not completed:**
+- [ ] No TTL, memory grows infinitely
+- [ ] Storing everything without filtering
+- [ ] Only simple keyword search
 
 ## Connection with Other Chapters
 

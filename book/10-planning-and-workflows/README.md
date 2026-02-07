@@ -400,18 +400,18 @@ func executePlanWithRetries(ctx context.Context, plan *Plan, executor StepExecut
 
 ## Completion Criteria / Checklist
 
-✅ **Completed:**
-- Can break complex tasks into steps
-- Understand dependency graphs
-- Can execute plans considering dependencies
-- Handle failures with retries
-- Persist plan state for resumption
+**Completed:**
+- [x] Can break complex tasks into steps
+- [x] Understand dependency graphs
+- [x] Can execute plans considering dependencies
+- [x] Handle failures with retries
+- [x] Persist plan state for resumption
 
-❌ **Not completed:**
-- Step execution without dependency checks
-- No state persistence
-- Infinite retries without limits
-- Sequential execution when parallel is possible
+**Not completed:**
+- [ ] Step execution without dependency checks
+- [ ] No state persistence
+- [ ] Infinite retries without limits
+- [ ] Sequential execution when parallel is possible
 
 ## Connection with Other Chapters
 

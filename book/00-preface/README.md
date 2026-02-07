@@ -39,10 +39,10 @@ Agent = Brain (LLM) + Tools (Hands) + Memory (Context) + Planning (Process)
 
 ### Components
 
-- **🧠 Brain (LLM):** The agent's "brain" that makes decisions based on context.
-- **🛠 Tools:** The agent's "hands" that enable interaction with the real world.
-- **📝 Memory:** Dialogue history and long-term memory (RAG).
-- **📋 Planning:** The ability to break tasks into steps.
+- **Brain (LLM):** The agent's "brain" that makes decisions based on context.
+- **Tools:** The agent's "hands" that enable interaction with the real world.
+- **Memory:** Dialogue history and long-term memory (RAG).
+- **Planning:** The ability to break tasks into steps.
 
 ### Runtime (Execution Environment)
 
@@ -153,4 +153,4 @@ export OPENAI_API_KEY="any-string" # Local models usually don't care about key
 After reading the preface, proceed to:
 - **[01. LLM Physics](../01-llm-fundamentals/README.md)** — the foundation for understanding everything else
 
-**Happy learning! 🚀**
+**Happy learning.**

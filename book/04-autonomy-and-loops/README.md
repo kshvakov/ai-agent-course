@@ -57,10 +57,10 @@ After executing a tool, **don't ask the user** what to do next. Instead, send th
 
 ### Magic vs Reality: How the Loop Works
 
-**❌ Magic (how it's usually explained):**
+**Magic (how it's usually explained):**
 > The agent decided to call `clean_logs()` after checking the disk
 
-**✅ Reality (how it actually works):**
+**Reality (how it actually works):**
 
 **Iteration 1: First Request**
 
@@ -391,18 +391,18 @@ fmt.Printf("[Iteration %d] Tool result: %s\n", i, result)
 
 ## Completion Criteria / Checklist
 
-✅ **Completed:**
-- Agent executes loop autonomously
-- Tool results are added to history
-- Agent stops when task is solved
-- Protection against loops (iteration limit + detection)
-- Tool errors are handled and added to history
+**Completed:**
+- [x] Agent executes loop autonomously
+- [x] Tool results are added to history
+- [x] Agent stops when task is solved
+- [x] Protection against loops (iteration limit + detection)
+- [x] Tool errors are handled and added to history
 
-❌ **Not completed:**
-- Agent doesn't continue loop after tool execution
-- Tool results are not visible to agent (not added to history)
-- Agent loops infinitely (no protection)
-- Agent doesn't stop when task is solved
+**Not completed:**
+- [ ] Agent doesn't continue loop after tool execution
+- [ ] Tool results are not visible to agent (not added to history)
+- [ ] Agent loops infinitely (no protection)
+- [ ] Agent doesn't stop when task is solved
 
 ## Connection with Other Chapters
 

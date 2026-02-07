@@ -63,7 +63,7 @@ messages := []ChatCompletionMessage{
 // System Prompt: 200 tokens
 // Dialogue history: 4000 tokens
 // New request: 100 tokens
-// TOTAL: 4300 tokens > 4000 ❌ ERROR!
+// TOTAL: 4300 tokens > 4000 [ERROR]
 ```
 
 **IMPORTANT:** Detailed context optimization techniques (summarization, fact selection, token budgets, selection policies) are described in [Chapter 13: Context Engineering](../13-context-engineering/README.md). Here, only the concept of short-term memory as an agent component is described.
@@ -433,16 +433,16 @@ Final plan: [A, B, C, ...] (based on most frequent elements)
 **Decomposition principles:**
 
 1. **Atomicity:** Each step should be executable with one action
-   - ❌ Bad: "Check and fix server"
-   - ✅ Good: "Check server status" → "Read logs" → "Apply fix"
+   - Bad: "Check and fix server"
+   - Good: "Check server status" → "Read logs" → "Apply fix"
 
 2. **Dependencies:** Steps should execute in correct order
-   - ❌ Bad: "Apply fix" → "Read logs"
-   - ✅ Good: "Read logs" → "Analyze" → "Apply fix"
+   - Bad: "Apply fix" → "Read logs"
+   - Good: "Read logs" → "Analyze" → "Apply fix"
 
 3. **Verifiability:** Each step should have clear success criterion
-   - ❌ Bad: "Improve performance"
-   - ✅ Good: "Reduce CPU from 95% to 50%"
+   - Bad: "Improve performance"
+   - Good: "Reduce CPU from 95% to 50%"
 
 **Decomposition example (Support):**
 
@@ -537,7 +537,7 @@ plan := []string{
 
 #### Error 1: Plan Too General
 
-❌ **Bad:**
+**Bad:**
 ```
 Plan:
 1. Figure out the problem
@@ -545,7 +545,7 @@ Plan:
 3. Check
 ```
 
-✅ **Good:**
+**Good:**
 ```
 Plan:
 1. Check HTTP status of service (check_http)
@@ -558,14 +558,14 @@ Plan:
 
 #### Error 2: Wrong Step Order
 
-❌ **Bad:**
+**Bad:**
 ```
 1. Apply fix
 2. Read logs
 3. Check status
 ```
 
-✅ **Good:**
+**Good:**
 ```
 1. Check status
 2. Read logs
@@ -574,14 +574,14 @@ Plan:
 
 #### Error 3: Skipping Important Steps
 
-❌ **Bad:**
+**Bad:**
 ```
 1. Read logs
 2. Apply fix
 (Verification step skipped!)
 ```
 
-✅ **Good:**
+**Good:**
 ```
 1. Read logs
 2. Apply fix
@@ -741,10 +741,10 @@ if tool, exists := registry.Get(toolCall.Function.Name); exists {
 ```
 
 **Registry advantages:**
-- ✅ Adding new tool — just implement interface and register
-- ✅ Tool code is isolated and easily testable
-- ✅ Runtime doesn't know about specific tools, works through interface
-- ✅ Easy to add validation, logging, metrics at Registry level
+- Adding new tool — just implement interface and register
+- Tool code is isolated and easily testable
+- Runtime doesn't know about specific tools, works through interface
+- Easy to add validation, logging, metrics at Registry level
 
 **Runtime example with Registry:**
 
@@ -932,22 +932,22 @@ func compressContext(messages []openai.ChatCompletionMessage, maxTokens int) []o
 
 ## Completion Criteria / Checklist
 
-✅ **Completed:**
-- Short-term memory (message history) is managed
-- Token counting and context monitoring implemented
-- Context optimization applied (summarization/prioritization)
-- Long-term memory (RAG) configured (if needed)
-- Planning (ReAct/Plan-and-Solve) implemented
-- Runtime correctly parses LLM responses
-- Runtime executes tools
-- Runtime manages loop
-- Protection against loops exists
+**Completed:**
+- [x] Short-term memory (message history) is managed
+- [x] Token counting and context monitoring implemented
+- [x] Context optimization applied (summarization/prioritization)
+- [x] Long-term memory (RAG) configured (if needed)
+- [x] Planning (ReAct/Plan-and-Solve) implemented
+- [x] Runtime correctly parses LLM responses
+- [x] Runtime executes tools
+- [x] Runtime manages loop
+- [x] Protection against loops exists
 
-❌ **Not completed:**
-- History overflows (no context optimization)
-- Agent loops (no iteration limit)
-- Tool results not added to history
-- No token usage monitoring
+**Not completed:**
+- [ ] History overflows (no context optimization)
+- [ ] Agent loops (no iteration limit)
+- [ ] Tool results not added to history
+- [ ] No token usage monitoring
 
 ## Connection with Other Chapters
 

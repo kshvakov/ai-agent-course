@@ -364,7 +364,7 @@ func requestConfirmation(toolCall openai.ToolCall) bool {
     tool := getToolDefinition(toolCall.Function.Name)
     
     if tool.Risk == RiskHigh {
-        fmt.Printf("⚠️  WARNING: High-risk operation: %s\n", toolCall.Function.Name)
+        fmt.Printf("[WARN] High-risk operation: %s\n", toolCall.Function.Name)
         fmt.Printf("Type 'yes' to confirm: ")
         // ... request confirmation ...
     }
@@ -455,7 +455,7 @@ func requestConfirmation(toolCall openai.ToolCall) bool {
         return true
     }
     
-    fmt.Printf("⚠️  WARNING: High-risk operation: %s\n", toolCall.Function.Name)
+    fmt.Printf("[WARN] High-risk operation: %s\n", toolCall.Function.Name)
     fmt.Printf("Type 'yes' to confirm: ")
     
     reader := bufio.NewReader(os.Stdin)
@@ -769,24 +769,24 @@ func executeToolSandboxed(toolName string, args map[string]any) (any, error) {
 
 ## Completion Criteria / Checklist
 
-✅ **Completed (production ready):**
-- Threat modeling and risk scoring implemented for tools
-- Critical actions require confirmation
-- Prompt injection protection implemented (validation and sanitization)
-- RBAC implemented for access control
-- Sandboxing implemented for dangerous operations
-- Tool allowlists implemented
-- Policy-as-code implemented (policy enforcement)
-- All operations logged for audit
-- Dry-run mode implemented for testing
+**Completed (production ready):**
+- [x] Threat modeling and risk scoring implemented for tools
+- [x] Critical actions require confirmation
+- [x] Prompt injection protection implemented (validation and sanitization)
+- [x] RBAC implemented for access control
+- [x] Sandboxing implemented for dangerous operations
+- [x] Tool allowlists implemented
+- [x] Policy-as-code implemented (policy enforcement)
+- [x] All operations logged for audit
+- [x] Dry-run mode implemented for testing
 
-❌ **Not completed:**
-- No risk assessment
-- No prompt injection protection
-- No RBAC
-- No sandboxing
-- No audit
-- No allowlists
+**Not completed:**
+- [ ] No risk assessment
+- [ ] No prompt injection protection
+- [ ] No RBAC
+- [ ] No sandboxing
+- [ ] No audit
+- [ ] No allowlists
 
 ## Connection with Other Chapters
 

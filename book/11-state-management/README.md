@@ -613,18 +613,18 @@ func executeTaskIfNotDone(taskID string) error {
 
 ## Completion Criteria / Checklist
 
-✅ **Completed (production ready):**
-- Operation idempotency implemented (repeated call doesn't create duplicates)
-- Retries with exponential backoff implemented
-- Deadlines set for agent run and individual operations
-- Task state persisted between restarts
-- Can resume task execution after failure
+**Completed (production ready):**
+- [x] Operation idempotency implemented (repeated call doesn't create duplicates)
+- [x] Retries with exponential backoff implemented
+- [x] Deadlines set for agent run and individual operations
+- [x] Task state persisted between restarts
+- [x] Can resume task execution after failure
 
-❌ **Not completed:**
-- No idempotency
-- No retry on errors
-- No deadlines
-- State not persisted
+**Not completed:**
+- [ ] No idempotency
+- [ ] No retry on errors
+- [ ] No deadlines
+- [ ] State not persisted
 
 ## Connection with Other Chapters
 

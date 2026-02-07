@@ -153,12 +153,12 @@ func main() {
 
 ## Completion Criteria / Checklist
 
-✅ **Completed:**
-- Evals integrated in CI/CD
-- Quality gates block deployment on degradation
+**Completed:**
+- [x] Evals integrated in CI/CD
+- [x] Quality gates block deployment on degradation
 
-❌ **Not completed:**
-- Evals not integrated in CI/CD
+**Not completed:**
+- [ ] Evals not integrated in CI/CD
 
 ## Connection with Other Chapters
 

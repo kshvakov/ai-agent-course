@@ -108,14 +108,14 @@ messages = append(messages, openai.ChatCompletionMessage{
 
 ## Completion Criteria / Checklist
 
-✅ **Completed:**
-- PII masked before sending to LLM
-- Secrets not logged
-- Logs go through redaction
+**Completed:**
+- [x] PII masked before sending to LLM
+- [x] Secrets not logged
+- [x] Logs go through redaction
 
-❌ **Not completed:**
-- PII not masked
-- Secrets logged
+**Not completed:**
+- [ ] PII not masked
+- [ ] Secrets logged
 
 ## Connection with Other Chapters
 

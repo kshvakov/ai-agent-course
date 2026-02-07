@@ -576,20 +576,20 @@ func setCachedResult(key string, result string, ttl time.Duration) {
 
 ## Completion Criteria / Checklist
 
-✅ **Completed (production ready):**
-- Token budgets implemented with check before each request
-- ReAct loop iteration limit set
-- Model routing by task complexity implemented
-- LLM result caching implemented
-- Timeouts set for LLM calls and agent run
-- Token usage tracked and warned when exceeded
+**Completed (production ready):**
+- [x] Token budgets implemented with check before each request
+- [x] ReAct loop iteration limit set
+- [x] Model routing by task complexity implemented
+- [x] LLM result caching implemented
+- [x] Timeouts set for LLM calls and agent run
+- [x] Token usage tracked and warned when exceeded
 
-❌ **Not completed:**
-- No token limits
-- No iteration limit
-- Always using most expensive model
-- No caching
-- No timeouts
+**Not completed:**
+- [ ] No token limits
+- [ ] No iteration limit
+- [ ] Always using most expensive model
+- [ ] No caching
+- [ ] No timeouts
 
 ## Connection with Other Chapters
 

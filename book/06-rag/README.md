@@ -27,10 +27,10 @@ Without RAG, an agent can't reliably use your documentation, protocols, and know
 
 ## How Does RAG Work? — Magic vs Reality
 
-**❌ Magic:**
+**Magic:**
 > Agent "knows" it needs to search the knowledge base and finds the needed information on its own
 
-**✅ Reality:**
+**Reality:**
 
 ### Complete RAG Protocol
 
@@ -780,23 +780,23 @@ func validatePipeline(pipeline Pipeline, allowedTools map[string]bool) error {
 
 ## Completion Criteria / Checklist
 
-✅ **Completed:**
-- Agent searches knowledge base before performing actions
-- Search queries are specific and contain keywords
-- Documents are split into appropriately sized chunks
-- Search tool has clear description
-- System Prompt instructs agent to use knowledge base
-- For large tool spaces, tool retrieval is used (only relevant tools in context)
-- Pipelines are validated before execution (risk level, allowlist)
-- Dangerous operations require confirmation
+**Completed:**
+- [x] Agent searches knowledge base before performing actions
+- [x] Search queries are specific and contain keywords
+- [x] Documents are split into appropriately sized chunks
+- [x] Search tool has clear description
+- [x] System Prompt instructs agent to use knowledge base
+- [x] For large tool spaces, tool retrieval is used (only relevant tools in context)
+- [x] Pipelines are validated before execution (risk level, allowlist)
+- [x] Dangerous operations require confirmation
 
-❌ **Not completed:**
-- Agent doesn't search knowledge base (uses only general knowledge)
-- Search queries are too general (doesn't find needed information)
-- Chunks are too large (don't fit in context)
-- All tools are passed to context without filtering (1000+ tools)
-- Universal `run_shell` is used without security controls
-- Pipelines execute without validation
+**Not completed:**
+- [ ] Agent doesn't search knowledge base (uses only general knowledge)
+- [ ] Search queries are too general (doesn't find needed information)
+- [ ] Chunks are too large (don't fit in context)
+- [ ] All tools are passed to context without filtering (1000+ tools)
+- [ ] Universal `run_shell` is used without security controls
+- [ ] Pipelines execute without validation
 
 ## Production Notes
 

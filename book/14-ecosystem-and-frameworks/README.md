@@ -33,19 +33,19 @@ Agent frameworks are libraries or platforms that provide the following:
 ### Custom Runtime vs Framework
 
 **Custom Runtime:**
-- ✅ Full control over every component
-- ✅ No vendor lock-in
-- ✅ Optimized for your specific use case
-- ❌ More code to write and maintain
-- ❌ Need to implement common patterns yourself
+- [x] Full control over every component
+- [x] No vendor lock-in
+- [x] Optimized for your specific use case
+- [ ] More code to write and maintain
+- [ ] Need to implement common patterns yourself
 
 **Framework:**
-- ✅ Fast development, proven patterns
-- ✅ Community support and examples
-- ✅ Handles edge cases you might miss
-- ❌ Less flexibility, harder to customize
-- ❌ Potential vendor lock-in
-- ❌ May include features you don't need
+- [x] Fast development, proven patterns
+- [x] Community support and examples
+- [x] Handles edge cases you might miss
+- [ ] Less flexibility, harder to customize
+- [ ] Potential vendor lock-in
+- [ ] May include features you don't need
 
 ## How to Choose?
 
@@ -437,17 +437,17 @@ Fill the matrix based on your specific requirements.
 
 ## Completion Criteria / Checklist
 
-✅ **Completed:**
-- Understand when to use frameworks vs custom runtime
-- Know how to avoid vendor lock-in through interfaces
-- Can evaluate frameworks against your requirements
-- Understand common patterns in frameworks
+**Completed:**
+- [x] Understand when to use frameworks vs custom runtime
+- [x] Know how to avoid vendor lock-in through interfaces
+- [x] Can evaluate frameworks against your requirements
+- [x] Understand common patterns in frameworks
 
-❌ **Not completed:**
-- Choosing framework without evaluating requirements
-- Tight coupling to framework API
-- No migration path if framework doesn't fit
-- Ignoring framework limitations
+**Not completed:**
+- [ ] Choosing framework without evaluating requirements
+- [ ] Tight coupling to framework API
+- [ ] No migration path if framework doesn't fit
+- [ ] Ignoring framework limitations
 
 ## Connection with Other Chapters
 

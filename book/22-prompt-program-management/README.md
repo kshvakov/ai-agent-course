@@ -125,14 +125,14 @@ func getSystemPrompt() string {
 
 ## Completion Criteria / Checklist
 
-✅ **Completed:**
-- Prompts are versioned
-- Evals check each version
-- Rollback on metric degradation
+**Completed:**
+- [x] Prompts are versioned
+- [x] Evals check each version
+- [x] Rollback on metric degradation
 
-❌ **Not completed:**
-- Prompts not versioned
-- No evals to check
+**Not completed:**
+- [ ] Prompts not versioned
+- [ ] No evals to check
 
 ## Connection with Other Chapters
 

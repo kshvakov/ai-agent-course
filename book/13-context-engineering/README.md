@@ -286,16 +286,16 @@ func summarizeConversation(messages []openai.ChatCompletionMessage) (string, err
 
 ## Completion Criteria / Checklist
 
-✅ **Completed:**
-- Understand context layers
-- Can summarize conversations
-- Extract and store facts
-- Manage context within token limits
+**Completed:**
+- [x] Understand context layers
+- [x] Can summarize conversations
+- [x] Extract and store facts
+- [x] Manage context within token limits
 
-❌ **Not completed:**
-- No summarization, context grows infinitely
-- Too aggressive summarization, facts lost
-- No fact selection, token waste
+**Not completed:**
+- [ ] No summarization, context grows infinitely
+- [ ] Too aggressive summarization, facts lost
+- [ ] No fact selection, token waste
 
 ## Connection with Other Chapters
 

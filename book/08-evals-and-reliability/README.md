@@ -102,10 +102,10 @@ func runAllEvals(ctx context.Context, client *openai.Client, tests []EvalTest) {
     passed := 0
     for _, test := range tests {
         if runEval(ctx, client, test) {
-            fmt.Printf("✅ %s: PASSED\n", test.Name)
+            fmt.Printf("[PASS] %s\n", test.Name)
             passed++
         } else {
-            fmt.Printf("❌ %s: FAILED\n", test.Name)
+            fmt.Printf("[FAIL] %s\n", test.Name)
         }
     }
     
@@ -328,7 +328,7 @@ systemPrompt = newSystemPrompt
 
 // After change
 newMetrics := runEvals(ctx, client, tests)
-// Pass Rate: 87% ❌ Regression!
+// Pass Rate: 87% [REGRESSION]
 
 // Rollback changes or improve prompt
 ```
@@ -395,7 +395,7 @@ saveMetrics("baseline.json", baselineMetrics)
 // After change, compare
 newMetrics := runEvals(tests)
 if newMetrics.PassRate < baselineMetrics.PassRate {
-    fmt.Println("⚠️ Regression detected!")
+    fmt.Println("[WARN] Regression detected!")
 }
 ```
 
@@ -464,21 +464,21 @@ func compareMetrics(baseline, current EvalMetrics) bool {
 
 ## Completion Criteria / Checklist
 
-✅ **Completed:**
-- Test suite covers main usage scenarios
-- Safety evals included for critical actions
-- Bias/robustness evals included (tests on robustness to hints)
-- Metrics tracked (Pass Rate, Latency, Token Usage)
-- Evals run automatically on changes
-- Baseline metrics exist for comparison
-- Regressions are fixed
+**Completed:**
+- [x] Test suite covers main usage scenarios
+- [x] Safety evals included for critical actions
+- [x] Bias/robustness evals included (tests on robustness to hints)
+- [x] Metrics tracked (Pass Rate, Latency, Token Usage)
+- [x] Evals run automatically on changes
+- [x] Baseline metrics exist for comparison
+- [x] Regressions are fixed
 
-❌ **Not completed:**
-- No evals for critical scenarios
-- No bias/robustness evals (agent succumbs to hints but this isn't detected)
-- Evals run manually (not automatically)
-- No baseline metrics for comparison
-- Regressions not fixed
+**Not completed:**
+- [ ] No evals for critical scenarios
+- [ ] No bias/robustness evals (agent succumbs to hints but this isn't detected)
+- [ ] Evals run manually (not automatically)
+- [ ] No baseline metrics for comparison
+- [ ] Regressions not fixed
 
 ## Connection with Other Chapters
 

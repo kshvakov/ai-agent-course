@@ -623,21 +623,21 @@ func (m *Metrics) RecordRun(tokens int, latency time.Duration, err error) {
 
 ## Completion Criteria / Checklist
 
-✅ **Completed (production ready):**
-- Structured logging implemented (JSON format)
-- Each agent run has unique `run_id`
-- All stages logged: input request → tool selection → execution → result
-- Tokens and latency logged for each request
-- Tool calls logged with `run_id` for correlation
-- Errors logged with context
-- Metrics tracked (latency, token usage, error rate)
+**Completed (production ready):**
+- [x] Structured logging implemented (JSON format)
+- [x] Each agent run has unique `run_id`
+- [x] All stages logged: input request → tool selection → execution → result
+- [x] Tokens and latency logged for each request
+- [x] Tool calls logged with `run_id` for correlation
+- [x] Errors logged with context
+- [x] Metrics tracked (latency, token usage, error rate)
 
-❌ **Not completed:**
-- Logs in plain text without structure
-- No `run_id` for log correlation
-- Tokens and latency not logged
-- Errors not logged
-- No metrics
+**Not completed:**
+- [ ] Logs in plain text without structure
+- [ ] No `run_id` for log correlation
+- [ ] Tokens and latency not logged
+- [ ] Errors not logged
+- [ ] No metrics
 
 ## Connection with Other Chapters
 

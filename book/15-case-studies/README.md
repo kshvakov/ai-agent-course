@@ -425,16 +425,16 @@ tools := []openai.Tool{
 
 ## Completion Criteria / Checklist
 
-✅ **Completed:**
-- Understand common patterns for creating agents
-- Can create System Prompt for your domain
-- Can define tool set for agent
-- Understand how to apply SOP, CoT, Safety checks
+**Completed:**
+- [x] Understand common patterns for creating agents
+- [x] Can create System Prompt for your domain
+- [x] Can define tool set for agent
+- [x] Understand how to apply SOP, CoT, Safety checks
 
-❌ **Not completed:**
-- Don't understand how to put all components together
-- System Prompt doesn't contain all necessary components
-- Tools don't cover main tasks
+**Not completed:**
+- [ ] Don't understand how to put all components together
+- [ ] System Prompt doesn't contain all necessary components
+- [ ] Tools don't cover main tasks
 
 ## Connection with Other Chapters
 

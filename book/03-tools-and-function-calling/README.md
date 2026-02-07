@@ -141,9 +141,9 @@ userInput := "Check availability of google.com"
    - `traceroute`: "Trace network path... Use this when user asks about routing"
 
 2. The model matches the request "Check availability of google.com" with descriptions:
-   - ✅ `ping` — description contains "connectivity" and "reachability" → **chooses this one**
-   - ❌ `check_http` — about HTTP status, not network availability
-   - ❌ `traceroute` — about routing, not availability check
+   - [x] `ping` — description contains "connectivity" and "reachability" → **chooses this one**
+   - [ ] `check_http` — about HTTP status, not network availability
+   - [ ] `traceroute` — about routing, not availability check
 
 3. The model returns a tool call for `ping`:
    ```json
@@ -158,7 +158,7 @@ userInput := "Check if the site google.com responds"
 // The model receives the same 3 tools
 // Matches:
 // - ping: about network availability → not quite right
-// - check_http: "Use this when user asks about website availability" → ✅ CHOOSES THIS
+// - check_http: "Use this when user asks about website availability" → CHOOSES THIS
 // - traceroute: about routing → doesn't fit
 
 // The model returns:
@@ -950,20 +950,20 @@ func validateToolCall(call openai.ToolCall) error {
 
 ## Completion Criteria / Checklist
 
-✅ **Completed:**
-- `Description` is specific and clear (contains keywords)
-- JSON Schema is correct
-- Required fields are specified in `required`
-- Argument validation is implemented
-- Errors are handled and returned to the agent
-- Critical tools require confirmation
-- Model successfully generates tool_call
+**Completed:**
+- [x] `Description` is specific and clear (contains keywords)
+- [x] JSON Schema is correct
+- [x] Required fields are specified in `required`
+- [x] Argument validation is implemented
+- [x] Errors are handled and returned to the agent
+- [x] Critical tools require confirmation
+- [x] Model successfully generates tool_call
 
-❌ **Not completed:**
-- Model doesn't generate tool_call (poor description or unsuitable model)
-- JSON in arguments is broken (no validation)
-- Model calls a non-existent tool (no name validation)
-- `Description` is too general (model cannot select the right tool)
+**Not completed:**
+- [ ] Model doesn't generate tool_call (poor description or unsuitable model)
+- [ ] JSON in arguments is broken (no validation)
+- [ ] Model calls a non-existent tool (no name validation)
+- [ ] `Description` is too general (model cannot select the right tool)
 
 ## Connection with Other Chapters
 

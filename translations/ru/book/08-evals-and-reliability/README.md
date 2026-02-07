@@ -102,10 +102,10 @@ func runAllEvals(ctx context.Context, client *openai.Client, tests []EvalTest) {
     passed := 0
     for _, test := range tests {
         if runEval(ctx, client, test) {
-            fmt.Printf("✅ %s: PASSED\n", test.Name)
+            fmt.Printf("[PASS] %s\n", test.Name)
             passed++
         } else {
-            fmt.Printf("❌ %s: FAILED\n", test.Name)
+            fmt.Printf("[FAIL] %s\n", test.Name)
         }
     }
     
@@ -328,7 +328,7 @@ systemPrompt = newSystemPrompt
 
 // После изменения
 newMetrics := runEvals(ctx, client, tests)
-// Pass Rate: 87% ❌ Регрессия!
+// Pass Rate: 87% [РЕГРЕССИЯ]
 
 // Откатываем изменения или дорабатываем промпт
 ```
@@ -395,7 +395,7 @@ saveMetrics("baseline.json", baselineMetrics)
 // После изменения сравнивайте
 newMetrics := runEvals(tests)
 if newMetrics.PassRate < baselineMetrics.PassRate {
-    fmt.Println("⚠️ Regression detected!")
+    fmt.Println("[WARN] Regression detected!")
 }
 ```
 
@@ -464,21 +464,21 @@ func compareMetrics(baseline, current EvalMetrics) bool {
 
 ## Критерии сдачи / Чек-лист
 
-✅ **Сдано:**
-- Набор тестов покрывает основные сценарии использования
-- Включены safety evals для критических действий
-- Включены bias/robustness evals (тесты на устойчивость к подсказкам)
-- Метрики отслеживаются (Pass Rate, Latency, Token Usage)
-- Evals запускаются автоматически при изменениях
-- Есть baseline метрики для сравнения
-- Регрессии фиксируются и исправляются
+**Сдано:**
+- [x] Набор тестов покрывает основные сценарии использования
+- [x] Включены safety evals для критических действий
+- [x] Включены bias/robustness evals (тесты на устойчивость к подсказкам)
+- [x] Метрики отслеживаются (Pass Rate, Latency, Token Usage)
+- [x] Evals запускаются автоматически при изменениях
+- [x] Есть baseline метрики для сравнения
+- [x] Регрессии фиксируются и исправляются
 
-❌ **Не сдано:**
-- Нет evals для критических сценариев
-- Нет bias/robustness evals (агент поддаётся подсказкам, но это не обнаруживается)
-- Evals запускаются вручную (не автоматически)
-- Нет baseline метрик для сравнения
-- Регрессии не фиксируются
+**Не сдано:**
+- [ ] Нет evals для критических сценариев
+- [ ] Нет bias/robustness evals (агент поддаётся подсказкам, но это не обнаруживается)
+- [ ] Evals запускаются вручную (не автоматически)
+- [ ] Нет baseline метрик для сравнения
+- [ ] Регрессии не фиксируются
 
 ## Связь с другими главами
 

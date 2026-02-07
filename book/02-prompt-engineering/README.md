@@ -228,7 +228,7 @@ messages := []openai.ChatCompletionMessage{
 
 ### Anti-Example: Inconsistent Few-Shot Examples
 
-❌ **Bad:** Examples in different formats
+**Bad:** Examples in different formats
 
 ```text
 Example 1:
@@ -246,7 +246,7 @@ Assistant: check_status("web-01")  // Another format!
 
 **Problem:** The model receives three different formats and doesn't understand which to use. The result is unpredictable.
 
-✅ **Good:** All examples in one format
+**Good:** All examples in one format
 
 ```text
 Example 1:
@@ -517,8 +517,8 @@ See detailed protocol: **[Chapter 03: Tools and Function Calling](../03-tools-an
 
 ### When Is CoT Needed?
 
-❌ **Bad:** "Fix server" (one step)  
-✅ **Good:** "Analyze situation, form hypothesis, check it, propose solution" (chain)
+**Bad:** "Fix server" (one step)  
+**Good:** "Analyze situation, form hypothesis, check it, propose solution" (chain)
 
 **CoT is needed for:**
 - Complex tasks requiring analysis
@@ -853,31 +853,31 @@ Few-shot and CoT can inadvertently "hint" at the desired conclusion. Here's a ch
 
 ### Checklist: Neutral Formulations
 
-✅ **Good:**
+**Good:**
 - Use neutral request formulations
 - Separate facts from user preferences
 - Don't include assumptions as facts in context
 
-❌ **Bad:**
+**Bad:**
 - "I think the correct answer is A, check it"
 - "User thinks X, use this as fact"
 - "Most likely problem is Y, check only Y"
 
 ### Checklist: Diverse Few-Shot Examples
 
-✅ **Good:**
+**Good:**
 - Shuffle positions of correct answers (A, B, C, D)
 - Include diverse task types
 - Add counterexamples (incorrect answers with explanation)
 
-❌ **Bad:**
+**Bad:**
 - All correct answers in position "A"
 - All examples of one type
 - Only positive examples
 
 ### Checklist: Separating Preferences and Facts
 
-✅ **Good:**
+**Good:**
 ```text
 Facts (include in context):
 - Logs show error 500
@@ -888,7 +888,7 @@ Preferences/hypotheses (separate, not as facts):
 - Hypothesis: problem is in network
 ```
 
-❌ **Bad:**
+**Bad:**
 ```text
 Facts:
 - Problem is in database (this is an assumption, not a fact!)
@@ -897,19 +897,19 @@ Facts:
 
 ### Checklist: Verification Through Tools
 
-✅ **Good:**
+**Good:**
 - Verify answers through tools (read_logs, check_status)
 - Use evals to check robustness to hints
 - Don't rely only on CoT as proof
 
-❌ **Bad:**
+**Bad:**
 - Accept model answer only because CoT looks logical
 - Don't verify answers with tools
 - No evals on robustness to anchoring
 
 ### Example: Anti-Prompt and Fixed Version
 
-**❌ Bad (hints at answer):**
+**Bad (hints at answer):**
 ```text
 You are a DevOps engineer. User thinks the problem is in the database.
 Check logs and confirm that the problem is in the DB.
@@ -920,7 +920,7 @@ Check logs and confirm that the problem is in the DB.
 - Hints at desired conclusion ("confirm that problem is in DB")
 - Model may agree even if problem isn't in DB
 
-**✅ Good (neutral):**
+**Good (neutral):**
 ```text
 You are a DevOps engineer. User reported a problem.
 Check logs, metrics, and all possible causes. 
@@ -934,29 +934,29 @@ Analyze data objectively, don't limit yourself to assumptions.
 
 ## Completion Criteria / Checklist
 
-✅ **Completed:**
-- Role (Persona) clearly defined
-- Goal is specific and measurable
-- Constraints explicitly stated
-- Response format (Format) described
-- SOP (if applicable) detailed
-- CoT included for complex tasks
-- Few-Shot examples added (if complex format needed)
-- Few-Shot examples consistent (one format)
-- Few-Shot examples diverse (no positional bias)
-- Prompt doesn't hint at desired answer (neutral formulations)
-- User preferences separated from facts
-- Answers verified through tools and evals, not only through CoT
+**Completed:**
+- [x] Role (Persona) clearly defined
+- [x] Goal is specific and measurable
+- [x] Constraints explicitly stated
+- [x] Response format (Format) described
+- [x] SOP (if applicable) detailed
+- [x] CoT included for complex tasks
+- [x] Few-Shot examples added (if complex format needed)
+- [x] Few-Shot examples consistent (one format)
+- [x] Few-Shot examples diverse (no positional bias)
+- [x] Prompt doesn't hint at desired answer (neutral formulations)
+- [x] User preferences separated from facts
+- [x] Answers verified through tools and evals, not only through CoT
 
-❌ **Not completed:**
-- Prompt too generic (no specific role and goal)
-- Missing CoT for complex tasks
-- No constraints on dangerous actions
-- Few-Shot examples in different formats
-- Few-Shot examples have positional bias (all answers in position "A")
-- Prompt hints at desired answer ("confirm that X")
-- User preferences included as facts
-- Blind trust in CoT without verification through tools
+**Not completed:**
+- [ ] Prompt too generic (no specific role and goal)
+- [ ] Missing CoT for complex tasks
+- [ ] No constraints on dangerous actions
+- [ ] Few-Shot examples in different formats
+- [ ] Few-Shot examples have positional bias (all answers in position "A")
+- [ ] Prompt hints at desired answer ("confirm that X")
+- [ ] User preferences included as facts
+- [ ] Blind trust in CoT without verification through tools
 
 ## Mini-Exercises
 

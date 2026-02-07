@@ -9,7 +9,7 @@ For programmers who want to build production AI agents
 
 ---
 
-## 📚 Table of Contents
+## Table of contents
 
 ### Part I: Fundamentals
 
@@ -61,7 +61,7 @@ For programmers who want to build production AI agents
 
 ---
 
-## 🗺️ Reading Path
+## Reading path
 
 ### For Beginners (recommended path — practice-first)
 
@@ -163,7 +163,7 @@ After studying chapters 1-16, proceed to:
 
 ---
 
-## 🔗 Connection with Laboratory Assignments
+## Connection with laboratory assignments
 
 | Handbook Chapter | Corresponding Laboratory Assignments |
 |----------------|-------------------------------------|
@@ -186,7 +186,7 @@ After studying chapters 1-16, proceed to:
 
 ---
 
-## 📖 How to Use This Handbook
+## How to use this handbook
 
 1. **Read sequentially** — each chapter builds on previous ones
 2. **Practice alongside reading** — complete the corresponding laboratory assignment after each chapter
@@ -197,4 +197,4 @@ After studying chapters 1-16, proceed to:
 
 ---
 
-**Happy Learning! 🚀**
+**Happy learning.**

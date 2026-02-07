@@ -276,16 +276,16 @@ func main() {
 
 ## Completion Criteria / Checklist
 
-✅ **Completed:**
-- Understand tool server architecture
-- Can implement stdio protocol
-- Can implement HTTP protocol
-- Understand advantages of gRPC for production tool servers
-- Understand schema versioning
+**Completed:**
+- [x] Understand tool server architecture
+- [x] Can implement stdio protocol
+- [x] Can implement HTTP protocol
+- [x] Understand advantages of gRPC for production tool servers
+- [x] Understand schema versioning
 
-❌ **Not completed:**
-- No versioning, updates break compatibility
-- No authentication, security risk
+**Not completed:**
+- [ ] No versioning, updates break compatibility
+- [ ] No authentication, security risk
 
 ## Connection with Other Chapters
 

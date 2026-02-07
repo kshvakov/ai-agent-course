@@ -33,11 +33,11 @@ $$P(x_{t+1} | x_1, ..., x_t)$$
 
 #### Example 1: DevOps — Magic vs Reality
 
-**❌ Magic (as usually explained):**
+**Magic (as usually explained):**
 > Prompt: `"Check server status"`  
 > Model processes context and predicts: "I will call the `check_status` tool" (probability 0.85)
 
-**✅ Reality (how it actually works):**
+**Reality (how it actually works):**
 
 **1. What gets sent to the model:**
 
@@ -143,9 +143,9 @@ The model receives **all three tools** and their `Description`:
 User request: "Check server status"
 
 The model matches the request with descriptions:
-- ✅ `check_status` — description contains "server status" → **selects this**
-- ❌ `read_logs` — description is about logs, not status
-- ❌ `restart_service` — description is about restart, not checking
+- [x] `check_status` — description contains "server status" → **selects this**
+- [ ] `read_logs` — description is about logs, not status
+- [ ] `restart_service` — description is about restart, not checking
 
 **Example with a different request:**
 
@@ -155,7 +155,7 @@ userInput := "Show the latest errors in nginx logs"
 // Model sees the same 3 tools
 // Matches:
 // - check_status: about status, not logs → doesn't fit
-// - read_logs: "Use this when user asks about logs" → ✅ SELECTS THIS
+// - read_logs: "Use this when user asks about logs" → SELECTS THIS
 // - restart_service: about restart → doesn't fit
 
 // Model returns:
@@ -199,11 +199,11 @@ Numbers like "probability 0.85" are **illustrations** for understanding. OpenAI/
 
 #### Example 2: Support — Magic vs Reality
 
-**❌ Magic:**
+**Magic:**
 > Prompt: `"User reports error 500"`  
 > Model predicts: "First I'll gather context via `get_ticket_details`" (probability 0.9)
 
-**✅ Reality:**
+**Reality:**
 
 **What gets sent:**
 
@@ -299,15 +299,15 @@ messages := []openai.ChatCompletionMessage{
 **How did the model choose `get_ticket_details`?**
 
 The model saw **4 tools**:
-- `get_ticket_details`: "Use this FIRST when user reports an error" ✅
-- `check_account_status`: "Use this when user asks about account status" ❌
-- `search_kb`: "Use this after gathering ticket details" ❌ (too early)
-- `draft_reply`: "Use this when you have a solution" ❌ (no solution yet)
+- [x] `get_ticket_details`: "Use this FIRST when user reports an error"
+- [ ] `check_account_status`: "Use this when user asks about account status"
+- [ ] `search_kb`: "Use this after gathering ticket details" (too early)
+- [ ] `draft_reply`: "Use this when you have a solution" (no solution yet)
 
 Request: "User reports error 500"
 
 The model matched:
-- ✅ `get_ticket_details` — description says "FIRST when user reports an error" → **selects this**
+- [x] `get_ticket_details` — description says "FIRST when user reports an error" → **selects this**
 - Others don't fit the context
 
 **Example of sequential tool selection:**
@@ -339,11 +339,11 @@ userInput := "User reports error 500"
 
 #### Example 3: Data Analytics — Magic vs Reality
 
-**❌ Magic:**
+**Magic:**
 > Prompt: `"Show sales for the last month"`  
 > Model predicts: "I'll formulate SQL query via `sql_select`" (probability 0.95)
 
-**✅ Reality:**
+**Reality:**
 
 **What gets sent:**
 
@@ -418,14 +418,14 @@ tools := []openai.Tool{
 **How did the model choose `sql_select`?**
 
 The model saw **3 tools**:
-- `describe_table`: "Use this FIRST when user asks about data structure" ❌ (user is not asking about structure)
-- `sql_select`: "Use this when user asks for specific data or reports" ✅
-- `check_data_quality`: "Use this when user asks about data quality" ❌ (not about quality)
+- [ ] `describe_table`: "Use this FIRST when user asks about data structure" (user is not asking about structure)
+- [x] `sql_select`: "Use this when user asks for specific data or reports"
+- [ ] `check_data_quality`: "Use this when user asks about data quality" (not about quality)
 
 Request: "Show sales for the last month"
 
 The model matched:
-- ✅ `sql_select` — description says "when user asks for specific data" → **selects this**
+- [x] `sql_select` — description says "when user asks for specific data" → **selects this**
 - Others don't fit
 
 **Example with a different request:**
@@ -435,7 +435,7 @@ userInput := "What fields are in the sales table?"
 
 // Model sees the same 3 tools
 // Matches:
-// - describe_table: "Use this FIRST when user asks about data structure" → ✅ SELECTS THIS
+// - describe_table: "Use this FIRST when user asks about data structure" → SELECTS THIS
 // - sql_select: about executing queries → doesn't fit
 // - check_data_quality: about data quality → doesn't fit
 
@@ -608,8 +608,8 @@ Not all models are equally good for agents.
 ### Selection Criteria
 
 1. **Function Calling Support:** The model must be able to generate structured tool calls.
-   - ✅ Good: Models fine-tuned on function calling (e.g., `Hermes-2-Pro`, `Llama-3-Instruct`, `Mistral-7B-Instruct` at time of writing)
-   - ❌ Bad: Base models without fine-tuning on tools
+   - [x] Good: Models fine-tuned on function calling (e.g., `Hermes-2-Pro`, `Llama-3-Instruct`, `Mistral-7B-Instruct` at time of writing)
+   - [ ] Bad: Base models without fine-tuning on tools
    
    > **Note:** Specific models may change. It's important to verify function calling support through capability benchmark (see [Appendix: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization)).
 
@@ -698,9 +698,9 @@ compressed = append(compressed, recentMessages...)
 
 **Why is summarization better than trimming?**
 
-- ✅ **Preserves important information:** User name, task context, decisions made
-- ✅ **Saves tokens:** Compresses 2000 tokens to 200, preserving essence
-- ✅ **Agent remembers start:** Can answer questions about early messages
+- **Preserves important information:** User name, task context, decisions made
+- **Saves tokens:** Compresses 2000 tokens to 200, preserving essence
+- **Agent remembers start:** Can answer questions about early messages
 
 **Example:**
 ```
@@ -710,10 +710,10 @@ Original history (2000 tokens):
 - User: "We have a server problem"
 - Assistant: "Describe the problem"
 ... (50 more messages)
-
-After trimming: We lose name and context ❌
-After summarization: "User Ivan, DevOps engineer. Discussed server problem. Current task: diagnostics." ✅
 ```
+ 
+- [ ] After trimming: We lose name and context
+- [x] After summarization: "User Ivan, DevOps engineer. Discussed server problem. Current task: diagnostics."
 
 **When to use:**
 - **Trimming:** Quick one-time tasks, history not important
@@ -768,18 +768,18 @@ If you don't know something, say "I don't know" or use a tool.`
 
 ## Completion Criteria / Checklist
 
-✅ **Completed:**
-- Understand that LLM predicts tokens, not "thinks"
-- Know how to set `Temperature = 0` for deterministic behavior
-- Understand context window limitations
-- Know how to manage conversation history (summarization or trimming)
-- Model supports Function Calling (verified via Lab 00)
-- System Prompt forbids hallucinations
+**Completed:**
+- [x] Understand that LLM predicts tokens, not "thinks"
+- [x] Know how to set `Temperature = 0` for deterministic behavior
+- [x] Understand context window limitations
+- [x] Know how to manage conversation history (summarization or trimming)
+- [x] Model supports Function Calling (verified via Lab 00)
+- [x] System Prompt forbids hallucinations
 
-❌ **Not completed:**
-- Model behaves non-deterministically (`Temperature > 0`)
-- Agent "forgets" conversation start (context overflow)
-- Model invents facts (no grounding via Tools/RAG)
+**Not completed:**
+- [ ] Model behaves non-deterministically (`Temperature > 0`)
+- [ ] Agent "forgets" conversation start (context overflow)
+- [ ] Model invents facts (no grounding via Tools/RAG)
 
 ## Mini-Exercises
 

@@ -243,13 +243,13 @@ For agents that must output strict JSON or function calls, maximum determinism i
 
 ### How to Interpret Results?
 
-#### ✅ All Tests Passed
+#### All tests passed
 Model is ready for the course. Can continue work.
 
-#### ⚠️ 3 out of 4 Tests Passed
+#### Warning: 3 out of 4 tests passed
 Can continue, but with caution. Problems possible in edge cases.
 
-#### ❌ Function Calling Failed
+#### Function calling failed
 **Critical:** Model is not suitable for Lab 02-08. Need different model.
 
 **What to do:**
@@ -260,7 +260,7 @@ Can continue, but with caution. Problems possible in edge cases.
    - `Gorilla OpenFunctions`
 2. Restart tests
 
-#### ❌ JSON Generation Failed
+#### JSON generation failed
 Model generates broken JSON (missing brackets, quotes).
 
 **What to do:**
