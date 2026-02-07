@@ -78,3 +78,90 @@ body {
   color: inherit;
 }
 
+/* --- Footer links hover/focus (Dark mode) --- */
+body[data-md-color-scheme="slate"] .md-footer a:link,
+body[data-md-color-scheme="slate"] .md-footer a:visited {
+  color: inherit;
+}
+
+body[data-md-color-scheme="slate"] .md-footer a:hover,
+body[data-md-color-scheme="slate"] .md-footer a:focus {
+  color: #ffffff;
+}
+
+/* --- Content links (Dark mode) --- */
+/*
+  In dark mode, default link color can look too saturated (e.g. bright blue).
+  Keep the change scoped to the content area and to the dark scheme only.
+*/
+/*
+  Material sets `--md-typeset-a-color` in palette CSS with selectors like:
+  `[data-md-color-scheme=slate][data-md-color-primary=indigo] { ... }`
+  Use a more specific selector to reliably override it.
+*/
+body[data-md-color-scheme="slate"][data-md-color-primary] {
+  /* Material uses this variable for links in typeset content */
+  --md-accent-fg-color: #e6edf3;
+  --md-accent-fg-color--transparent: rgba(230, 237, 243, 0.10);
+  --md-typeset-a-color: #e6edf3;
+}
+
+body[data-md-color-scheme="slate"] .md-typeset a:link,
+body[data-md-color-scheme="slate"] .md-typeset a:visited {
+  color: var(--md-typeset-a-color);
+}
+
+body[data-md-color-scheme="slate"] .md-typeset a:hover,
+body[data-md-color-scheme="slate"] .md-typeset a:focus {
+  color: #ffffff;
+}
+
+/* --- Header permalinks (¶) in headings (Dark mode) --- */
+body[data-md-color-scheme="slate"] .md-typeset a.headerlink {
+  color: #e6edf3 !important;
+}
+
+body[data-md-color-scheme="slate"] .md-typeset a.headerlink:hover,
+body[data-md-color-scheme="slate"] .md-typeset a.headerlink:focus {
+  color: #ffffff !important;
+}
+
+/* --- Navigation + Table of contents links (Dark mode) --- */
+/*
+  The left navigation and the right TOC often use the theme accent color
+  for active/hover states, which can look too bright in dark mode.
+*/
+body[data-md-color-scheme="slate"] .md-nav__link:hover,
+body[data-md-color-scheme="slate"] .md-nav__link:focus,
+body[data-md-color-scheme="slate"] .md-nav__link--active,
+body[data-md-color-scheme="slate"] .md-nav__link[aria-current] {
+  color: #e6edf3 !important;
+}
+
+/* --- Mermaid diagrams (Dark mode) --- */
+/*
+  Mermaid renders as SVG. In dark mode, raise contrast for text/lines/arrows.
+  Keep overrides scoped to content and to the dark scheme only.
+*/
+body[data-md-color-scheme="slate"] .md-typeset .mermaid svg text {
+  fill: #e6edf3 !important;
+}
+
+body[data-md-color-scheme="slate"] .md-typeset .mermaid svg path,
+body[data-md-color-scheme="slate"] .md-typeset .mermaid svg line {
+  stroke: #e6edf3 !important;
+}
+
+body[data-md-color-scheme="slate"] .md-typeset .mermaid svg marker path {
+  fill: #e6edf3 !important;
+  stroke: #e6edf3 !important;
+}
+
+body[data-md-color-scheme="slate"] .md-typeset .mermaid svg .node rect,
+body[data-md-color-scheme="slate"] .md-typeset .mermaid svg .node circle,
+body[data-md-color-scheme="slate"] .md-typeset .mermaid svg .node ellipse,
+body[data-md-color-scheme="slate"] .md-typeset .mermaid svg .node polygon {
+  fill: rgba(230, 237, 243, 0.06) !important;
+  stroke: #e6edf3 !important;
+}
+
