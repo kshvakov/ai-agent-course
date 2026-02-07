@@ -3,7 +3,7 @@
 ## Переводы
 
 - **Русский (RU)** — `ru` (эта ветка)
-- **English (EN)** — [`main` branch](https://github.com/kshvakov/ai-agent-course/tree/main)
+- **[English (EN)](https://github.com/kshvakov/ai-agent-course/tree/main)** — [`main` branch](https://github.com/kshvakov/ai-agent-course/tree/main)
 
 ## Зачем это нужно?
 
