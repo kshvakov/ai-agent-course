@@ -421,7 +421,73 @@ Sitemap: {sitemap_url}
         sitemap_xml_lines.append(f"    <loc>{u}</loc>")
         sitemap_xml_lines.append("  </url>")
     sitemap_xml_lines.append("</urlset>")
-    (DOCS_DIR / "sitemap.xml").write_text("\n".join(sitemap_xml_lines) + "\n", encoding="utf-8")
+    sitemap_xml = "\n".join(sitemap_xml_lines) + "\n"
+    (DOCS_DIR / "sitemap.xml").write_text(sitemap_xml, encoding="utf-8")
+
+    # Multilingual helper: provide a minimal sitemap at /ru/sitemap.xml.
+    # This avoids 404 when clients/tools try to access a language-local sitemap,
+    # while keeping a single authoritative sitemap at /sitemap.xml.
+    if site_url:
+        root_sitemap_loc = urljoin_base(site_url, "sitemap.xml")
+        ru_sitemap_index_xml = "\n".join([
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+            "  <sitemap>",
+            f"    <loc>{root_sitemap_loc}</loc>",
+            "  </sitemap>",
+            "</sitemapindex>",
+            "",
+        ])
+        DOCS_RU_DIR.mkdir(parents=True, exist_ok=True)
+        (DOCS_RU_DIR / "sitemap.xml").write_text(ru_sitemap_index_xml, encoding="utf-8")
+
+    # Service Worker to prevent 404 for nested */sitemap.xml requests in the browser.
+    # We keep a single authoritative sitemap at the site root, and serve it for any
+    # request whose path ends with /sitemap.xml within the SW scope.
+    service_worker_js = """\
+/* eslint-disable no-restricted-globals */
+// This Service Worker exists solely to map nested */sitemap.xml requests to the root sitemap.
+// It is useful for MkDocs Material + i18n setups where the theme requests sitemap.xml relative
+// to the current page URL (leading to 404 on static hosting).
+
+self.addEventListener("install", () => {
+  // Activate the updated worker ASAP
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+  // Take control of existing pages ASAP
+  event.waitUntil(self.clients.claim());
+});
+
+self.addEventListener("fetch", (event) => {
+  const req = event.request;
+  if (!req || req.method !== "GET") return;
+
+  let url;
+  try {
+    url = new URL(req.url);
+  } catch (_) {
+    return;
+  }
+
+  // Only same-origin requests
+  if (url.origin !== self.location.origin) return;
+
+  // Only */sitemap.xml
+  if (!url.pathname.endsWith("/sitemap.xml")) return;
+
+  // Root sitemap inside the current SW scope (works for / and GitHub Pages project sites)
+  const scopePath = new URL(self.registration.scope).pathname; // always ends with '/'
+  const rootSitemapPath = scopePath + "sitemap.xml";
+
+  // Let the root sitemap go to network normally (avoid loops)
+  if (url.pathname === rootSitemapPath) return;
+
+  event.respondWith(fetch(rootSitemapPath, { cache: "reload" }));
+});
+"""
+    (DOCS_DIR / "service-worker.js").write_text(service_worker_js, encoding="utf-8")
 
     print("\n✓ Documentation structure prepared successfully!")
     print(f"  Output directory: {DOCS_DIR}")

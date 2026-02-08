@@ -10,6 +10,20 @@
   <!-- Theme overrides (see .mkdocs/overrides/assets/stylesheets/extra.css) -->
   <link rel="stylesheet" href="{{ 'assets/stylesheets/extra.css' | url }}">
 
+  {#-
+    MkDocs Material i18n workaround (safe):
+    The theme JS may request `sitemap.xml` relative to the current page, causing 404 on nested URLs.
+    We avoid monkeypatching fetch/XHR (can break the app) and instead register a Service Worker
+    that serves the root sitemap for any `*/sitemap.xml` request.
+  -#}
+  <script>
+    (function () {
+      if (!("serviceWorker" in navigator)) return;
+      // Register as early as possible to reduce the chance of initial 404s.
+      navigator.serviceWorker.register("{{ 'service-worker.js' | url }}").catch(function () {});
+    })();
+  </script>
+
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-42YNTP8CJM"></script>
   <script>
