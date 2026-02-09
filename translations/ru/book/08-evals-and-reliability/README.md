@@ -693,6 +693,7 @@ func compareMetrics(baseline, current EvalMetrics) bool {
 - **Инструменты:** Как evals проверяют выбор инструментов, см. [Главу 03: Инструменты](../03-tools-and-function-calling/README.md)
 - **Безопасность:** Как evals проверяют безопасность, см. [Главу 05: Безопасность](../05-safety-and-hitl/README.md)
 - **Multi-Agent:** Метрики для Multi-Agent систем, см. [Главу 07: Multi-Agent Systems](../07-multi-agent/README.md)
+- **Архитектура:** Компоненты агента, которые тестируются evals, см. [Главу 09: Анатомия Агента](../09-agent-architecture/README.md)
 - **Evals в CI/CD:** Четырёхуровневая система оценки, Quality Gates, RAGAS — [Глава 23: Evals в CI/CD](../23-evals-in-cicd/README.md)
 
 ## Что дальше?

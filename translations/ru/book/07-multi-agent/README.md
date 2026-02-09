@@ -642,6 +642,7 @@ supervisorTools := []openai.Tool{
 
 - **Инструменты:** Как Supervisor вызывает Workers через tool calls, см. [Главу 03: Инструменты](../03-tools-and-function-calling/README.md)
 - **Автономность:** Как Supervisor управляет циклом работы, см. [Главу 04: Автономность](../04-autonomy-and-loops/README.md)
+- **Архитектура:** Компоненты агента (Runtime, Memory, Planning), из которых строятся мульти-агентные системы, см. [Главу 09: Анатомия Агента](../09-agent-architecture/README.md)
 
 ## Что дальше?
 

@@ -31,6 +31,8 @@ $$P(x_{t+1} | x_1, ..., x_t)$$
 
 **Что это значит на практике?**
 
+> **Примечание:** Примеры ниже используют Function Calling — механизм вызова инструментов через LLM API. Детальное объяснение — в [Главе 03: Инструменты и Function Calling](../03-tools-and-function-calling/README.md). Сейчас достаточно понимать, что модель получает описания инструментов (`tools[]`) и выбирает подходящий на основе `Description`.
+
 #### Пример 1: DevOps — Магия vs Реальность
 
 **Магия (как обычно объясняют):**
@@ -200,275 +202,46 @@ if len(msg.ToolCalls) > 0 {
 #### Пример 2: Support — Магия vs Реальность
 
 **Магия:**
-> Промпт: `"Пользователь жалуется на ошибку 500"`  
+> Промпт: `"Пользователь жалуется на ошибку 500"`
 > Модель предсказывает: "Сначала соберу контекст через `get_ticket_details`" (вероятность 0.9)
 
-**Реальность:**
+**Реальность:** Принцип тот же, что и в DevOps-примере. Модель получает 4 инструмента (`get_ticket_details`, `check_account_status`, `search_kb`, `draft_reply`) с описаниями. Она выбирает `get_ticket_details`, потому что его `Description` содержит "Use this FIRST when user reports an error" — наилучшее семантическое совпадение с запросом.
 
-**Что отправляется:**
-
-```go
-systemPrompt := `You are a Customer Support agent.
-When user reports an error, first gather context using get_ticket_details.
-When user asks about account, use check_account_status.
-When you find a solution, use draft_reply to create a response.`
-
-tools := []openai.Tool{
-    {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "get_ticket_details",
-            Description: "Get ticket details including user info, error logs, and history. Use this FIRST when user reports an error or problem.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "ticket_id": {"type": "string"}
-                },
-                "required": ["ticket_id"]
-            }`),
-        },
-    },
-    {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "check_account_status",
-            Description: "Check if a user account is active, locked, or suspended. Use this when user asks about account status or login issues.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "user_id": {"type": "string"}
-                },
-                "required": ["user_id"]
-            }`),
-        },
-    },
-    {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "search_kb",
-            Description: "Search knowledge base for solutions to common problems. Use this after gathering ticket details to find similar cases.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"}
-                },
-                "required": ["query"]
-            }`),
-        },
-    },
-    {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "draft_reply",
-            Description: "Draft a reply message to the ticket. Use this when you have a solution or need to ask user for more information.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "ticket_id": {"type": "string"},
-                    "message": {"type": "string"}
-                },
-                "required": ["ticket_id", "message"]
-            }`),
-        },
-    },
-}
-
-messages := []openai.ChatCompletionMessage{
-    {Role: "system", Content: systemPrompt},
-    {Role: "user", Content: "Пользователь жалуется на ошибку 500"},
-}
-```
-
-**Что возвращает модель:**
-
-```json
-{
-  "role": "assistant",
-  "tool_calls": [
-    {
-      "id": "call_xyz789",
-      "function": {
-        "name": "get_ticket_details",
-        "arguments": "{\"ticket_id\": \"TICKET-12345\"}"
-      }
-    }
-  ]
-}
-```
-
-**Как модель выбрала именно `get_ticket_details`?**
-
-Модель видела **4 инструмента**:
-- [x] `get_ticket_details`: "Use this FIRST when user reports an error"
-- [ ] `check_account_status`: "Use this when user asks about account status"
-- [ ] `search_kb`: "Use this after gathering ticket details" (слишком рано)
-- [ ] `draft_reply`: "Use this when you have a solution" (еще нет решения)
-
-Запрос: "Пользователь жалуется на ошибку 500"
-
-Модель сопоставила:
-- [x] `get_ticket_details` — описание говорит "FIRST when user reports an error" → **выбирает этот**
-- Остальные не подходят по контексту
-
-**Пример последовательного выбора инструментов:**
+Модель выбирает инструменты **последовательно**:
 
 ```go
 // Итерация 1: Пользователь жалуется на ошибку
-userInput := "Пользователь жалуется на ошибку 500"
 // Модель выбирает: get_ticket_details (собирает контекст)
 
-// Итерация 2: После получения деталей тикета
-// Модель видит в контексте: "Error 500, user_id: 12345"
+// Итерация 2: В контексте появились детали тикета
 // Модель выбирает: search_kb("error 500") (ищет решение)
 
-// Итерация 3: После поиска в KB
-// Модель видит решение в контексте
+// Итерация 3: В контексте появилось решение из KB
 // Модель выбирает: draft_reply(ticket_id, solution) (создает ответ)
 ```
 
-**Суть:** Модель выбирает инструменты последовательно, основываясь на:
-1. **Текущем запросе пользователя**
-2. **Результатах предыдущих инструментов** (в контексте)
-3. **Описаниях инструментов** (`Description`)
-
-**Runtime:**
-- Парсит `ticket_id` из JSON
-- Вызывает реальную функцию `getTicketDetails("TICKET-12345")`
-- Возвращает результат в модель как сообщение с ролью `tool`
-- Модель видит результат и продолжает работу
+Runtime на каждой итерации парсит tool call, выполняет функцию и возвращает результат. Подробнее о протоколе tool call — в [Главе 03](../03-tools-and-function-calling/README.md).
 
 #### Пример 3: Data Analytics — Магия vs Реальность
 
 **Магия:**
-> Промпт: `"Покажи продажи за последний месяц"`  
+> Промпт: `"Покажи продажи за последний месяц"`
 > Модель предсказывает: "Сформулирую SQL-запрос через `sql_select`" (вероятность 0.95)
 
-**Реальность:**
-
-**Что отправляется:**
-
-```go
-systemPrompt := `You are a Data Analyst.
-When user asks for data, first check table schema using describe_table.
-Then formulate SQL query and use sql_select tool.
-If data quality is questionable, use check_data_quality.`
-
-tools := []openai.Tool{
-    {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "describe_table",
-            Description: "Get table schema including column names, types, and constraints. Use this FIRST when user asks about data structure or before writing SQL queries.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "table_name": {"type": "string", "description": "Name of the table"}
-                },
-                "required": ["table_name"]
-            }`),
-        },
-    },
-    {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "sql_select",
-            Description: "Execute a SELECT query on the database. ONLY SELECT queries allowed. Use this when user asks for specific data or reports.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "SQL SELECT query"}
-                },
-                "required": ["query"]
-            }`),
-        },
-    },
-    {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "check_data_quality",
-            Description: "Check for data quality issues: nulls, duplicates, outliers. Use this when user asks about data quality or before analysis.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "table_name": {"type": "string"}
-                },
-                "required": ["table_name"]
-            }`),
-        },
-    },
-}
-```
-
-**Что возвращает модель:**
+**Реальность:** Модель получает 3 инструмента (`describe_table`, `sql_select`, `check_data_quality`). Запрос "Покажи продажи за последний месяц" лучше всего соответствует `sql_select` с описанием "when user asks for specific data or reports". Модель генерирует SQL прямо в аргументах:
 
 ```json
 {
-  "role": "assistant",
-  "tool_calls": [
-    {
-      "function": {
-        "name": "sql_select",
-        "arguments": "{\"query\": \"SELECT region, SUM(amount) FROM sales WHERE date >= NOW() - INTERVAL '1 month' GROUP BY region\"}"
-      }
+  "tool_calls": [{
+    "function": {
+      "name": "sql_select",
+      "arguments": "{\"query\": \"SELECT region, SUM(amount) FROM sales WHERE date >= NOW() - INTERVAL '1 month' GROUP BY region\"}"
     }
-  ]
+  }]
 }
 ```
 
-**Как модель выбрала `sql_select`?**
-
-Модель видела **3 инструмента**:
-- [ ] `describe_table`: "Use this FIRST when user asks about data structure" (пользователь не спрашивает про структуру)
-- [x] `sql_select`: "Use this when user asks for specific data or reports"
-- [ ] `check_data_quality`: "Use this when user asks about data quality" (не про качество)
-
-Запрос: "Покажи продажи за последний месяц"
-
-Модель сопоставила:
-- [x] `sql_select` — описание говорит "when user asks for specific data" → **выбирает этот**
-- Остальные не подходят
-
-**Пример с другим запросом:**
-
-```go
-userInput := "Какие поля есть в таблице sales?"
-
-// Модель видит те же 3 инструмента
-// Сопоставляет:
-// - describe_table: "Use this FIRST when user asks about data structure" → ВЫБИРАЕТ ЭТОТ
-// - sql_select: про выполнение запросов → не подходит
-// - check_data_quality: про качество данных → не подходит
-
-// Модель возвращает:
-// tool_calls: [{function: {name: "describe_table", arguments: "{\"table_name\": \"sales\"}"}}]
-```
-
-**Пример последовательного выбора:**
-
-```go
-// Итерация 1: Пользователь спрашивает про продажи
-userInput := "Почему упали продажи в регионе X?"
-// Модель выбирает: describe_table("sales") (сначала нужно понять структуру)
-
-// Итерация 2: После получения схемы таблицы
-// Модель видит в контексте: "columns: date, region, amount"
-// Модель выбирает: sql_select("SELECT region, SUM(amount) FROM sales WHERE region='X' GROUP BY date")
-
-// Итерация 3: После получения данных
-// Модель анализирует результаты и может выбрать: check_data_quality("sales")
-// если нужно проверить качество данных перед выводом
-```
-
-**Суть:** Модель выбирает инструменты на основе:
-1. **Семантического соответствия** запроса и `Description`
-2. **Последовательности** (сначала schema, потом query)
-3. **Контекста** предыдущих результатов
-
-**Runtime:**
-- Валидирует, что это SELECT (не DELETE/DROP!)
-- Выполняет SQL через безопасное соединение (read-only)
-- Возвращает результаты в модель
-- Модель форматирует результаты для пользователя
+Для сложных вопросов модель использует инструменты **последовательно**: сначала `describe_table` (узнать структуру), потом `sql_select` (получить данные), потом `check_data_quality` (проверить качество). Runtime валидирует, что это SELECT (не DELETE/DROP!), и выполняет запрос через read-only соединение. Подробнее — в [Главе 03](../03-tools-and-function-calling/README.md).
 
 ### Почему это важно для инженера?
 

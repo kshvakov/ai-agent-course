@@ -648,7 +648,7 @@ func (s *PgStateStore) ExecuteStep(ctx context.Context, taskID string, stepFn fu
 
 ## MCP для состояния
 
-Model Context Protocol (MCP) позволяет хранить и передавать состояние агента через стандартизированные ресурсы. Подробнее о MCP — в [Главе 08: MCP](../08-mcp/README.md).
+Model Context Protocol (MCP) позволяет хранить и передавать состояние агента через стандартизированные ресурсы. Подробнее о MCP — в [Главе 18: Протоколы Инструментов и Tool Servers](../18-tool-protocols-and-servers/README.md).
 
 ### Зачем MCP для состояния?
 
@@ -766,9 +766,11 @@ func filterRelevantState(state *AgentState, currentStep string, maxBytes int) *C
 
 ## Продвинутые стратегии Checkpoint
 
-### Когда сохранять: гранулярность чекпоинтов
+Базовая реализация Checkpoint (структура, сохранение/загрузка, интеграция с agent loop) описана в [Главе 09: Анатомия Агента](../09-agent-architecture/README.md#checkpoint-и-resume-сохранение-и-восстановление). Здесь мы рассматриваем продвинутые стратегии для продакшена.
 
-Чекпоинт — это снимок состояния, к которому можно вернуться. Частота сохранений — компромисс между надёжностью и производительностью:
+### Когда сохранять: гранулярность Checkpoint
+
+Checkpoint — это снимок состояния, к которому можно вернуться. Частота сохранений — компромисс между надёжностью и производительностью:
 
 | Стратегия | Когда сохраняем | Плюс | Минус |
 |-----------|----------------|------|-------|
@@ -790,11 +792,11 @@ const (
 type CheckpointManager struct {
     store    StateStore
     strategy CheckpointStrategy
-    maxAge   time.Duration // Максимальный возраст чекпоинта
-    maxCount int           // Сколько чекпоинтов хранить на задачу
+    maxAge   time.Duration // Максимальный возраст Checkpoint
+    maxCount int           // Сколько Checkpoint хранить на задачу
 }
 
-// MaybeSave сохраняет чекпоинт, если текущий триггер совпадает со стратегией.
+// MaybeSave сохраняет Checkpoint, если текущий триггер совпадает со стратегией.
 func (cm *CheckpointManager) MaybeSave(
     ctx context.Context,
     task *Task,
@@ -809,10 +811,10 @@ func (cm *CheckpointManager) MaybeSave(
 
 ### Валидация перед возобновлением
 
-Нельзя слепо возобновлять задачу из чекпоинта. Чекпоинт может устареть, а состояние — оказаться некорректным.
+Нельзя слепо возобновлять задачу из Checkpoint. Checkpoint может устареть, а состояние — оказаться некорректным.
 
 ```go
-// ValidateAndResume загружает чекпоинт и проверяет его пригодность.
+// ValidateAndResume загружает Checkpoint и проверяет его пригодность.
 func (cm *CheckpointManager) ValidateAndResume(ctx context.Context, taskID string) (*Task, error) {
     task, err := cm.store.Get(ctx, taskID)
     if err != nil {
@@ -822,7 +824,7 @@ func (cm *CheckpointManager) ValidateAndResume(ctx context.Context, taskID strin
         return nil, fmt.Errorf("checkpoint not found: %s", taskID)
     }
 
-    // Проверка 1: чекпоинт не устарел
+    // Проверка 1: Checkpoint не устарел
     age := time.Since(task.UpdatedAt)
     if age > cm.maxAge {
         return nil, fmt.Errorf("checkpoint expired: age %v exceeds max %v", age, cm.maxAge)
@@ -840,12 +842,12 @@ func (cm *CheckpointManager) ValidateAndResume(ctx context.Context, taskID strin
 }
 ```
 
-### Ротация чекпоинтов
+### Ротация Checkpoint
 
-Чекпоинты накапливаются. Без очистки они занимают место и усложняют восстановление. Ротация оставляет только последние N чекпоинтов и удаляет устаревшие.
+Checkpoint накапливаются. Без очистки они занимают место и усложняют восстановление. Ротация оставляет только последние N Checkpoint и удаляет устаревшие.
 
 ```go
-// Cleanup удаляет устаревшие чекпоинты, оставляя maxCount последних.
+// Cleanup удаляет устаревшие Checkpoint, оставляя maxCount последних.
 func (cm *CheckpointManager) Cleanup(ctx context.Context, taskID string) (int64, error) {
     result, err := cm.store.(*PgStateStore).db.ExecContext(ctx,
         `DELETE FROM agent_checkpoints

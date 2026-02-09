@@ -453,6 +453,431 @@ func (l *MultiModelLoop) Run(ctx context.Context, client *openai.Client,
 
 **Ключевой момент:** Метод `refineAnswer` необязателен. Это оптимизация: если дешёвая модель собрала все данные через инструменты, мощная модель может лучше сформулировать финальный ответ.
 
+## Сквозной пример: мульти-модельный флоу на 5 итерациях
+
+Абстракции `ModelSelector` и `MultiModelLoop` могут выглядеть понятно в коде, но непонятно, **что именно происходит в runtime**. Разберём конкретный сценарий шаг за шагом.
+
+### Сценарий
+
+Пользователь пишет: **"У сервера web-03 высокий CPU. Разберись."**
+
+У агента три инструмента:
+
+```go
+tools := []openai.Tool{
+    {Function: &openai.FunctionDefinition{
+        Name:        "check_cpu",
+        Description: "Check CPU usage of a server",
+        Parameters:  json.RawMessage(`{"type":"object","properties":{"host":{"type":"string"}},"required":["host"]}`),
+    }},
+    {Function: &openai.FunctionDefinition{
+        Name:        "list_top_processes",
+        Description: "List top CPU-consuming processes on a server",
+        Parameters:  json.RawMessage(`{"type":"object","properties":{"host":{"type":"string"},"limit":{"type":"integer"}},"required":["host"]}`),
+    }},
+    {Function: &openai.FunctionDefinition{
+        Name:        "restart_service",
+        Description: "Restart a systemd service on a server. CAUTION: causes brief downtime.",
+        Parameters:  json.RawMessage(`{"type":"object","properties":{"host":{"type":"string"},"service":{"type":"string"}},"required":["host","service"]}`),
+    }},
+}
+```
+
+Стратегия выбора модели:
+- **gpt-4o-mini** — для итераций, где предыдущий ответ содержал tool calls (простая задача: выбрать инструмент)
+- **gpt-4o** — когда нужно принять решение на основе собранных данных (анализ, финальный ответ)
+
+### Диаграмма флоу
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant R as Runtime
+    participant Mini as gpt-4o-mini
+    participant Pro as gpt-4o
+
+    U->>R: "У web-03 высокий CPU. Разберись."
+
+    Note over R,Mini: Итерация 1: tool selection
+    R->>Mini: messages[system, user]
+    Mini-->>R: tool_call: check_cpu("web-03")
+    R->>R: exec check_cpu → "CPU: 94%"
+
+    Note over R,Mini: Итерация 2: tool selection
+    R->>Mini: messages[..., tool_call, tool_result]
+    Mini-->>R: tool_call: list_top_processes("web-03")
+    R->>R: exec → "nginx-worker: 82%"
+
+    Note over R,Pro: Итерация 3: анализ + решение
+    R->>Pro: messages[..., tool_call, tool_result]
+    Pro-->>R: tool_call: restart_service("web-03", "nginx")
+
+    R->>R: exec restart → "Service restarted"
+
+    Note over R,Pro: Итерация 4: финальный ответ
+    R->>Pro: messages[..., tool_call, tool_result]
+    Pro-->>R: text: "Проблема решена..."
+
+    R->>U: "CPU web-03 был 94%..."
+```
+
+### Пошаговый разбор
+
+**Итерация 1 — `gpt-4o-mini` — выбор первого инструмента**
+
+```
+[iter=1 model=gpt-4o-mini reason=first_call cost≈$0.0003]
+```
+
+Модель видит:
+```
+messages = [
+  {role: "system", content: "You are a DevOps agent. Diagnose and fix issues."},
+  {role: "user",   content: "У сервера web-03 высокий CPU. Разберись."}
+]
+```
+
+Модель возвращает:
+```json
+{"tool_calls": [{"function": {"name": "check_cpu", "arguments": "{\"host\":\"web-03\"}"}}]}
+```
+
+**Почему gpt-4o-mini?** Это первый вызов. Задача — выбрать из 3 инструментов тот, что соответствует "высокий CPU". Это классификация, не рассуждение. Дешёвая модель справляется.
+
+Runtime выполняет `check_cpu("web-03")` → `"CPU usage: 94%, load average: 12.3"`
+
+---
+
+**Итерация 2 — `gpt-4o-mini` — выбор второго инструмента**
+
+```
+[iter=2 model=gpt-4o-mini reason=previous_had_tool_calls cost≈$0.0004]
+```
+
+Модель видит (messages вырос):
+```
+messages = [
+  {role: "system",    content: "You are a DevOps agent..."},
+  {role: "user",      content: "У сервера web-03 высокий CPU. Разберись."},
+  {role: "assistant", tool_calls: [{name: "check_cpu", args: {host: "web-03"}}]},
+  {role: "tool",      content: "CPU usage: 94%, load average: 12.3", tool_call_id: "call_1"}
+]
+```
+
+Модель возвращает:
+```json
+{"tool_calls": [{"function": {"name": "list_top_processes", "arguments": "{\"host\":\"web-03\",\"limit\":5}"}}]}
+```
+
+**Почему gpt-4o-mini?** Предыдущая итерация вернула tool call. Модель видит "CPU 94%" и должна выбрать следующий инструмент. Это снова классификация: "какой инструмент поможет понять, что грузит CPU?" → `list_top_processes`.
+
+Runtime выполняет `list_top_processes("web-03", 5)`:
+```
+PID    COMMAND         CPU%
+18234  nginx-worker    82.1%
+18235  nginx-worker    4.3%
+  892  postgres        3.2%
+  451  node            2.1%
+    1  systemd         0.1%
+```
+
+---
+
+**Итерация 3 — `gpt-4o` — принятие решения**
+
+```
+[iter=3 model=gpt-4o reason=need_analysis cost≈$0.008]
+```
+
+Модель видит (messages содержит 6 элементов):
+```
+messages = [
+  system, user,
+  assistant(tool_call: check_cpu),    tool("CPU: 94%"),
+  assistant(tool_call: list_top),     tool("nginx-worker: 82.1%...")
+]
+```
+
+Модель возвращает:
+```json
+{"tool_calls": [{"function": {"name": "restart_service", "arguments": "{\"host\":\"web-03\",\"service\":\"nginx\"}"}}]}
+```
+
+**Почему gpt-4o?** Вот здесь нужно **рассуждение**. Модель должна:
+1. Понять, что nginx-worker потребляет 82% CPU (а не просто выбрать инструмент)
+2. Решить, что правильное действие — перезапустить nginx (а не postgres или node)
+3. Оценить риск перезапуска (CAUTION в описании инструмента)
+
+Дешёвая модель может ошибиться: перезапустить не тот сервис или просто продолжить собирать информацию вместо действия.
+
+Runtime выполняет `restart_service("web-03", "nginx")` → `"Service nginx restarted successfully. PID: 19012"`
+
+---
+
+**Итерация 4 — `gpt-4o` — финальный ответ**
+
+```
+[iter=4 model=gpt-4o reason=previous_had_tool_calls_but_critical cost≈$0.01]
+```
+
+Модель видит (messages содержит 8 элементов):
+```
+messages = [
+  system, user,
+  assistant(check_cpu),     tool("CPU: 94%"),
+  assistant(list_top),      tool("nginx-worker: 82.1%"),
+  assistant(restart_nginx), tool("Service nginx restarted. PID: 19012")
+]
+```
+
+Модель возвращает **текст** (без tool_calls):
+```
+CPU сервера web-03 был загружен на 94%. Основной потребитель — процесс nginx-worker (82.1% CPU).
+Выполнен перезапуск nginx. Новый PID: 19012.
+
+Рекомендации:
+- Проверить конфигурацию worker_processes в nginx.conf
+- Настроить мониторинг CPU с алертом на 80%
+```
+
+**Почему gpt-4o?** Финальный ответ требует синтеза информации из всех предыдущих шагов и формулировки рекомендаций. Мощная модель формулирует лучше.
+
+### Эволюция messages[]
+
+| После итерации | Элементов в messages[] | Что добавилось |
+|:-:|:-:|:--|
+| — | 2 | `system` + `user` |
+| 1 | 4 | + `assistant(tool_call: check_cpu)` + `tool("CPU: 94%")` |
+| 2 | 6 | + `assistant(tool_call: list_top)` + `tool("nginx: 82%")` |
+| 3 | 8 | + `assistant(tool_call: restart)` + `tool("restarted")` |
+| 4 | 9 | + `assistant("CPU web-03 был загружен...")` |
+
+Каждая итерация добавляет 2 сообщения (assistant + tool), последняя — 1 (только assistant с текстом).
+
+### Расчёт стоимости
+
+**Одна модель (gpt-4o на всех итерациях):**
+
+| Итерация | Модель | Input tokens | Output tokens | Стоимость |
+|:-:|:--|:-:|:-:|:-:|
+| 1 | gpt-4o | ~300 | ~30 | $0.0040 |
+| 2 | gpt-4o | ~450 | ~40 | $0.0060 |
+| 3 | gpt-4o | ~650 | ~35 | $0.0085 |
+| 4 | gpt-4o | ~800 | ~120 | $0.0120 |
+| | | | **Итого:** | **$0.0305** |
+
+**Мульти-модельная стратегия:**
+
+| Итерация | Модель | Input tokens | Output tokens | Стоимость |
+|:-:|:--|:-:|:-:|:-:|
+| 1 | gpt-4o-mini | ~300 | ~30 | $0.0003 |
+| 2 | gpt-4o-mini | ~450 | ~40 | $0.0004 |
+| 3 | gpt-4o | ~650 | ~35 | $0.0085 |
+| 4 | gpt-4o | ~800 | ~120 | $0.0120 |
+| | | | **Итого:** | **$0.0212** |
+
+**Экономия: 30%** на этом примере. При 10 000 задач в день: $305 vs $212 → $93/день → **$2 800/месяц**.
+
+На задачах с большим количеством tool calls (6-8 итераций вместо 4) экономия достигает 50-60%.
+
+### Когда Runtime переключает модель?
+
+Логика выбора модели в этом примере:
+
+```go
+func selectModel(iteration int, lastHadToolCalls bool, lastHadError bool) string {
+    // После ошибки — мощная модель (нужно рассуждение)
+    if lastHadError {
+        return "gpt-4o"
+    }
+
+    // Первые 2 итерации с tool calls — дешёвая модель
+    // Начиная с 3-й итерации — мощная (накопилось достаточно контекста для решения)
+    if lastHadToolCalls && iteration < 3 {
+        return "gpt-4o-mini"
+    }
+
+    // Остальные случаи — мощная модель
+    return "gpt-4o"
+}
+```
+
+**Альтернативная стратегия** — проще, но менее точная:
+
+```go
+func selectModelSimple(lastHadToolCalls bool) string {
+    if lastHadToolCalls {
+        return "gpt-4o-mini" // Ещё собираем данные
+    }
+    return "gpt-4o" // Формулируем ответ
+}
+```
+
+Проблема простой стратегии: на итерации 3 (где нужно принять решение о перезапуске) будет использована дешёвая модель. Она может ошибиться.
+
+### Полный рабочий код
+
+```go
+package main
+
+import (
+    "context"
+    "encoding/json"
+    "fmt"
+    "os"
+    "strings"
+
+    "github.com/sashabaranov/go-openai"
+)
+
+func main() {
+    config := openai.DefaultConfig(os.Getenv("OPENAI_API_KEY"))
+    if baseURL := os.Getenv("OPENAI_BASE_URL"); baseURL != "" {
+        config.BaseURL = baseURL
+    }
+    client := openai.NewClientWithConfig(config)
+    ctx := context.Background()
+
+    // Инструменты
+    tools := []openai.Tool{
+        {Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{
+            Name: "check_cpu", Description: "Check CPU usage of a server",
+            Parameters: json.RawMessage(`{"type":"object","properties":{"host":{"type":"string"}},"required":["host"]}`),
+        }},
+        {Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{
+            Name: "list_top_processes", Description: "List top CPU-consuming processes",
+            Parameters: json.RawMessage(`{"type":"object","properties":{"host":{"type":"string"},"limit":{"type":"integer"}},"required":["host"]}`),
+        }},
+        {Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{
+            Name: "restart_service", Description: "Restart a systemd service. CAUTION: causes brief downtime.",
+            Parameters: json.RawMessage(`{"type":"object","properties":{"host":{"type":"string"},"service":{"type":"string"}},"required":["host","service"]}`),
+        }},
+    }
+
+    messages := []openai.ChatCompletionMessage{
+        {Role: "system", Content: "You are a DevOps agent. Diagnose and fix server issues. Use tools to investigate, then act."},
+        {Role: "user", Content: "У сервера web-03 высокий CPU. Разберись."},
+    }
+
+    // Мульти-модельный цикл
+    const (
+        fastModel = "gpt-4o-mini"
+        smartModel = "gpt-4o"
+        maxIter   = 10
+    )
+
+    lastHadToolCalls := true
+    lastHadError := false
+
+    for i := 0; i < maxIter; i++ {
+        // --- Выбор модели ---
+        model := fastModel
+        if lastHadError || (lastHadToolCalls && i >= 3) || !lastHadToolCalls {
+            model = smartModel
+        }
+
+        fmt.Printf("\n[iter=%d model=%s msgs=%d]\n", i+1, model, len(messages))
+
+        resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+            Model:       model,
+            Messages:    messages,
+            Tools:       tools,
+            Temperature: 0,
+        })
+        if err != nil {
+            fmt.Printf("  ERROR: %v\n", err)
+            return
+        }
+
+        msg := resp.Choices[0].Message
+        messages = append(messages, msg)
+        fmt.Printf("  tokens: prompt=%d completion=%d\n", resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
+
+        // --- Финальный ответ? ---
+        if len(msg.ToolCalls) == 0 {
+            fmt.Printf("  FINAL ANSWER:\n%s\n", msg.Content)
+            break
+        }
+
+        // --- Выполнение инструментов ---
+        lastHadToolCalls = true
+        lastHadError = false
+        for _, tc := range msg.ToolCalls {
+            fmt.Printf("  tool_call: %s(%s)\n", tc.Function.Name, tc.Function.Arguments)
+
+            result := executeToolStub(tc.Function.Name, tc.Function.Arguments)
+            if strings.HasPrefix(result, "Error") {
+                lastHadError = true
+            }
+            fmt.Printf("  result: %s\n", truncate(result, 80))
+
+            messages = append(messages, openai.ChatCompletionMessage{
+                Role:       openai.ChatMessageRoleTool,
+                Content:    result,
+                ToolCallID: tc.ID,
+            })
+        }
+    }
+}
+
+// Заглушки инструментов (заменить на реальные вызовы)
+func executeToolStub(name, argsJSON string) string {
+    switch name {
+    case "check_cpu":
+        return "CPU usage: 94%, load average: 12.3, uptime: 14 days"
+    case "list_top_processes":
+        return `PID    COMMAND         CPU%
+18234  nginx-worker    82.1%
+18235  nginx-worker    4.3%
+  892  postgres        3.2%
+  451  node            2.1%
+    1  systemd         0.1%`
+    case "restart_service":
+        var args struct{ Service string `json:"service"` }
+        json.Unmarshal([]byte(argsJSON), &args)
+        return fmt.Sprintf("Service %s restarted successfully. New PID: 19012", args.Service)
+    default:
+        return fmt.Sprintf("Error: unknown tool %s", name)
+    }
+}
+
+func truncate(s string, maxLen int) string {
+    s = strings.ReplaceAll(s, "\n", " | ")
+    if len(s) > maxLen {
+        return s[:maxLen] + "..."
+    }
+    return s
+}
+```
+
+**Ожидаемый вывод:**
+
+```
+[iter=1 model=gpt-4o-mini msgs=2]
+  tokens: prompt=285 completion=28
+  tool_call: check_cpu({"host":"web-03"})
+  result: CPU usage: 94%, load average: 12.3, uptime: 14 days
+
+[iter=2 model=gpt-4o-mini msgs=4]
+  tokens: prompt=432 completion=38
+  tool_call: list_top_processes({"host":"web-03","limit":5})
+  result: PID    COMMAND         CPU% | 18234  nginx-worker    82.1% | 18235  ngi...
+
+[iter=3 model=gpt-4o msgs=6]
+  tokens: prompt=648 completion=32
+  tool_call: restart_service({"host":"web-03","service":"nginx"})
+  result: Service nginx restarted successfully. New PID: 19012
+
+[iter=4 model=gpt-4o msgs=8]
+  tokens: prompt=795 completion=118
+  FINAL ANSWER:
+CPU сервера web-03 был загружен на 94%. Причина — процесс nginx-worker (82.1% CPU).
+Выполнен перезапуск nginx (новый PID: 19012).
+Рекомендую проверить worker_processes в nginx.conf и настроить алерт на CPU > 80%.
+```
+
+Обратите внимание на столбец `model=`: итерации 1-2 используют дешёвую модель, итерации 3-4 — мощную. Runtime решает это **до** вызова LLM, основываясь на номере итерации и наличии tool calls.
+
 ## Стратегии остановки цикла
 
 Лимит итераций (`maxIterations`) — это **защита от зацикливания**, но не стратегия остановки. Агент должен останавливаться, когда задача решена.

@@ -199,118 +199,15 @@ func runAgentWithMemory(ctx context.Context, client *openai.Client, memory Memor
 
 ## Checkpoint и Resume
 
-Агент может работать часами над сложной задачей. Если процесс упадёт посередине, потеряется весь прогресс. Checkpoint сохраняет состояние разговора периодически. При сбое агент возобновляет работу с последней сохранённой точки.
+Агент может работать часами над сложной задачей. Если процесс упадёт посередине, потеряется весь прогресс. Checkpoint (чекпоинт) сохраняет состояние разговора периодически. При сбое агент возобновляет работу с последней сохранённой точки.
 
-### Периодическое сохранение состояния
+Базовая реализация Checkpoint (структура, сохранение/загрузка, интеграция с agent loop) описана в [Главе 09: Анатомия Агента](../09-agent-architecture/README.md#checkpoint-и-resume-сохранение-и-восстановление). Продвинутые стратегии (гранулярность, валидация, ротация) — в [Главе 11: State Management](../11-state-management/README.md#продвинутые-стратегии-checkpoint).
 
-Checkpoint — это снимок состояния агента в конкретный момент: история сообщений, содержимое памяти, текущий шаг выполнения. Сохраняйте checkpoint после каждого значимого шага (вызов инструмента, ответ пользователю).
+Здесь мы рассматриваем, как Checkpoint связан с памятью агента:
 
-```go
-type MemoryCheckpoint struct {
-    RunID     string                `json:"run_id"`
-    Step      int                   `json:"step"`
-    Messages  []Message             `json:"messages"`
-    Memory    map[string]MemoryItem `json:"memory"`
-    ToolState map[string]any        `json:"tool_state"`
-    CreatedAt time.Time             `json:"created_at"`
-}
-
-func saveCheckpoint(ctx context.Context, store CheckpointStore, cp MemoryCheckpoint) error {
-    data, err := json.Marshal(cp)
-    if err != nil {
-        return fmt.Errorf("не удалось сериализовать checkpoint: %w", err)
-    }
-
-    key := fmt.Sprintf("checkpoint:%s:%d", cp.RunID, cp.Step)
-    return store.Set(ctx, key, data, 24*time.Hour) // TTL 24 часа
-}
-
-func loadCheckpoint(ctx context.Context, store CheckpointStore, runID string) (*MemoryCheckpoint, error) {
-    // Ищем последний checkpoint для данного run
-    pattern := fmt.Sprintf("checkpoint:%s:*", runID)
-    keys, err := store.Keys(ctx, pattern)
-    if err != nil {
-        return nil, err
-    }
-
-    if len(keys) == 0 {
-        return nil, nil // Нет checkpoint — начинаем с нуля
-    }
-
-    // Берём последний по номеру шага
-    sort.Strings(keys)
-    lastKey := keys[len(keys)-1]
-
-    data, err := store.Get(ctx, lastKey)
-    if err != nil {
-        return nil, err
-    }
-
-    var cp MemoryCheckpoint
-    if err := json.Unmarshal(data, &cp); err != nil {
-        return nil, fmt.Errorf("не удалось десериализовать checkpoint: %w", err)
-    }
-
-    return &cp, nil
-}
-```
-
-### Resume после сбоя
-
-При запуске агент проверяет наличие checkpoint. Если он есть, восстанавливает состояние и продолжает с прерванного шага:
-
-```go
-func runAgentWithCheckpoints(ctx context.Context, client *openai.Client, store CheckpointStore, runID, input string) (string, error) {
-    // Пытаемся восстановиться из checkpoint
-    cp, err := loadCheckpoint(ctx, store, runID)
-    if err != nil {
-        return "", fmt.Errorf("ошибка загрузки checkpoint: %w", err)
-    }
-
-    var messages []Message
-    step := 0
-
-    if cp != nil {
-        // Восстанавливаем состояние из checkpoint
-        messages = cp.Messages
-        step = cp.Step
-        log.Printf("Восстановлены из checkpoint: run=%s, step=%d", runID, step)
-    } else {
-        // Начинаем с нуля
-        messages = []Message{
-            {Role: "system", Content: "Ты полезный ассистент."},
-            {Role: "user", Content: input},
-        }
-    }
-
-    // Продолжаем agent loop
-    for {
-        step++
-        resp, err := callLLM(ctx, client, messages)
-        if err != nil {
-            return "", err
-        }
-
-        messages = append(messages, resp)
-
-        // Сохраняем checkpoint после каждого шага
-        if err := saveCheckpoint(ctx, store, MemoryCheckpoint{
-            RunID:     runID,
-            Step:      step,
-            Messages:  messages,
-            CreatedAt: time.Now(),
-        }); err != nil {
-            log.Printf("Не удалось сохранить checkpoint: %v", err)
-        }
-
-        if resp.ToolCalls == nil {
-            return resp.Content, nil
-        }
-
-        // Выполняем инструменты...
-    }
-}
-```
+- **Что сохранять:** историю сообщений (`messages[]`), содержимое памяти, состояние инструментов, текущий шаг выполнения.
+- **Когда сохранять:** после каждого значимого шага (вызов инструмента, ответ пользователю). Для коротких задач (2-3 итерации) Checkpoint избыточен. Для длинных задач (10+ итераций) — обязателен.
+- **TTL:** устанавливайте TTL на Checkpoint (например, 24 часа), чтобы устаревшие снимки не накапливались.
 
 ### Shared Memory между агентами
 
