@@ -284,10 +284,10 @@ Assistant: <special_token>call_tool{"name": "weather"}<end_token>
 
 **Что делать:**
 1. Скачайте модель с поддержкой tools:
-   - `Hermes-2-Pro-Llama-3-8B`
-   - `Mistral-7B-Instruct-v0.2`
-   - `Llama-3-8B-Instruct` (некоторые версии)
-   - `Gorilla OpenFunctions`
+    - `Hermes-2-Pro-Llama-3-8B`
+    - `Mistral-7B-Instruct-v0.2`
+    - `Llama-3-8B-Instruct` (некоторые версии)
+    - `Gorilla OpenFunctions`
 2. Перезапустите тесты
 
 #### JSON Generation провален

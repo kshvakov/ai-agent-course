@@ -266,9 +266,9 @@ for _, toolCall := range msg.ToolCalls {
 2. Error is added to history as tool result
 3. Model receives the error in context
 4. Model can:
-   - Try another tool
-   - Inform the user about the problem
-   - Escalate the issue
+    - Try another tool
+    - Inform the user about the problem
+    - Escalate the issue
 
 **Example:**
 

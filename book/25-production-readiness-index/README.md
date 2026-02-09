@@ -91,18 +91,18 @@ If you have time for planned refinement, add topics as you grow:
 Don't try to study everything at once. Use this algorithm:
 
 1. **Start with mandatory production blocks:**
-   - Observability (logging, tracing) — needed immediately, without this you're blind
-   - Cost & latency engineering — critical if agent is used actively
-   - Security and Governance — mandatory production block
+    - Observability (logging, tracing) — needed immediately, without this you're blind
+    - Cost & latency engineering — critical if agent is used actively
+    - Security and Governance — mandatory production block
 
 2. **Add topics as you grow:**
-   - Workflow/state — when agents execute long tasks or need idempotency
-   - Prompt/program management — when prompts change frequently or there are multiple versions
-   - Evals in CI/CD — when need automatic quality checking
+    - Workflow/state — when agents execute long tasks or need idempotency
+    - Prompt/program management — when prompts change frequently or there are multiple versions
+    - Evals in CI/CD — when need automatic quality checking
 
 3. **Specialized topics:**
-   - Data/privacy — if working with personal data
-   - RAG/Multi-Agent production aspects — see production notes in [Chapter 06](../06-rag/README.md) and [Chapter 07](../07-multi-agent/README.md)
+    - Data/privacy — if working with personal data
+    - RAG/Multi-Agent production aspects — see production notes in [Chapter 06](../06-rag/README.md) and [Chapter 07](../07-multi-agent/README.md)
 
 ## Connection with Other Chapters
 

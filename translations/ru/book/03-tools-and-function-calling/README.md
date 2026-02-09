@@ -136,19 +136,19 @@ userInput := "Проверь доступность google.com"
 **Процесс выбора:**
 
 1. Модель видит **все три инструмента** и их `Description`:
-   - `ping`: "check network connectivity... Use this when user asks about network reachability"
-   - `check_http`: "Check HTTP status... Use this when user asks about website availability"
-   - `traceroute`: "Trace network path... Use this when user asks about routing"
+    - `ping`: "check network connectivity... Use this when user asks about network reachability"
+    - `check_http`: "Check HTTP status... Use this when user asks about website availability"
+    - `traceroute`: "Trace network path... Use this when user asks about routing"
 
 2. Модель сопоставляет запрос "Проверь доступность google.com" с описаниями:
-   - [x] `ping` — описание содержит "connectivity" и "reachability" → **выбирает этот**
-   - [ ] `check_http` — про HTTP статус, не про сетевую доступность
-   - [ ] `traceroute` — про маршрутизацию, не про проверку доступности
+    - [x] `ping` — описание содержит "connectivity" и "reachability" → **выбирает этот**
+    - [ ] `check_http` — про HTTP статус, не про сетевую доступность
+    - [ ] `traceroute` — про маршрутизацию, не про проверку доступности
 
 3. Модель возвращает tool call для `ping`:
-   ```json
-   {"name": "ping", "arguments": "{\"host\": \"google.com\"}"}
-   ```
+    ```json
+    {"name": "ping", "arguments": "{\"host\": \"google.com\"}"}
+    ```
 
 **Пример с другим запросом:**
 
@@ -283,22 +283,22 @@ graph TB
 **Схема хранения:**
 
 1. **System Prompt** — хранится в коде агента (константа или конфиг):
-   - Инструкции (Role, Goal, Constraints)
-   - Few-shot примеры (если используются)
-   - SOP (алгоритм действий)
+    - Инструкции (Role, Goal, Constraints)
+    - Few-shot примеры (если используются)
+    - SOP (алгоритм действий)
 
 2. **Tools Schema** — хранится в **registry runtime** (не в промпте!):
-   - Определения инструментов (JSON Schema)
-   - Функции-обработчики инструментов
-   - Валидация и выполнение
+    - Определения инструментов (JSON Schema)
+    - Функции-обработчики инструментов
+    - Валидация и выполнение
 
 3. **User Input** — приходит от пользователя:
-   - Текущий запрос
-   - История диалога (хранится в `messages[]`)
+    - Текущий запрос
+    - История диалога (хранится в `messages[]`)
 
 4. **Tool Results** — генерируются runtime'ом:
-   - После выполнения инструмента
-   - Добавляются в `messages[]` с `Role = "tool"`
+    - После выполнения инструмента
+    - Добавляются в `messages[]` с `Role = "tool"`
 
 ### Полный протокол: JSON запросы и ответы (2 хода)
 
@@ -551,22 +551,22 @@ graph TB
 ### Ключевые моменты для разработчика
 
 1. **System Prompt и Tools Schema — разные вещи:**
-   - System Prompt — текст в `Messages[0].Content` (может содержать few-shot примеры)
-   - Tools Schema — отдельное поле `Tools` в запросе (JSON Schema)
+    - System Prompt — текст в `Messages[0].Content` (может содержать few-shot примеры)
+    - Tools Schema — отдельное поле `Tools` в запросе (JSON Schema)
 
 2. **Few-shot примеры — внутри System Prompt:**
-   - Это текст, показывающий модели формат ответа или выбор инструментов
-   - Отличается от Tools Schema (которая описывает структуру инструментов)
+    - Это текст, показывающий модели формат ответа или выбор инструментов
+    - Отличается от Tools Schema (которая описывает структуру инструментов)
 
 3. **Runtime управляет циклом:**
-   - Валидирует `tool_calls`
-   - Выполняет инструменты
-   - Добавляет результаты в `messages`
-   - Отправляет следующий запрос
+    - Валидирует `tool_calls`
+    - Выполняет инструменты
+    - Добавляет результаты в `messages`
+    - Отправляет следующий запрос
 
 4. **Tools не "внутри промпта":**
-   - В API они передаются отдельным полем `Tools`
-   - Модель видит их вместе с промптом, но это разные части запроса
+    - В API они передаются отдельным полем `Tools`
+    - Модель видит их вместе с промптом, но это разные части запроса
 
 См. как писать инструкции и примеры: **[Глава 02: Промптинг](../02-prompt-engineering/README.md)**
 
@@ -579,9 +579,9 @@ graph TB
 1. **Модель видит описание ВСЕХ инструментов** — она не "знает" про инструменты из коробки, она видит их `Description` в JSON Schema. Модель выбирает нужный инструмент, сопоставляя запрос пользователя с описаниями.
 
 2. **Механизм выбора основан на семантике** — модель ищет соответствие между:
-   - Запросом пользователя ("Проверь доступность")
-   - Описанием инструмента ("Use this when user asks about network reachability")
-   - Контекстом предыдущих результатов (если есть)
+    - Запросом пользователя ("Проверь доступность")
+    - Описанием инструмента ("Use this when user asks about network reachability")
+    - Контекстом предыдущих результатов (если есть)
 
 3. **Модель возвращает структурированный JSON** — это не текст "я вызову ping", а конкретный tool call с именем инструмента и аргументами
 

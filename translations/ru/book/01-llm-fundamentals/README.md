@@ -381,17 +381,17 @@ req := openai.ChatCompletionRequest{
 ### Критерии выбора
 
 1. **Поддержка Function Calling:** Модель должна уметь генерировать структурированные вызовы инструментов.
-   - [x] Хорошо: Модели с fine-tuning на function calling (например, `Hermes-2-Pro`, `Llama-3-Instruct`, `Mistral-7B-Instruct` на момент написания)
-   - [ ] Плохо: Базовые модели без fine-tuning на tools
-   
-   > **Примечание:** Конкретные модели могут меняться. Важно проверить поддержку function calling через capability benchmark (см. [Приложение: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization)).
+    - [x] Хорошо: Модели с fine-tuning на function calling (например, `Hermes-2-Pro`, `Llama-3-Instruct`, `Mistral-7B-Instruct` на момент написания)
+    - [ ] Плохо: Базовые модели без fine-tuning на tools
+
+    > **Примечание:** Конкретные модели могут меняться. Важно проверить поддержку function calling через capability benchmark (см. [Приложение: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization)).
 
 2. **Размер контекста:** Для сложных задач нужен большой контекст.
-   - Минимум: 4k токенов
-   - Рекомендуется: 8k+
+    - Минимум: 4k токенов
+    - Рекомендуется: 8k+
 
 3. **Качество следования инструкциям:** Модель должна строго следовать System Prompt.
-   - Проверяется через capability benchmark (см. [Приложение: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization))
+    - Проверяется через capability benchmark (см. [Приложение: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization))
 
 4. **Совместимость Prompt Template (при использовании LM Studio):** Если вы используете LM Studio для локального запуска модели, убедитесь, что выбранный prompt template поддерживает все необходимые роли (system, user, assistant, tool). Если шаблон поддерживает только `user` и `assistant`, вы можете получить ошибку `"Only user and assistant roles are supported!"`. В этом случае выберите корректный template в настройках модели (например, `ChatML` или специфичный для модели, например `Mistral Instruct` для моделей Mistral). Подробнее см. [Ошибка 3: LM Studio — неверный Prompt Template](#ошибка-3-lm-studio--неверный-prompt-template-ошибка-ролей) в разделе "Типовые ошибки".
 
@@ -516,8 +516,8 @@ compressed = append(compressed, recentMessages...)
 4. Нажмите на три точки → **Model Settings**
 5. Перейдите на вкладку **Prompt Template**
 6. Выберите правильный шаблон:
-   - Для Mistral: **Mistral Instruct**
-   - Или попробуйте: **ChatML**
+    - Для Mistral: **Mistral Instruct**
+    - Или попробуйте: **ChatML**
 
 Для других моделей аналогично выберите соответствующий шаблон (например, `Llama 3` для моделей Llama, `ChatML` как универсальный вариант).
 

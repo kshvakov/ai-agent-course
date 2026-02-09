@@ -64,19 +64,19 @@ For programmers who want to build production AI agents
 2. **Study [LLM Physics](./01-llm-fundamentals/README.md)** — the foundation for understanding everything else
 3. **Master [Prompting](./02-prompt-engineering/README.md)** — the foundation of working with agents
 4. **Build a working agent:**
-   - [Tools and Function Calling](./03-tools-and-function-calling/README.md) — the agent's "hands"
-   - [Autonomy and Loops](./04-autonomy-and-loops/README.md) — how agents work in loops
-   - [Safety and Human-in-the-Loop](./05-safety-and-hitl/README.md) — protecting against dangerous actions
+    - [Tools and Function Calling](./03-tools-and-function-calling/README.md) — the agent's "hands"
+    - [Autonomy and Loops](./04-autonomy-and-loops/README.md) — how agents work in loops
+    - [Safety and Human-in-the-Loop](./05-safety-and-hitl/README.md) — protecting against dangerous actions
 5. **Expand capabilities:**
-   - [RAG and Knowledge Base](./06-rag/README.md) — working with documentation
-   - [Multi-Agent Systems](./07-multi-agent/README.md) — teams of specialized agents
-   - [Evals and Reliability](./08-evals-and-reliability/README.md) — testing agents
+    - [RAG and Knowledge Base](./06-rag/README.md) — working with documentation
+    - [Multi-Agent Systems](./07-multi-agent/README.md) — teams of specialized agents
+    - [Evals and Reliability](./08-evals-and-reliability/README.md) — testing agents
 6. **Dive deeper into architecture:**
-   - [Agent Anatomy](./09-agent-architecture/README.md) — components and their interactions
-   - [Planning and Workflow Patterns](./10-planning-and-workflows/README.md) — planning complex tasks
-   - [State Management](./11-state-management/README.md) — execution reliability
-   - [Agent Memory Systems](./12-agent-memory/README.md) — long-term memory
-   - [Context Engineering](./13-context-engineering/README.md) — context management
+    - [Agent Anatomy](./09-agent-architecture/README.md) — components and their interactions
+    - [Planning and Workflow Patterns](./10-planning-and-workflows/README.md) — planning complex tasks
+    - [State Management](./11-state-management/README.md) — execution reliability
+    - [Agent Memory Systems](./12-agent-memory/README.md) — long-term memory
+    - [Context Engineering](./13-context-engineering/README.md) — context management
 7. **Practice:** Complete laboratory assignments alongside reading chapters
 
 ### For Experienced Programmers
@@ -91,64 +91,64 @@ You can skip basic chapters and go directly to:
 If you're an experienced developer and want to quickly understand the essence:
 
 1. **What is an agent?**
-   - Agent = LLM + Tools + Memory + Planning
-   - LLM is the "brain" that makes decisions
-   - Tools are the "hands" that perform actions
-   - Memory is history and long-term storage
-   - Planning is the ability to break down a task into steps
+    - Agent = LLM + Tools + Memory + Planning
+    - LLM is the "brain" that makes decisions
+    - Tools are the "hands" that perform actions
+    - Memory is history and long-term storage
+    - Planning is the ability to break down a task into steps
 
 2. **How does the agent loop work?**
-   ```
-   While (task not solved):
-     1. Send history to LLM
-     2. Get response (text or tool_call)
-     3. If tool_call → execute tool → add result to history → repeat
-     4. If text → show user and stop
-   ```
+    ```
+    While (task not solved):
+      1. Send history to LLM
+      2. Get response (text or tool_call)
+      3. If tool_call → execute tool → add result to history → repeat
+      4. If text → show user and stop
+    ```
 
 3. **Key points:**
-   - LLM doesn't execute code. It generates JSON with an execution request.
-   - Runtime (your code) executes real Go functions.
-   - LLM doesn't "remember" the past. It processes it in `messages[]`, which Runtime collects.
-   - Temperature = 0 for deterministic agent behavior.
+    - LLM doesn't execute code. It generates JSON with an execution request.
+    - Runtime (your code) executes real Go functions.
+    - LLM doesn't "remember" the past. It processes it in `messages[]`, which Runtime collects.
+    - Temperature = 0 for deterministic agent behavior.
 
 4. **Minimal example:**
-   ```go
-   // 1. Define tool
-   tools := []openai.Tool{{
-       Function: &openai.FunctionDefinition{
-           Name: "check_status",
-           Description: "Check server status",
-       },
-   }}
-   
-   // 2. Request to model
-   resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-       Model: "gpt-4o-mini",
-       Messages: []openai.ChatCompletionMessage{
-           {Role: "system", Content: "You are a DevOps engineer"},
-           {Role: "user", Content: "Check server status"},
-       },
-       Tools: tools,
-   })
-   
-   // 3. Check tool_call
-   if len(resp.Choices[0].Message.ToolCalls) > 0 {
-       // 4. Execute tool (Runtime)
-       result := checkStatus()
-       // 5. Add result to history
-       messages = append(messages, openai.ChatCompletionMessage{
-           Role: "tool",
-           Content: result,
-       })
-       // 6. Send updated history back to model
-   }
-   ```
+    ```go
+    // 1. Define tool
+    tools := []openai.Tool{{
+        Function: &openai.FunctionDefinition{
+            Name: "check_status",
+            Description: "Check server status",
+        },
+    }}
+    
+    // 2. Request to model
+    resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+        Model: "gpt-4o-mini",
+        Messages: []openai.ChatCompletionMessage{
+            {Role: "system", Content: "You are a DevOps engineer"},
+            {Role: "user", Content: "Check server status"},
+        },
+        Tools: tools,
+    })
+    
+    // 3. Check tool_call
+    if len(resp.Choices[0].Message.ToolCalls) > 0 {
+        // 4. Execute tool (Runtime)
+        result := checkStatus()
+        // 5. Add result to history
+        messages = append(messages, openai.ChatCompletionMessage{
+            Role: "tool",
+            Content: result,
+        })
+        // 6. Send updated history back to model
+    }
+    ```
 
 5. **What to read next:**
-   - [Chapter 03: Tools](./03-tools-and-function-calling/README.md) — detailed protocol
-   - [Chapter 04: Autonomy](./04-autonomy-and-loops/README.md) — agent loop
-   - [Chapter 09: Agent Anatomy](./09-agent-architecture/README.md) — architecture
+    - [Chapter 03: Tools](./03-tools-and-function-calling/README.md) — detailed protocol
+    - [Chapter 04: Autonomy](./04-autonomy-and-loops/README.md) — agent loop
+    - [Chapter 09: Agent Anatomy](./09-agent-architecture/README.md) — architecture
 
 ### After Completing the Main Course
 

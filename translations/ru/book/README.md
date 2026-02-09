@@ -64,19 +64,19 @@
 2. **Изучите [Физику LLM](./01-llm-fundamentals/README.md)** — фундамент для понимания всего остального
 3. **Освойте [Промптинг](./02-prompt-engineering/README.md)** — это основа работы с агентами
 4. **Соберите работающего агента:**
-   - [Инструменты и Function Calling](./03-tools-and-function-calling/README.md) — "руки" агента
-   - [Автономность и Циклы](./04-autonomy-and-loops/README.md) — как агент работает в цикле
-   - [Безопасность и Human-in-the-Loop](./05-safety-and-hitl/README.md) — защита от опасных действий
+    - [Инструменты и Function Calling](./03-tools-and-function-calling/README.md) — "руки" агента
+    - [Автономность и Циклы](./04-autonomy-and-loops/README.md) — как агент работает в цикле
+    - [Безопасность и Human-in-the-Loop](./05-safety-and-hitl/README.md) — защита от опасных действий
 5. **Расширьте возможности:**
-   - [RAG и База Знаний](./06-rag/README.md) — использование документации
-   - [Multi-Agent Systems](./07-multi-agent/README.md) — команда специализированных агентов
-   - [Evals и Надежность](./08-evals-and-reliability/README.md) — тестирование агентов
+    - [RAG и База Знаний](./06-rag/README.md) — использование документации
+    - [Multi-Agent Systems](./07-multi-agent/README.md) — команда специализированных агентов
+    - [Evals и Надежность](./08-evals-and-reliability/README.md) — тестирование агентов
 6. **Углубитесь в архитектуру:**
-   - [Анатомия Агента](./09-agent-architecture/README.md) — компоненты и их взаимодействие
-   - [Planning и Workflow-паттерны](./10-planning-and-workflows/README.md) — планирование сложных задач
-   - [State Management](./11-state-management/README.md) — надёжность выполнения
-   - [Системы Памяти Агента](./12-agent-memory/README.md) — долговременная память
-   - [Context Engineering](./13-context-engineering/README.md) — управление контекстом
+    - [Анатомия Агента](./09-agent-architecture/README.md) — компоненты и их взаимодействие
+    - [Planning и Workflow-паттерны](./10-planning-and-workflows/README.md) — планирование сложных задач
+    - [State Management](./11-state-management/README.md) — надёжность выполнения
+    - [Системы Памяти Агента](./12-agent-memory/README.md) — долговременная память
+    - [Context Engineering](./13-context-engineering/README.md) — управление контекстом
 7. **Практикуйтесь:** Проходите лабораторные работы параллельно с чтением глав
 
 ### Для опытных программистов
@@ -91,64 +91,64 @@
 Если вы опытный разработчик и хотите быстро понять суть:
 
 1. **Что такое агент?**
-   - Агент = LLM + Tools + Memory + Planning
-   - LLM — это "мозг", который принимает решения
-   - Tools — это "руки", которые выполняют действия
-   - Memory — это история и долговременное хранилище
-   - Planning — это способность разбить задачу на шаги
+    - Агент = LLM + Tools + Memory + Planning
+    - LLM — это "мозг", который принимает решения
+    - Tools — это "руки", которые выполняют действия
+    - Memory — это история и долговременное хранилище
+    - Planning — это способность разбить задачу на шаги
 
 2. **Как работает цикл агента?**
-   ```
-   While (задача не решена):
-     1. Отправить историю в LLM
-     2. Получить ответ (текст или tool_call)
-     3. Если tool_call → выполнить инструмент → добавить результат в историю → повторить
-     4. Если текст → показать пользователю и остановиться
-   ```
+    ```
+    While (задача не решена):
+      1. Отправить историю в LLM
+      2. Получить ответ (текст или tool_call)
+      3. Если tool_call → выполнить инструмент → добавить результат в историю → повторить
+      4. Если текст → показать пользователю и остановиться
+    ```
 
 3. **Ключевые моменты:**
-   - LLM не выполняет код. Она генерирует JSON с запросом на выполнение.
-   - Runtime (ваш код) выполняет реальные функции Go.
-   - LLM не "помнит" прошлое. Она видит его в `messages[]`, который собирает Runtime.
-   - Temperature = 0 для детерминированного поведения агентов.
+    - LLM не выполняет код. Она генерирует JSON с запросом на выполнение.
+    - Runtime (ваш код) выполняет реальные функции Go.
+    - LLM не "помнит" прошлое. Она видит его в `messages[]`, который собирает Runtime.
+    - Temperature = 0 для детерминированного поведения агентов.
 
 4. **Минимальный пример:**
-   ```go
-   // 1. Определяем инструмент
-   tools := []openai.Tool{{
-       Function: &openai.FunctionDefinition{
-           Name: "check_status",
-           Description: "Check server status",
-       },
-   }}
-   
-   // 2. Запрос к модели
-   resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-       Model: "gpt-4o-mini",
-       Messages: []openai.ChatCompletionMessage{
-           {Role: "system", Content: "Ты DevOps инженер"},
-           {Role: "user", Content: "Проверь статус сервера"},
-       },
-       Tools: tools,
-   })
-   
-   // 3. Проверяем tool_call
-   if len(resp.Choices[0].Message.ToolCalls) > 0 {
-       // 4. Выполняем инструмент (Runtime)
-       result := checkStatus()
-       // 5. Добавляем результат в историю
-       messages = append(messages, openai.ChatCompletionMessage{
-           Role: "tool",
-           Content: result,
-       })
-       // 6. Отправляем обновленную историю обратно в модель
-   }
-   ```
+    ```go
+    // 1. Определяем инструмент
+    tools := []openai.Tool{{
+        Function: &openai.FunctionDefinition{
+            Name: "check_status",
+            Description: "Check server status",
+        },
+    }}
+    
+    // 2. Запрос к модели
+    resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+        Model: "gpt-4o-mini",
+        Messages: []openai.ChatCompletionMessage{
+            {Role: "system", Content: "Ты DevOps инженер"},
+            {Role: "user", Content: "Проверь статус сервера"},
+        },
+        Tools: tools,
+    })
+    
+    // 3. Проверяем tool_call
+    if len(resp.Choices[0].Message.ToolCalls) > 0 {
+        // 4. Выполняем инструмент (Runtime)
+        result := checkStatus()
+        // 5. Добавляем результат в историю
+        messages = append(messages, openai.ChatCompletionMessage{
+            Role: "tool",
+            Content: result,
+        })
+        // 6. Отправляем обновленную историю обратно в модель
+    }
+    ```
 
 5. **Что читать дальше:**
-   - [Глава 03: Инструменты](./03-tools-and-function-calling/README.md) — детальный протокол
-   - [Глава 04: Автономность](./04-autonomy-and-loops/README.md) — цикл агента
-   - [Глава 09: Анатомия Агента](./09-agent-architecture/README.md) — архитектура
+    - [Глава 03: Инструменты](./03-tools-and-function-calling/README.md) — детальный протокол
+    - [Глава 04: Автономность](./04-autonomy-and-loops/README.md) — цикл агента
+    - [Глава 09: Анатомия Агента](./09-agent-architecture/README.md) — архитектура
 
 ### После завершения основного курса
 

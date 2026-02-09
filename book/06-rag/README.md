@@ -621,20 +621,20 @@ tools := []openai.Tool{
 **How it works:**
 
 1. **Tool catalog** stores metadata for each tool:
-   - Name and description
-   - Tags/categories (e.g., "text-processing", "network", "filesystem")
-   - Parameters and their types
-   - Risk level (safe/moderate/dangerous)
-   - Usage examples
+    - Name and description
+    - Tags/categories (e.g., "text-processing", "network", "filesystem")
+    - Parameters and their types
+    - Risk level (safe/moderate/dangerous)
+    - Usage examples
 
 2. **Before planning**, agent searches for relevant tools:
-   - Based on user query ("find errors in logs")
-   - Retrieves top-k tools (e.g., `grep`, `tail`, `jq`)
-   - Adds only their schemas to `tools[]`
+    - Based on user query ("find errors in logs")
+    - Retrieves top-k tools (e.g., `grep`, `tail`, `jq`)
+    - Adds only their schemas to `tools[]`
 
 3. **For pipelines**, use a two-level contract:
-   - **JSON DSL** describes the pipeline plan (steps, stdin/stdout, expectations)
-   - **Runtime** maps DSL to tool calls or executes via single `execute_pipeline`
+    - **JSON DSL** describes the pipeline plan (steps, stdin/stdout, expectations)
+    - **Runtime** maps DSL to tool calls or executes via single `execute_pipeline`
 
 ### Example: Tool RAG for Linux Commands
 

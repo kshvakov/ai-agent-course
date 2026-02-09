@@ -334,19 +334,19 @@ func abTestPrompt(promptA, promptB string, tests []EvalTest) {
 **Typical tasks the agent handles:**
 
 1. **Inventory and placement:**
-   - "Show list of all VMs"
-   - "Which hosts are VMs from project X placed on?"
-   - "How many VMs are on host web-01?"
+    - "Show list of all VMs"
+    - "Which hosts are VMs from project X placed on?"
+    - "How many VMs are on host web-01?"
 
 2. **Capacity planning:**
-   - "Are there enough resources in the cluster to create 5 new VMs?"
-   - "Which host has the most available resources?"
-   - "How much memory is available in the production cluster?"
+    - "Are there enough resources in the cluster to create 5 new VMs?"
+    - "Which host has the most available resources?"
+    - "How much memory is available in the production cluster?"
 
 3. **VM creation and modification:**
-   - "Create a VM with 4 CPU, 8GB RAM, 100GB disk"
-   - "Increase memory of VM app-01 to 16GB"
-   - "Expand disk of VM db-01 by 50GB"
+    - "Create a VM with 4 CPU, 8GB RAM, 100GB disk"
+    - "Increase memory of VM app-01 to 16GB"
+    - "Expand disk of VM db-01 by 50GB"
 
 **Tools for VM management:**
 

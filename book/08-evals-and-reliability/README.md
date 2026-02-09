@@ -119,20 +119,20 @@ func runAllEvals(ctx context.Context, client *openai.Client, tests []EvalTest) {
 **Main metrics:**
 
 1. **Pass Rate:** Percentage of tests that passed
-   - Target: > 90% for stable agent
-   - < 80% — needs improvement
+    - Target: > 90% for stable agent
+    - < 80% — needs improvement
 
 2. **Latency:** Agent response time
-   - Measured from request to final response
-   - Includes all loop iterations (tool calls)
+    - Measured from request to final response
+    - Includes all loop iterations (tool calls)
 
 3. **Token Usage:** Number of tokens per request
-   - Important for cost control
-   - Can track trends (token growth may indicate problems)
+    - Important for cost control
+    - Can track trends (token growth may indicate problems)
 
 4. **Iteration Count:** Number of loop iterations per task
-   - Too many iterations — agent may be looping
-   - Too few — agent may skip steps
+    - Too many iterations — agent may be looping
+    - Too few — agent may skip steps
 
 **Example metric tracking:**
 

@@ -320,14 +320,14 @@ For complex tasks (Lab 06 Incident), ReAct may "get lost" in details.
 **Architecture:**
 
 1. **Planner:** First generate complete plan
-   ```
-   Plan:
-   1. Check HTTP status
-   2. Read logs
-   3. Analyze errors
-   4. Apply fix
-   5. Verify
-   ```
+    ```
+    Plan:
+    1. Check HTTP status
+    2. Read logs
+    3. Analyze errors
+    4. Apply fix
+    5. Verify
+    ```
 
 2. **Solver:** Execute plan items in order
 
@@ -433,16 +433,16 @@ Final plan: [A, B, C, ...] (based on most frequent elements)
 **Decomposition principles:**
 
 1. **Atomicity:** Each step should be executable with one action
-   - Bad: "Check and fix server"
-   - Good: "Check server status" → "Read logs" → "Apply fix"
+    - Bad: "Check and fix server"
+    - Good: "Check server status" → "Read logs" → "Apply fix"
 
 2. **Dependencies:** Steps should execute in correct order
-   - Bad: "Apply fix" → "Read logs"
-   - Good: "Read logs" → "Analyze" → "Apply fix"
+    - Bad: "Apply fix" → "Read logs"
+    - Good: "Read logs" → "Analyze" → "Apply fix"
 
 3. **Verifiability:** Each step should have clear success criterion
-   - Bad: "Improve performance"
-   - Good: "Reduce CPU from 95% to 50%"
+    - Bad: "Improve performance"
+    - Good: "Reduce CPU from 95% to 50%"
 
 **Decomposition example (Support):**
 

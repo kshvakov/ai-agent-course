@@ -284,10 +284,10 @@ Can continue, but with caution. Problems possible in edge cases.
 
 **What to do:**
 1. Download model with tools support:
-   - `Hermes-2-Pro-Llama-3-8B`
-   - `Mistral-7B-Instruct-v0.2`
-   - `Llama-3-8B-Instruct` (some versions)
-   - `Gorilla OpenFunctions`
+    - `Hermes-2-Pro-Llama-3-8B`
+    - `Mistral-7B-Instruct-v0.2`
+    - `Llama-3-8B-Instruct` (some versions)
+    - `Gorilla OpenFunctions`
 2. Restart tests
 
 #### JSON generation failed

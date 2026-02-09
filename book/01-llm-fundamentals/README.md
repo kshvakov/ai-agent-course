@@ -381,17 +381,17 @@ Not all models are equally good for agents.
 ### Selection Criteria
 
 1. **Function Calling Support:** The model must be able to generate structured tool calls.
-   - [x] Good: Models fine-tuned on function calling (e.g., `Hermes-2-Pro`, `Llama-3-Instruct`, `Mistral-7B-Instruct` at time of writing)
-   - [ ] Bad: Base models without fine-tuning on tools
-   
-   > **Note:** Specific models may change. It's important to verify function calling support through capability benchmark (see [Appendix: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization)).
+    - [x] Good: Models fine-tuned on function calling (e.g., `Hermes-2-Pro`, `Llama-3-Instruct`, `Mistral-7B-Instruct` at time of writing)
+    - [ ] Bad: Base models without fine-tuning on tools
+
+    > **Note:** Specific models may change. It's important to verify function calling support through capability benchmark (see [Appendix: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization)).
 
 2. **Context Size:** Complex tasks require large context.
-   - Minimum: 4k tokens
-   - Recommended: 8k+
+    - Minimum: 4k tokens
+    - Recommended: 8k+
 
 3. **Instruction Following Quality:** The model must strictly follow System Prompt.
-   - Verified through capability benchmark (see [Appendix: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization))
+    - Verified through capability benchmark (see [Appendix: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization))
 
 4. **Prompt Template Compatibility (when using LM Studio):** If you're using LM Studio, make sure the selected prompt template supports all required roles (system, user, assistant, tool). If the template only supports `user` and `assistant`, you'll get an error: `"Only user and assistant roles are supported!"`. To fix this, select the correct template in model settings (e.g., `ChatML` or a model-specific template like `Mistral Instruct` for Mistral models). See more details in [Mistake 3: LM Studio — Wrong Prompt Template](#mistake-3-lm-studio--wrong-prompt-template-role-support-error) in the "Common Mistakes" section.
 
@@ -516,8 +516,8 @@ Choose the correct prompt template in model settings. Here's how to fix it for `
 4. Click the three dots → **Model Settings**
 5. Go to the **Prompt Template** tab
 6. Select the correct template:
-   - For Mistral: **Mistral Instruct**
-   - Or try: **ChatML**
+    - For Mistral: **Mistral Instruct**
+    - Or try: **ChatML**
 
 For other models, select the appropriate template (e.g., `Llama 3` for Llama models, or `ChatML` as a universal option).
 
