@@ -84,7 +84,7 @@
 
 **Что внутри:** Обнаружение и маскирование PII, защита секретов, redaction логов, хранение и TTL логов.
 
-**Примечание:** Прод-аспекты RAG и Multi-Agent описаны в базовых главах [06](../06-rag/README.md) и [07](../07-multi-agent/README.md). Выбор модели и настройка декодинга описаны в [Главе 01](../01-llm-fundamentals/README.md) и [Lab 00](../../labs/lab00-capability-check/README.md).
+**Примечание:** Прод-аспекты RAG и Multi-Agent описаны в базовых главах [06](../06-rag/README.md) и [07](../07-multi-agent/README.md). Выбор модели и настройка декодинга описаны в [Главе 01](../01-llm-fundamentals/README.md) и [Lab 00](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab00-capability-check).
 
 ## Алгоритм приоритизации
 

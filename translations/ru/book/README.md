@@ -162,22 +162,21 @@
 
 | Глава руководства | Соответствующие лабораторные работы |
 |----------------|-------------------------------------|
-| [01. Физика LLM](./01-llm-fundamentals/README.md) | Lab 00 (Capability Check) |
-| [02. Промптинг](./02-prompt-engineering/README.md) | Lab 01 (Basics) |
-| [03. Инструменты](./03-tools-and-function-calling/README.md) | Lab 02 (Tools), Lab 03 (Architecture) |
-| [04. Автономность](./04-autonomy-and-loops/README.md) | Lab 04 (Autonomy) |
-| [05. Безопасность](./05-safety-and-hitl/README.md) | Lab 05 (Human-in-the-Loop) |
-| [02. Промптинг (SOP)](./02-prompt-engineering/README.md) | Lab 06 (Incident) |
-| [06. RAG](./06-rag/README.md) | Lab 07 (RAG) |
-| [07. Multi-Agent](./07-multi-agent/README.md) | Lab 08 (Multi-Agent) |
-| [09. Анатомия Агента](./09-agent-architecture/README.md) | Lab 01 (Basics), Lab 09 (Context Optimization) |
-| [10. Planning и Workflow-паттерны](./10-planning-and-workflows/README.md) | Lab 10 (Planning & Workflow) |
-| [11. State Management](./11-state-management/README.md) | Lab 10 (Planning & Workflow) — частично |
-| [12. Системы Памяти Агента](./12-agent-memory/README.md), [13. Context Engineering](./13-context-engineering/README.md) | Lab 11 (Memory & Context Engineering) |
-| [18. Протоколы Инструментов и Tool Servers](./18-tool-protocols-and-servers/README.md) | Lab 12 (Tool Server Protocol) |
-| [17. Security и Governance](./17-security-and-governance/README.md) | Lab 13 (Agent Security Hardening) — Опционально |
-| [22. Prompt и Program Management](./22-prompt-program-management/README.md) | Lab 01 (Basics) — частично |
-| [23. Evals в CI/CD](./23-evals-in-cicd/README.md) | Lab 14 (Evals in CI) — Опционально |
+| [01. Физика LLM](./01-llm-fundamentals/README.md) | [Lab 00](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab00-capability-check) (Capability Check) |
+| [02. Промптинг](./02-prompt-engineering/README.md) | [Lab 01](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab01-basics) (Basics) |
+| [03. Инструменты](./03-tools-and-function-calling/README.md) | [Lab 02](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab02-tools) (Tools), [Lab 03](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab03-real-world) (Architecture) |
+| [04. Автономность](./04-autonomy-and-loops/README.md) | [Lab 04](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab04-autonomy) (Autonomy) |
+| [05. Безопасность](./05-safety-and-hitl/README.md) | [Lab 05](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab05-human-interaction) (Human-in-the-Loop) |
+| [02. Промптинг (SOP)](./02-prompt-engineering/README.md) | [Lab 06](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab06-incident) (Incident) |
+| [06. RAG](./06-rag/README.md) | [Lab 07](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab07-rag) (RAG) |
+| [07. Multi-Agent](./07-multi-agent/README.md) | [Lab 08](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab08-multi-agent) (Multi-Agent) |
+| [09. Анатомия Агента](./09-agent-architecture/README.md) | [Lab 01](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab01-basics) (Basics), [Lab 09](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab09-context-optimization) (Context Optimization) |
+| [10. Planning и Workflow-паттерны](./10-planning-and-workflows/README.md) | [Lab 10](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab10-planning-workflows) (Planning & Workflow) |
+| [11. State Management](./11-state-management/README.md) | [Lab 10](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab10-planning-workflows) (Planning & Workflow) — частично |
+| [12. Системы Памяти Агента](./12-agent-memory/README.md), [13. Context Engineering](./13-context-engineering/README.md) | [Lab 11](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab11-memory-context) (Memory & Context Engineering) |
+| [18. Протоколы Инструментов и Tool Servers](./18-tool-protocols-and-servers/README.md) | [Lab 12](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab12-tool-server) (Tool Server Protocol) |
+| [17. Security и Governance](./17-security-and-governance/README.md) | [Lab 13](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab13-tool-retrieval) (Agent Security Hardening) — Опционально |
+| [22. Prompt и Program Management](./22-prompt-program-management/README.md) | [Lab 01](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab01-basics) (Basics) — частично |
 
 ---
 

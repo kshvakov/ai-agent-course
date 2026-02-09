@@ -546,7 +546,7 @@ graph TB
 - Модель видит весь контекст (system + user + tool call + tool result)
 - Генерирует финальный ответ: `"nginx работает нормально, сервис ONLINE"`
 
-**Примечание:** Для реализации на Go см. примеры в [Lab 02: Tools](../../labs/lab02-tools/README.md) и [Lab 04: Autonomy](../../labs/lab04-autonomy/README.md)
+**Примечание:** Для реализации на Go см. примеры в [Lab 02: Tools](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab02-tools) и [Lab 04: Autonomy](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab04-autonomy)
 
 ### Ключевые моменты для разработчика
 
@@ -570,7 +570,7 @@ graph TB
 
 См. как писать инструкции и примеры: **[Глава 02: Промптинг](../02-prompt-engineering/README.md)**
 
-Практика: **[Lab 02: Tools](../../labs/lab02-tools/README.md)**, **[Lab 04: Autonomy](../../labs/lab04-autonomy/README.md)**
+Практика: **[Lab 02: Tools](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab02-tools)**, **[Lab 04: Autonomy](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab04-autonomy)**
 
 ### Что происходит на деле?
 

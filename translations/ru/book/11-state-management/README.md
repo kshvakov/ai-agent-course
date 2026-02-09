@@ -248,7 +248,7 @@ func resumeTask(taskID string) error {
 
 ### Точка интеграции 1: Agent Loop
 
-В `labs/lab04-autonomy/main.go` добавьте сохранение состояния:
+В [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab04-autonomy/main.go) добавьте сохранение состояния:
 
 ```go
 // В начале agent run:
@@ -273,7 +273,7 @@ saveTask(task)
 
 ### Точка интеграции 2: Tool Execution
 
-В `labs/lab02-tools/main.go` добавьте retry для инструментов:
+В [`labs/lab02-tools/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab02-tools/main.go) добавьте retry для инструментов:
 
 ```go
 func executeToolWithRetry(toolCall openai.ToolCall) (string, error) {
@@ -289,7 +289,7 @@ func executeToolWithRetry(toolCall openai.ToolCall) (string, error) {
 
 ## Мини-пример кода
 
-Полный пример с workflow и state management на базе `labs/lab04-autonomy/main.go`:
+Полный пример с workflow и state management на базе [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab04-autonomy/main.go):
 
 ```go
 package main

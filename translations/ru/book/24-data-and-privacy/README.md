@@ -85,7 +85,7 @@ func logWithRedaction(runID string, data map[string]any) {
 
 ### Точка интеграции: User Input
 
-В `labs/lab05-human-interaction/main.go` санитизируйте входные данные:
+В [`labs/lab05-human-interaction/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab05-human-interaction/main.go) санитизируйте входные данные:
 
 ```go
 userInput := sanitizePII(sanitizeSecrets(rawInput))

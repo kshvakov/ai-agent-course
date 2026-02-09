@@ -168,7 +168,7 @@ msg2 := resp2.Choices[0].Message
 
 In this lab, we implement **simple RAG** (keyword search). In production, **vector search** (Semantic Search) is used, which searches by meaning, not by words.
 
-**Simple RAG (Lab 07):**
+**Simple RAG ([Lab 07](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab07-rag)):**
 ```go
 // Search by substring match
 if strings.Contains(content, query) {
@@ -696,7 +696,7 @@ var toolCatalog = []ToolDefinition{
 
 For tool search, you can use two approaches: simple keyword search (for learning) and vector search (for production).
 
-**Simple search (Lab 13):**
+**Simple search ([Lab 13](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab13-tool-retrieval)):**
 ```go
 func searchToolCatalog(query string, topK int) []ToolDefinition {
     // Simple search by description and tags

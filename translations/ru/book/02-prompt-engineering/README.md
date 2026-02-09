@@ -277,9 +277,9 @@ Assistant: {"tool": "check_status", "args": {"hostname": "web-01"}}  // Тот �
 - **CoT → SOP:** SOP — это **процесс**, закрепленный инструкцией и/или примерами. CoT помогает модели следовать этому процессу шаг за шагом.
 
 См. подробнее:
-- **[Lab 01: Basics](../../labs/lab01-basics/README.md)** — работа с контекстом и памятью
-- **[Lab 02: Tools](../../labs/lab02-tools/README.md)** — формат ответов через Function Calling
-- **[Lab 06: Incident (SOP)](../../labs/lab06-incident/README.md)** — SOP как алгоритм действий
+- **[Lab 01: Basics](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab01-basics)** — работа с контекстом и памятью
+- **[Lab 02: Tools](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab02-tools)** — формат ответов через Function Calling
+- **[Lab 06: Incident (SOP)](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab06-incident)** — SOP как алгоритм действий
 
 ## Сквозной пример: что именно отправляет агент в LLM
 

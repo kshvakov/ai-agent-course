@@ -64,7 +64,7 @@ func checkTokenBudget(budget TokenBudget) error {
 
 ### Step 2: Iteration Limits
 
-Limit the number of ReAct loop iterations (see `labs/lab04-autonomy/main.go`):
+Limit the number of ReAct loop iterations (see [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab04-autonomy/main.go)):
 
 ```go
 func runAgent(ctx context.Context, client *openai.Client, userInput string) (string, error) {
@@ -155,7 +155,7 @@ func setCachedResult(key string, result string, ttl time.Duration) {
 
 ### Step 4: Model Routing by Complexity
 
-Use cheaper models for simple tasks (see `labs/lab09-context-optimization/main.go`):
+Use cheaper models for simple tasks (see [`labs/lab09-context-optimization/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab09-context-optimization/main.go)):
 
 ```go
 func selectModel(taskComplexity string) string {
@@ -240,7 +240,7 @@ func runAgentWithTimeout(ctx context.Context, client *openai.Client, userInput s
 
 ### Integration Point 1: Agent Loop
 
-In `labs/lab04-autonomy/main.go` add budget check and iteration limit:
+In [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab04-autonomy/main.go) add budget check and iteration limit:
 
 ```go
 const MaxIterations = 10
@@ -259,7 +259,7 @@ for i := 0; i < MaxIterations; i++ {
 
 ### Integration Point 2: Context Optimization
 
-In `labs/lab09-context-optimization/main.go` token counting already exists. Add budget check:
+In [`labs/lab09-context-optimization/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab09-context-optimization/main.go) token counting already exists. Add budget check:
 
 ```go
 func adaptiveContextManagement(ctx context.Context, client *openai.Client, messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
@@ -276,7 +276,7 @@ func adaptiveContextManagement(ctx context.Context, client *openai.Client, messa
 
 ## Mini Code Example
 
-Complete example with cost control based on `labs/lab04-autonomy/main.go`:
+Complete example with cost control based on [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab04-autonomy/main.go):
 
 ```go
 package main
@@ -864,7 +864,7 @@ if err == context.DeadlineExceeded {
 
 ### Exercise 1: Implement Token Budget Check
 
-Add budget check to `labs/lab04-autonomy/main.go`:
+Add budget check to [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab04-autonomy/main.go):
 
 ```go
 func checkTokenBudget(used int, limit int) error {

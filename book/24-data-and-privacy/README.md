@@ -84,7 +84,7 @@ func logWithRedaction(runID string, data map[string]any) {
 
 ### Integration Point: User Input
 
-In `labs/lab05-human-interaction/main.go` sanitize input data:
+In [`labs/lab05-human-interaction/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab05-human-interaction/main.go) sanitize input data:
 
 ```go
 userInput := sanitizePII(sanitizeSecrets(rawInput))

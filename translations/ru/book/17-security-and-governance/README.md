@@ -322,7 +322,7 @@ func logAudit(log AuditLog) {
 
 ### Точка интеграции 1: Tool Execution
 
-В `labs/lab02-tools/main.go` добавьте проверку доступа и подтверждение:
+В [`labs/lab02-tools/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab02-tools/main.go) добавьте проверку доступа и подтверждение:
 
 ```go
 func executeTool(toolCall openai.ToolCall, userRole UserRole) (string, error) {
@@ -357,7 +357,7 @@ func executeTool(toolCall openai.ToolCall, userRole UserRole) (string, error) {
 
 ### Точка интеграции 2: Human-in-the-Loop
 
-В `labs/lab05-human-interaction/main.go` уже есть подтверждения. Расширьте их для risk scoring:
+В [`labs/lab05-human-interaction/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab05-human-interaction/main.go) уже есть подтверждения. Расширьте их для risk scoring:
 
 ```go
 func requestConfirmation(toolCall openai.ToolCall) bool {
@@ -375,7 +375,7 @@ func requestConfirmation(toolCall openai.ToolCall) bool {
 
 ## Мини-пример кода
 
-Полный пример с безопасностью на базе `labs/lab05-human-interaction/main.go`:
+Полный пример с безопасностью на базе [`labs/lab05-human-interaction/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab05-human-interaction/main.go):
 
 ```go
 package main

@@ -168,7 +168,7 @@ msg2 := resp2.Choices[0].Message
 
 В этой лабе мы реализуем **простой RAG** (поиск по ключевым словам). В продакшене используется **векторный поиск** (Semantic Search), который ищет по смыслу, а не по словам.
 
-**Простой RAG (Lab 07):**
+**Простой RAG ([Lab 07](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab07-rag)):**
 ```go
 // Поиск по вхождению подстроки
 if strings.Contains(content, query) {
@@ -696,7 +696,7 @@ var toolCatalog = []ToolDefinition{
 
 Для поиска инструментов можно использовать два подхода: простой поиск по ключевым словам (для обучения) и векторный поиск (для продакшена).
 
-**Простой поиск (Lab 13):**
+**Простой поиск ([Lab 13](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab13-tool-retrieval)):**
 ```go
 func searchToolCatalog(query string, topK int) []ToolDefinition {
     // Простой поиск по описанию и тегам

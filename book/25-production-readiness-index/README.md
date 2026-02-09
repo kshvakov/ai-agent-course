@@ -84,7 +84,7 @@ If you have time for planned refinement, add topics as you grow:
 
 **What's inside:** PII detection and masking, secret protection, log redaction, log storage and TTL.
 
-**Note:** Production aspects of RAG and Multi-Agent are described in basic chapters [06](../06-rag/README.md) and [07](../07-multi-agent/README.md). Model selection and decoding configuration are described in [Chapter 01](../01-llm-fundamentals/README.md) and [Lab 00](../../labs/lab00-capability-check/README.md).
+**Note:** Production aspects of RAG and Multi-Agent are described in basic chapters [06](../06-rag/README.md) and [07](../07-multi-agent/README.md). Model selection and decoding configuration are described in [Chapter 01](../01-llm-fundamentals/README.md) and [Lab 00](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab00-capability-check).
 
 ## Prioritization Algorithm
 

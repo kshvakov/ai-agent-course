@@ -194,7 +194,7 @@ This section contains reference information: glossary of terms, checklists, SOP 
 
 ### Checklist: Model Setup for Agent
 
-- [ ] Model supports Function Calling (checked via Lab 00)
+- [ ] Model supports Function Calling (checked via [Lab 00](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab00-capability-check))
 - [ ] `Temperature = 0` set
 - [ ] Context window large enough (minimum 4k tokens)
 - [ ] System Prompt prohibits hallucinations
@@ -244,7 +244,7 @@ We don't trust labels ("Super-Pro-Max Model"). We trust tests.
 #### 4. Function Calling
 - Specific model skill to recognize function definitions and generate special call token
 - Without this, tools are impossible (see [Chapter 03: Tools](../03-tools-and-function-calling/README.md))
-- **Why:** This is the foundation for Lab 02 and all subsequent labs
+- **Why:** This is the foundation for [Lab 02](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab02-tools) and all subsequent labs
 
 ### Why Don't All Models Know Tools?
 
@@ -259,7 +259,7 @@ Assistant: <special_token>call_tool{"name": "weather"}<end_token>
 
 If you downloaded "bare" Llama 3 (Base model), it hasn't seen these examples. It will just continue dialogue with text.
 
-**How to check:** Run Lab 00 before starting work with tools.
+**How to check:** Run [Lab 00](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab00-capability-check) before starting work with tools.
 
 ### Why Is `Temperature = 0` Critical for Agents?
 
@@ -280,7 +280,7 @@ Model is ready for the course. Can continue work.
 Can continue, but with caution. Problems possible in edge cases.
 
 #### Function calling failed
-**Critical:** Model is not suitable for Lab 02-08. Need different model.
+**Critical:** Model is not suitable for [Lab 02](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab02-tools)-08. Need different model.
 
 **What to do:**
 1. Download model with tools support:
@@ -305,7 +305,7 @@ Capability Benchmark is a primitive **Eval** (Evaluation). In production systems
 
 ### Practice
 
-To perform capability benchmark, see [Lab 00: Model Capability Benchmark](../../labs/lab00-capability-check/README.md).
+To perform capability benchmark, see [Lab 00: Model Capability Benchmark](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab00-capability-check).
 
 ## SOP Templates
 
@@ -405,7 +405,7 @@ The more accurate the `Description`, the better the selection.
 ### Q: Model doesn't call tools. Why?
 
 **A:** Possible causes:
-1. Model doesn't support Function Calling (check via Lab 00)
+1. Model doesn't support Function Calling (check via [Lab 00](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab00-capability-check))
 2. Poor tool description (`Description` unclear)
 3. `Temperature > 0` (too random)
 

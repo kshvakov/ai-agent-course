@@ -64,7 +64,7 @@ func checkTokenBudget(budget TokenBudget) error {
 
 ### Шаг 2: Лимиты итераций
 
-Ограничьте количество итераций ReAct loop (см. `labs/lab04-autonomy/main.go`):
+Ограничьте количество итераций ReAct loop (см. [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab04-autonomy/main.go)):
 
 ```go
 func runAgent(ctx context.Context, client *openai.Client, userInput string) (string, error) {
@@ -155,7 +155,7 @@ func setCachedResult(key string, result string, ttl time.Duration) {
 
 ### Шаг 4: Маршрутизация моделей по сложности
 
-Используйте более дешёвые модели для простых задач (см. `labs/lab09-context-optimization/main.go`):
+Используйте более дешёвые модели для простых задач (см. [`labs/lab09-context-optimization/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab09-context-optimization/main.go)):
 
 ```go
 func selectModel(taskComplexity string) string {
@@ -240,7 +240,7 @@ func runAgentWithTimeout(ctx context.Context, client *openai.Client, userInput s
 
 ### Точка интеграции 1: Agent Loop
 
-В `labs/lab04-autonomy/main.go` добавьте проверку бюджета и лимит итераций:
+В [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab04-autonomy/main.go) добавьте проверку бюджета и лимит итераций:
 
 ```go
 const MaxIterations = 10
@@ -259,7 +259,7 @@ for i := 0; i < MaxIterations; i++ {
 
 ### Точка интеграции 2: Context Optimization
 
-В `labs/lab09-context-optimization/main.go` уже есть подсчёт токенов. Добавьте проверку бюджета:
+В [`labs/lab09-context-optimization/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab09-context-optimization/main.go) уже есть подсчёт токенов. Добавьте проверку бюджета:
 
 ```go
 func adaptiveContextManagement(ctx context.Context, client *openai.Client, messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
@@ -276,7 +276,7 @@ func adaptiveContextManagement(ctx context.Context, client *openai.Client, messa
 
 ## Мини-пример кода
 
-Полный пример с контролем стоимости на базе `labs/lab04-autonomy/main.go`:
+Полный пример с контролем стоимости на базе [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab04-autonomy/main.go):
 
 ```go
 package main
@@ -864,7 +864,7 @@ if err == context.DeadlineExceeded {
 
 ### Упражнение 1: Реализуйте проверку бюджета токенов
 
-Добавьте проверку бюджета в `labs/lab04-autonomy/main.go`:
+Добавьте проверку бюджета в [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab04-autonomy/main.go):
 
 ```go
 func checkTokenBudget(used int, limit int) error {

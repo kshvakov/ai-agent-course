@@ -94,7 +94,7 @@ func generateRunID() string {
 
 ### Step 3: Logging in Agent Loop
 
-Insert logging into the agent loop (see `labs/lab04-autonomy/main.go`):
+Insert logging into the agent loop (see [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab04-autonomy/main.go)):
 
 ```go
 func runAgent(ctx context.Context, client *openai.Client, userInput string) (string, error) {
@@ -212,7 +212,7 @@ func logAgentRunError(runID string, err error) {
 
 ### Step 5: Tool Execution Logging
 
-In tool execution functions (see `labs/lab02-tools/main.go`) add logging:
+In tool execution functions (see [`labs/lab02-tools/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab02-tools/main.go)) add logging:
 
 ```go
 func executeToolWithLogging(runID string, toolCall openai.ToolCall) (string, error) {
@@ -252,7 +252,7 @@ func executeToolWithLogging(runID string, toolCall openai.ToolCall) (string, err
 
 ### Integration Point 1: Agent Loop
 
-In `labs/lab04-autonomy/main.go` add logging to the agent loop:
+In [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab04-autonomy/main.go) add logging to the agent loop:
 
 ```go
 // At start of main():
@@ -271,7 +271,7 @@ log.Printf("TOOL_EXECUTED: run_id=%s tool=%s result=%s", runID, toolCall.Functio
 
 ### Integration Point 2: Tool Execution
 
-In `labs/lab02-tools/main.go` add logging when executing tools:
+In [`labs/lab02-tools/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab02-tools/main.go) add logging when executing tools:
 
 ```go
 // In tool execution function:
@@ -285,7 +285,7 @@ func executeTool(runID string, toolCall openai.ToolCall) (string, error) {
 
 ## Mini Code Example
 
-Complete example with observability based on `labs/lab04-autonomy/main.go`:
+Complete example with observability based on [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab04-autonomy/main.go):
 
 ```go
 package main
@@ -1033,7 +1033,7 @@ metrics.RecordLatency("tool_execution_duration", latency, map[string]string{"too
 
 ### Exercise 1: Implement Structured Logging
 
-Add structured logging to `labs/lab04-autonomy/main.go`:
+Add structured logging to [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab04-autonomy/main.go):
 
 ```go
 func logAgentRun(runID string, userInput string, toolCalls []ToolCall, result string) {

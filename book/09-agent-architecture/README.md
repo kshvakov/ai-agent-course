@@ -315,7 +315,7 @@ Thought: I'll analyze results and formulate conclusions.
 
 ### Plan-and-Solve
 
-For complex tasks (Lab 06 Incident), ReAct may "get lost" in details.
+For complex tasks ([Lab 06](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab06-incident) Incident), ReAct may "get lost" in details.
 
 **Architecture:**
 

@@ -194,7 +194,7 @@
 
 ### Чек-лист: Настройка модели для агента
 
-- [ ] Модель поддерживает Function Calling (проверено через Lab 00)
+- [ ] Модель поддерживает Function Calling (проверено через [Lab 00](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab00-capability-check))
 - [ ] `Temperature = 0` установлена
 - [ ] Контекстное окно достаточно большое (минимум 4k токенов)
 - [ ] System Prompt запрещает галлюцинации
@@ -244,7 +244,7 @@
 #### 4. Function Calling (Использование инструментов)
 - Специфический навык модели распознавать определение функций и формировать специальный токен вызова
 - Без этого невозможны инструменты (см. [Главу 03: Инструменты](../03-tools-and-function-calling/README.md))
-- **Зачем:** Это основа для Lab 02 и всех последующих лаб
+- **Зачем:** Это основа для [Lab 02](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab02-tools) и всех последующих лаб
 
 ### Почему не все модели умеют Tools?
 
@@ -259,7 +259,7 @@ Assistant: <special_token>call_tool{"name": "weather"}<end_token>
 
 Если вы скачали "голую" Llama 3 (Base model), она не видела этих примеров. Она просто продолжит диалог текстом.
 
-**Как проверить:** Запустите Lab 00 перед началом работы с инструментами.
+**Как проверить:** Запустите [Lab 00](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab00-capability-check) перед началом работы с инструментами.
 
 ### Почему `Temperature = 0` критично для агентов?
 
@@ -280,7 +280,7 @@ Assistant: <special_token>call_tool{"name": "weather"}<end_token>
 Можно продолжать, но с осторожностью. Возможны проблемы в краевых случаях.
 
 #### Function Calling провален
-**Критично:** Модель не подходит для Lab 02-08. Нужна другая модель.
+**Критично:** Модель не подходит для [Lab 02](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab02-tools)-08. Нужна другая модель.
 
 **Что делать:**
 1. Скачайте модель с поддержкой tools:
@@ -305,7 +305,7 @@ Capability Benchmark — это примитивный **Eval** (Evaluation). В
 
 ### Практика
 
-Для выполнения capability benchmark см. [Lab 00: Model Capability Benchmark](../../labs/lab00-capability-check/README.md).
+Для выполнения capability benchmark см. [Lab 00: Model Capability Benchmark](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab00-capability-check).
 
 ## Шаблоны SOP
 
@@ -405,7 +405,7 @@ SOP для обработки тикета:
 ### Q: Модель не вызывает инструменты. Почему?
 
 **A:** Возможные причины:
-1. Модель не поддерживает Function Calling (проверьте через Lab 00)
+1. Модель не поддерживает Function Calling (проверьте через [Lab 00](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab00-capability-check))
 2. Плохое описание инструмента (`Description` неясное)
 3. `Temperature > 0` (слишком случайно)
 

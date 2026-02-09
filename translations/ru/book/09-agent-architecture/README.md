@@ -315,7 +315,7 @@ Thought: Проанализирую результаты и сформулиру
 
 ### Plan-and-Solve
 
-Для сложных задач (Lab 06 Incident) ReAct может "заблудиться" в деталях.
+Для сложных задач ([Lab 06 Incident](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab06-incident)) ReAct может "заблудиться" в деталях.
 
 **Архитектура:**
 

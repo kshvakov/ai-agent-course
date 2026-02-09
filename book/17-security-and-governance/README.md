@@ -322,7 +322,7 @@ func logAudit(log AuditLog) {
 
 ### Integration Point 1: Tool Execution
 
-In `labs/lab02-tools/main.go` add access check and confirmation:
+In [`labs/lab02-tools/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab02-tools/main.go) add access check and confirmation:
 
 ```go
 func executeTool(toolCall openai.ToolCall, userRole UserRole) (string, error) {
@@ -357,7 +357,7 @@ func executeTool(toolCall openai.ToolCall, userRole UserRole) (string, error) {
 
 ### Integration Point 2: Human-in-the-Loop
 
-In `labs/lab05-human-interaction/main.go` confirmations already exist. Extend them for risk scoring:
+In [`labs/lab05-human-interaction/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab05-human-interaction/main.go) confirmations already exist. Extend them for risk scoring:
 
 ```go
 func requestConfirmation(toolCall openai.ToolCall) bool {
@@ -375,7 +375,7 @@ func requestConfirmation(toolCall openai.ToolCall) bool {
 
 ## Mini Code Example
 
-Complete example with security based on `labs/lab05-human-interaction/main.go`:
+Complete example with security based on [`labs/lab05-human-interaction/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab05-human-interaction/main.go):
 
 ```go
 package main

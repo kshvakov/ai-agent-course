@@ -162,22 +162,21 @@ After studying chapters 1-16, proceed to:
 
 | Handbook Chapter | Corresponding Laboratory Assignments |
 |----------------|-------------------------------------|
-| [01. LLM Physics](./01-llm-fundamentals/README.md) | Lab 00 (Capability Check) |
-| [02. Prompting](./02-prompt-engineering/README.md) | Lab 01 (Basics) |
-| [03. Tools](./03-tools-and-function-calling/README.md) | Lab 02 (Tools), Lab 03 (Architecture) |
-| [04. Autonomy](./04-autonomy-and-loops/README.md) | Lab 04 (Autonomy) |
-| [05. Safety](./05-safety-and-hitl/README.md) | Lab 05 (Human-in-the-Loop) |
-| [02. Prompting (SOP)](./02-prompt-engineering/README.md) | Lab 06 (Incident) |
-| [06. RAG](./06-rag/README.md) | Lab 07 (RAG) |
-| [07. Multi-Agent](./07-multi-agent/README.md) | Lab 08 (Multi-Agent) |
-| [09. Agent Anatomy](./09-agent-architecture/README.md) | Lab 01 (Basics), Lab 09 (Context Optimization) |
-| [10. Planning and Workflow Patterns](./10-planning-and-workflows/README.md) | Lab 10 (Planning & Workflow) |
-| [11. State Management](./11-state-management/README.md) | Lab 10 (Planning & Workflow) — partially |
-| [12. Agent Memory Systems](./12-agent-memory/README.md), [13. Context Engineering](./13-context-engineering/README.md) | Lab 11 (Memory & Context Engineering) |
-| [18. Tool Protocols and Tool Servers](./18-tool-protocols-and-servers/README.md) | Lab 12 (Tool Server Protocol) |
-| [17. Security and Governance](./17-security-and-governance/README.md) | Lab 13 (Agent Security Hardening) — Optional |
-| [22. Prompt and Program Management](./22-prompt-program-management/README.md) | Lab 01 (Basics) — partially |
-| [23. Evals in CI/CD](./23-evals-in-cicd/README.md) | Lab 14 (Evals in CI) — Optional |
+| [01. LLM Physics](./01-llm-fundamentals/README.md) | [Lab 00](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab00-capability-check) (Capability Check) |
+| [02. Prompting](./02-prompt-engineering/README.md) | [Lab 01](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab01-basics) (Basics) |
+| [03. Tools](./03-tools-and-function-calling/README.md) | [Lab 02](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab02-tools) (Tools), [Lab 03](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab03-real-world) (Architecture) |
+| [04. Autonomy](./04-autonomy-and-loops/README.md) | [Lab 04](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab04-autonomy) (Autonomy) |
+| [05. Safety](./05-safety-and-hitl/README.md) | [Lab 05](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab05-human-interaction) (Human-in-the-Loop) |
+| [02. Prompting (SOP)](./02-prompt-engineering/README.md) | [Lab 06](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab06-incident) (Incident) |
+| [06. RAG](./06-rag/README.md) | [Lab 07](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab07-rag) (RAG) |
+| [07. Multi-Agent](./07-multi-agent/README.md) | [Lab 08](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab08-multi-agent) (Multi-Agent) |
+| [09. Agent Anatomy](./09-agent-architecture/README.md) | [Lab 01](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab01-basics) (Basics), [Lab 09](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab09-context-optimization) (Context Optimization) |
+| [10. Planning and Workflow Patterns](./10-planning-and-workflows/README.md) | [Lab 10](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab10-planning-workflows) (Planning & Workflow) |
+| [11. State Management](./11-state-management/README.md) | [Lab 10](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab10-planning-workflows) (Planning & Workflow) — partially |
+| [12. Agent Memory Systems](./12-agent-memory/README.md), [13. Context Engineering](./13-context-engineering/README.md) | [Lab 11](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab11-memory-context) (Memory & Context Engineering) |
+| [18. Tool Protocols and Tool Servers](./18-tool-protocols-and-servers/README.md) | [Lab 12](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab12-tool-server) (Tool Server Protocol) |
+| [17. Security and Governance](./17-security-and-governance/README.md) | [Lab 13](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab13-tool-retrieval) (Agent Security Hardening) — Optional |
+| [22. Prompt and Program Management](./22-prompt-program-management/README.md) | [Lab 01](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab01-basics) (Basics) — partially |
 
 ---
 

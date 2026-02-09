@@ -399,7 +399,7 @@ req := openai.ChatCompletionRequest{
 
 **Теория:** См. [Приложение: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization) — подробное описание того, что проверяем и почему это важно.
 
-**Практика:** См. [Lab 00: Model Capability Benchmark](../../labs/lab00-capability-check/README.md) — готовый инструмент для проверки модели.
+**Практика:** См. [Lab 00: Model Capability Benchmark](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab00-capability-check) — готовый инструмент для проверки модели.
 
 ## Типовые ошибки
 
@@ -492,7 +492,7 @@ compressed = append(compressed, recentMessages...)
 - **Обрезка:** Быстрые одноразовые задачи, неважна история
 - **Саммаризация:** Долгие сессии, важна контекстная информация, автономные агенты
 
-См. подробнее: раздел "Оптимизация контекста" в [Главе 09: Анатомия Агента](../09-agent-architecture/README.md#оптимизация-контекста-context-optimization) и [Lab 09: Context Optimization](../../labs/lab09-context-optimization/README.md)
+См. подробнее: раздел "Оптимизация контекста" в [Главе 09: Анатомия Агента](../09-agent-architecture/README.md#оптимизация-контекста-context-optimization) и [Lab 09: Context Optimization](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab09-context-optimization)
 
 ### Ошибка 3: LM Studio — неверный Prompt Template (ошибка ролей)
 
@@ -546,7 +546,7 @@ If you don't know something, say "I don't know" or use a tool.`
 - [x] Знаете, как настроить `Temperature = 0` для детерминированного поведения
 - [x] Понимаете ограничения контекстного окна
 - [x] Знаете, как управлять историей диалога (саммаризация или обрезка)
-- [x] Модель поддерживает Function Calling (проверено через Lab 00)
+- [x] Модель поддерживает Function Calling (проверено через [Lab 00](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab00-capability-check))
 - [x] System Prompt запрещает галлюцинации
 
 **Не сдано:**

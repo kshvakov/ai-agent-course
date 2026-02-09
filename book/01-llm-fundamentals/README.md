@@ -399,7 +399,7 @@ Not all models are equally good for agents.
 
 **Theory:** See [Appendix: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization) — detailed description of what we test and why it's important.
 
-**Practice:** See [Lab 00: Model Capability Benchmark](../../labs/lab00-capability-check/README.md) — ready tool for testing the model.
+**Practice:** See [Lab 00: Model Capability Benchmark](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab00-capability-check) — ready tool for testing the model.
 
 ## Common Mistakes
 
@@ -492,7 +492,7 @@ Original history (2000 tokens):
 - **Trimming:** Quick one-time tasks, history not important
 - **Summarization:** Long sessions, contextual information important, autonomous agents
 
-See more: section "Context Optimization" in [Chapter 09: Agent Anatomy](../09-agent-architecture/README.md#context-optimization) and [Lab 09: Context Optimization](../../labs/lab09-context-optimization/README.md)
+See more: section "Context Optimization" in [Chapter 09: Agent Anatomy](../09-agent-architecture/README.md#context-optimization) and [Lab 09: Context Optimization](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab09-context-optimization)
 
 ### Mistake 3: LM Studio — Wrong Prompt Template (role support error)
 
@@ -546,7 +546,7 @@ If you don't know something, say "I don't know" or use a tool.`
 - [x] Know how to set `Temperature = 0` for deterministic behavior
 - [x] Understand context window limitations
 - [x] Know how to manage conversation history (summarization or trimming)
-- [x] Model supports Function Calling (verified via Lab 00)
+- [x] Model supports Function Calling (verified via [Lab 00](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab00-capability-check))
 - [x] System Prompt forbids hallucinations
 
 **Not completed:**

@@ -250,7 +250,7 @@ func resumeTask(taskID string) error {
 
 ### Integration Point 1: Agent Loop
 
-In `labs/lab04-autonomy/main.go` add state persistence:
+In [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab04-autonomy/main.go) add state persistence:
 
 ```go
 // At start of agent run:
@@ -275,7 +275,7 @@ saveTask(task)
 
 ### Integration Point 2: Tool Execution
 
-In `labs/lab02-tools/main.go` add retry for tools:
+In [`labs/lab02-tools/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab02-tools/main.go) add retry for tools:
 
 ```go
 func executeToolWithRetry(toolCall openai.ToolCall) (string, error) {
@@ -291,7 +291,7 @@ func executeToolWithRetry(toolCall openai.ToolCall) (string, error) {
 
 ## Mini Code Example
 
-Complete example with workflow and state management based on `labs/lab04-autonomy/main.go`:
+Complete example with workflow and state management based on [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab04-autonomy/main.go):
 
 ```go
 package main

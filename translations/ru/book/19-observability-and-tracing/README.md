@@ -94,7 +94,7 @@ func generateRunID() string {
 
 ### Шаг 3: Логирование в agent loop
 
-Вставьте логирование в цикл агента (см. `labs/lab04-autonomy/main.go`):
+Вставьте логирование в цикл агента (см. [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab04-autonomy/main.go)):
 
 ```go
 func runAgent(ctx context.Context, client *openai.Client, userInput string) (string, error) {
@@ -212,7 +212,7 @@ func logAgentRunError(runID string, err error) {
 
 ### Шаг 5: Логирование tool execution
 
-В функции выполнения инструментов (см. `labs/lab02-tools/main.go`) добавьте логирование:
+В функции выполнения инструментов (см. [`labs/lab02-tools/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab02-tools/main.go)) добавьте логирование:
 
 ```go
 func executeToolWithLogging(runID string, toolCall openai.ToolCall) (string, error) {
@@ -252,7 +252,7 @@ func executeToolWithLogging(runID string, toolCall openai.ToolCall) (string, err
 
 ### Точка интеграции 1: Agent Loop
 
-В `labs/lab04-autonomy/main.go` добавьте логирование в цикл агента:
+В [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab04-autonomy/main.go) добавьте логирование в цикл агента:
 
 ```go
 // В начале main():
@@ -271,7 +271,7 @@ log.Printf("TOOL_EXECUTED: run_id=%s tool=%s result=%s", runID, toolCall.Functio
 
 ### Точка интеграции 2: Tool Execution
 
-В `labs/lab02-tools/main.go` добавьте логирование при выполнении инструментов:
+В [`labs/lab02-tools/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab02-tools/main.go) добавьте логирование при выполнении инструментов:
 
 ```go
 // В функции выполнения инструмента:
@@ -285,7 +285,7 @@ func executeTool(runID string, toolCall openai.ToolCall) (string, error) {
 
 ## Мини-пример кода
 
-Полный пример с observability на базе `labs/lab04-autonomy/main.go`:
+Полный пример с observability на базе [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab04-autonomy/main.go):
 
 ```go
 package main
@@ -1033,7 +1033,7 @@ metrics.RecordLatency("tool_execution_duration", latency, map[string]string{"too
 
 ### Упражнение 1: Реализуйте структурированное логирование
 
-Добавьте структурированное логирование в `labs/lab04-autonomy/main.go`:
+Добавьте структурированное логирование в [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab04-autonomy/main.go):
 
 ```go
 func logAgentRun(runID string, userInput string, toolCalls []ToolCall, result string) {
