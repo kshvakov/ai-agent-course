@@ -110,7 +110,7 @@ ALWAYS Think step by step. Output your thought process before calling a tool.`
 	// The Loop
 	for i := 0; i < 15; i++ {
 		req := openai.ChatCompletionRequest{
-			Model:       openai.GPT3Dot5Turbo,
+			Model:       "gpt-4o-mini",
 			Messages:    messages,
 			Tools:       tools,
 			Temperature: 0, // Детерминированное поведение

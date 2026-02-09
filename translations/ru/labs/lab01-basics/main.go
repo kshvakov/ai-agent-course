@@ -52,7 +52,7 @@ func main() {
 		// 4. Call API
 		// req := openai.ChatCompletionRequest{
 		//     // Для локальных моделей имя модели часто игнорируется, но лучше указать что-то
-		//     Model: openai.GPT3Dot5Turbo,
+		//     Model: "gpt-4o-mini",
 		//     Messages: messages,
 		// }
 		// resp, err := client.CreateChatCompletion(ctx, req)

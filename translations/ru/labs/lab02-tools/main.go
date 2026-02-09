@@ -34,7 +34,7 @@ func main() {
 
 	// 3. Сформируйте запрос
 	// req := openai.ChatCompletionRequest{
-	//     Model: openai.GPT3Dot5Turbo, // Или имя вашей локальной модели
+	//     Model: "gpt-4o-mini", // Или имя вашей локальной модели
 	//     Messages: []openai.ChatCompletionMessage{
 	//         {Role: openai.ChatMessageRoleUser, Content: "Is server 192.168.1.10 online?"},
 	//     },

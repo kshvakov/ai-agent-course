@@ -59,7 +59,7 @@ Return plan in JSON format:
 JSON only, no additional text.`, task)
 
 	resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model: openai.GPT3Dot5Turbo,
+		Model: "gpt-4o-mini",
 		Messages: []openai.ChatCompletionMessage{
 			{Role: "user", Content: prompt},
 		},

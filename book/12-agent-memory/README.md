@@ -175,7 +175,7 @@ func runAgentWithMemory(ctx context.Context, client *openai.Client, memory Memor
     })
     
     resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    openai.GPT3Dot5Turbo,
+        Model:    "gpt-4o-mini",
         Messages: messages,
     })
     if err != nil {
@@ -196,6 +196,61 @@ func runAgentWithMemory(ctx context.Context, client *openai.Client, memory Memor
     return answer, nil
 }
 ```
+
+## Checkpoint and Resume
+
+An agent can work for hours on a complex task. If the process crashes mid-way, all progress is lost. Checkpoint saves the conversation state periodically. On failure, the agent resumes from the last saved point.
+
+The basic Checkpoint implementation (structure, save/load, integration with agent loop) is described in [Chapter 09: Agent Anatomy](../09-agent-architecture/README.md#checkpoint-and-resume). Advanced strategies (granularity, validation, rotation) are covered in [Chapter 11: State Management](../11-state-management/README.md#advanced-checkpoint-strategies).
+
+Here we look at how Checkpoint relates to agent memory:
+
+- **What to save:** message history (`messages[]`), memory contents, tool state, current execution step.
+- **When to save:** after each significant step (tool call, user response). For short tasks (2-3 iterations) Checkpoint is overkill. For long tasks (10+ iterations) it's mandatory.
+- **TTL:** set a TTL on checkpoints (e.g. 24 hours) so stale snapshots don't accumulate.
+
+### Shared Memory Between Agents
+
+In multi-agent systems, agents exchange information through a shared memory store. Each agent reads and writes to a common store, separating data by namespace:
+
+```go
+type SharedMemoryStore struct {
+    store CheckpointStore
+}
+
+// Write with agent namespace
+func (s *SharedMemoryStore) Put(ctx context.Context, agentID, key string, value any) error {
+    fullKey := fmt.Sprintf("shared:%s:%s", agentID, key)
+    data, _ := json.Marshal(value)
+    return s.store.Set(ctx, fullKey, data, 0)
+}
+
+// Read another agent's data
+func (s *SharedMemoryStore) Get(ctx context.Context, agentID, key string) (any, error) {
+    fullKey := fmt.Sprintf("shared:%s:%s", agentID, key)
+    data, err := s.store.Get(ctx, fullKey)
+    if err != nil {
+        return nil, err
+    }
+    var result any
+    return result, json.Unmarshal(data, &result)
+}
+
+// List all entries from all agents (for supervisor)
+func (s *SharedMemoryStore) ListAll(ctx context.Context) (map[string]any, error) {
+    keys, _ := s.store.Keys(ctx, "shared:*")
+    result := make(map[string]any)
+    for _, key := range keys {
+        val, _ := s.store.Get(ctx, key)
+        var parsed any
+        json.Unmarshal(val, &parsed)
+        result[key] = parsed
+    }
+    return result, nil
+}
+```
+
+> **Connection:** For more on agent state management, see [Chapter 11: State Management](../11-state-management/README.md). Checkpoint is a special case of state persistence.
 
 ## Common Errors
 

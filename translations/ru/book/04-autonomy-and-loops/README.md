@@ -73,7 +73,7 @@ messages := []openai.ChatCompletionMessage{
 
 // Отправляем в модель
 resp1, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    openai.GPT3Dot5Turbo,
+    Model:    "gpt-4o-mini",
     Messages: messages,
     Tools:    tools,
 })
@@ -104,7 +104,7 @@ messages = append(messages, openai.ChatCompletionMessage{
 
 // Отправляем ОБНОВЛЕННУЮ историю в модель снова
 resp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    openai.GPT3Dot5Turbo,
+    Model:    "gpt-4o-mini",
     Messages: messages,  // Модель видит результат check_disk_usage!
     Tools:    tools,
 })
@@ -133,7 +133,7 @@ messages = append(messages, openai.ChatCompletionMessage{
 
 // Отправляем снова
 resp3, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    openai.GPT3Dot5Turbo,
+    Model:    "gpt-4o-mini",
     Messages: messages,  // Модель видит оба результата!
     Tools:    tools,
 })
@@ -204,7 +204,7 @@ msg3 := resp3.Choices[0].Message
 for i := 0; i < maxIterations; i++ {
     // 1. Отправляем запрос
     resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    openai.GPT3Dot5Turbo,
+        Model:    "gpt-4o-mini",
         Messages: messages,
         Tools:    tools,
     })

@@ -61,7 +61,7 @@ messages := []openai.ChatCompletionMessage{
 }
 
 resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    openai.GPT3Dot5Turbo,
+    Model:    "gpt-4o-mini",
     Messages: messages,
     Tools:    tools,
 })
@@ -130,7 +130,7 @@ messages := []openai.ChatCompletionMessage{
 }
 
 resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    openai.GPT3Dot5Turbo,
+    Model:    "gpt-4o-mini",
     Messages: messages,
     Tools:    tools,
 })
@@ -178,17 +178,17 @@ messages = append(messages, openai.ChatCompletionMessage{
 - Runtime can also check risk and block execution
 - Model receives "REQUIRES_CONFIRMATION" result and generates question
 
-!!! warning "Model explanations don't guarantee safety"
-    Models trained via RLHF (Reinforcement Learning from Human Feedback) are optimized to **maximize human preferences** — that is, to be "pleasing" and agreeable. This means the model may **confidently rationalize dangerous actions** through nice explanations (CoT).
-    
-    **Problem:** A "nice explanation" is not proof of safety. The model may generate a logical chain of reasoning that justifies a dangerous action.
-    
-    **Solution:** **HITL and runtime gates are more important than model explanations**. Don't rely on CoT as the sole source of truth. Always use:
-    - Runtime risk checks (regardless of explanation)
-    - User confirmation for critical actions
-    - Validation through tools (checking actual data)
-    
-    **Rule:** If action is critical — require confirmation, even if model explanation looks logical.
+> **Important: Model explanations don't guarantee safety.**
+> Models trained via RLHF (Reinforcement Learning from Human Feedback) are optimized to **maximize human preferences** — that is, to be "pleasing" and agreeable. This means the model may **confidently rationalize dangerous actions** through nice explanations (CoT).
+>
+> **Problem:** A "nice explanation" is not proof of safety. The model may generate a logical chain of reasoning that justifies a dangerous action.
+>
+> **Solution:** **HITL and runtime gates are more important than model explanations**. Don't rely on CoT as the sole source of truth. Always use:
+> - Runtime risk checks (regardless of explanation)
+> - User confirmation for critical actions
+> - Validation through tools (checking actual data)
+>
+> **Rule:** If action is critical — require confirmation, even if model explanation looks logical.
 
 **Complete confirmation protocol:**
 
@@ -205,7 +205,7 @@ messages = append(messages, openai.ChatCompletionMessage{
 
 // Step 6: Send again - now model receives confirmation and can call the tool
 resp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    openai.GPT3Dot5Turbo,
+    Model:    "gpt-4o-mini",
     Messages: messages,  // Now includes confirmation!
     Tools:    tools,
 })
@@ -245,7 +245,7 @@ If the user denies the action, treat it as a hard stop: update the plan and do n
 To implement Human-in-the-Loop, use a **nested loops** structure:
 
 - **Outer loop (`While True`):** Handles user communication. Reads `stdin`.
-- **Inner loop (Agent Loop):** Handles "thinking". Runs until agent calls tools. As soon as agent outputs text — we exit to outer loop.
+- **Inner loop (Agent Loop, aka ReAct Loop — see [Chapter 04](../04-autonomy-and-loops/README.md)):** Handles "thinking". Runs until agent calls tools. As soon as agent outputs text — we exit to outer loop.
 
 **Scheme:**
 
@@ -285,7 +285,7 @@ for {
     // Inner loop (Agent)
     for {
         resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-            Model:    openai.GPT3Dot5Turbo,
+            Model:    "gpt-4o-mini",
             Messages: messages,
             Tools:    tools,
         })
@@ -484,6 +484,7 @@ func requiresClarification(toolName string, args json.RawMessage) (bool, []strin
 
 - **Autonomy:** How Human-in-the-Loop integrates into the agent loop, see [Chapter 04: Autonomy](../04-autonomy-and-loops/README.md)
 - **Tools:** How Runtime validates and executes tools, see [Chapter 03: Tools](../03-tools-and-function-calling/README.md)
+- **Architecture:** Where HITL fits in agent components (Runtime, Planning), see [Chapter 09: Agent Anatomy](../09-agent-architecture/README.md)
 
 ## What's Next?
 

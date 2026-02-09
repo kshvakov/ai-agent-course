@@ -78,7 +78,7 @@ func runEval(ctx context.Context, client *openai.Client, test EvalTest) bool {
     }
     
     resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    openai.GPT3Dot5Turbo,
+        Model:    "gpt-4o-mini",
         Messages: messages,
         Tools:    tools,
     })
@@ -342,6 +342,178 @@ newMetrics := runEvals(ctx, client, tests)
 5. **Metrics:** Track metrics over time to see trends
 6. **Robustness:** Include tests on robustness to hints (anchoring, biased few-shot) — they catch regressions after "cosmetic" prompt changes
 
+## Component-level Evaluation
+
+An agent is not a monolith. It's a chain of components: tool selection, data retrieval, response generation. Evaluating only the final result is like testing a car only by whether it "arrived." Without checking brakes, engine, and steering separately.
+
+### Why Evaluate Components Separately?
+
+The final answer can be correct by accident. Or wrong because of a single broken link. Component-level evaluation shows **exactly where** the problem is.
+
+Three key components to evaluate:
+
+1. **Tool selection** — did the agent call the right tool with the right arguments?
+2. **Retrieval quality** — were relevant documents found? No junk?
+3. **Response quality** — is the response accurate, complete, and grounded in retrieved data?
+
+### Four-Level System: Task / Tool / Trajectory / Topic
+
+A single "pass/fail" metric doesn't show what exactly broke. For the full picture, use four evaluation levels:
+
+| Level | What It Checks | Example |
+|-------|----------------|---------|
+| **Task** | Was the task completed? | Answer matches expected |
+| **Tool** | Correct tool? | Called `check_status`, not `restart` |
+| **Trajectory** | Optimal path? | No extra steps or loops |
+| **Topic** | Domain quality? | SQL query is valid, logs parsed |
+
+Detailed implementation of the four-level system with Quality Gates and CI/CD integration — in [Chapter 23: Evals in CI/CD](../23-evals-in-cicd/README.md).
+
+**Component evaluation example:**
+
+```go
+type ComponentEval struct {
+    Name  string
+    Input string
+
+    // Tool Level: which tool we expect
+    ExpectedTool string
+    ExpectedArgs map[string]string
+
+    // Retrieval Level: which documents should be found
+    ExpectedDocs []string
+
+    // Response Level: what should be in the answer
+    MustContain    []string
+    MustNotContain []string
+}
+
+func evaluateComponents(ctx context.Context, client *openai.Client, eval ComponentEval) {
+    answer, trajectory := runAgentWithTracing(ctx, client, eval.Input)
+
+    // 1. Evaluate tool selection
+    toolScore := evaluateToolSelection(trajectory, eval.ExpectedTool, eval.ExpectedArgs)
+    fmt.Printf("  Tool Selection: %.0f%%\n", toolScore*100)
+
+    // 2. Evaluate retrieval quality
+    retrievedDocs := extractRetrievedDocs(trajectory)
+    retrievalScore := evaluateRetrieval(retrievedDocs, eval.ExpectedDocs)
+    fmt.Printf("  Retrieval Quality: %.0f%%\n", retrievalScore*100)
+
+    // 3. Evaluate response quality
+    responseScore := evaluateResponse(answer, eval.MustContain, eval.MustNotContain)
+    fmt.Printf("  Response Quality: %.0f%%\n", responseScore*100)
+}
+```
+
+```go
+func evaluateToolSelection(traj AgentTrajectory, expectedTool string, expectedArgs map[string]string) float64 {
+    score := 0.0
+    for _, step := range traj.Steps {
+        if step.Type != "tool_call" {
+            continue
+        }
+        // Correct tool?
+        if step.ToolName == expectedTool {
+            score += 0.5
+        }
+        // Correct arguments?
+        if matchArgs(step.ToolArgs, expectedArgs) {
+            score += 0.5
+        }
+        break // Check first call
+    }
+    return score
+}
+
+func evaluateRetrieval(retrieved, expected []string) float64 {
+    if len(expected) == 0 {
+        return 1.0
+    }
+    found := 0
+    for _, exp := range expected {
+        for _, ret := range retrieved {
+            if strings.Contains(ret, exp) {
+                found++
+                break
+            }
+        }
+    }
+    return float64(found) / float64(len(expected))
+}
+```
+
+### Multi-Agent System Metrics
+
+In [Multi-Agent systems](../07-multi-agent/README.md), evaluating the Supervisor by final answer alone isn't enough. Each specialist agent is a separate component. It needs its own evaluation.
+
+**Key metrics:**
+
+- **Per-agent pass rate** — percentage of successful executions for each agent separately
+- **Routing quality** — does the Supervisor route tasks to the right specialist?
+- **Coordination quality** — are specialist results assembled correctly?
+
+```go
+type MultiAgentMetrics struct {
+    // Per-agent metrics
+    AgentPassRates map[string]float64 // "db_expert" -> 0.95, "network_expert" -> 0.88
+
+    // Routing metrics
+    RoutingAccuracy float64 // Task routed to correct specialist
+
+    // Coordination metrics
+    CoordinationScore float64 // Results assembled correctly
+}
+
+func evaluateMultiAgent(cases []MultiAgentEvalCase) MultiAgentMetrics {
+    agentResults := make(map[string][]bool) // agent -> results
+    routingCorrect := 0
+    coordCorrect := 0
+
+    for _, c := range cases {
+        // Run Supervisor
+        answer, trajectory := runSupervisor(c.Input)
+
+        // Check routing: did the task go to the right agent?
+        delegatedTo := extractDelegatedAgent(trajectory)
+        if delegatedTo == c.ExpectedAgent {
+            routingCorrect++
+        }
+
+        // Check each agent's result
+        for agent, result := range extractAgentResults(trajectory) {
+            passed := checkAgentResult(agent, result, c.ExpectedResults[agent])
+            agentResults[agent] = append(agentResults[agent], passed)
+        }
+
+        // Check coordination: is the final answer assembled from parts?
+        if checkCoordination(answer, c.ExpectedAnswer) {
+            coordCorrect++
+        }
+    }
+
+    metrics := MultiAgentMetrics{
+        AgentPassRates:    calculatePassRates(agentResults),
+        RoutingAccuracy:   float64(routingCorrect) / float64(len(cases)),
+        CoordinationScore: float64(coordCorrect) / float64(len(cases)),
+    }
+    return metrics
+}
+```
+
+If `RoutingAccuracy` is low — the problem is in the Supervisor. If `AgentPassRates` is low for a specific agent — the problem is in its prompt or tools. Component-level evaluation shows what to fix.
+
+### Evaluation Frameworks: DeepEval and RAGAS
+
+For evaluating RAG components, there are ready-made frameworks:
+
+- **RAGAS** — metrics for Context Precision, Context Recall, Faithfulness, Answer Relevance
+- **DeepEval** — a set of metrics for LLM applications: Hallucination, Toxicity, Answer Relevancy
+
+Both frameworks implement the LLM-as-a-Judge approach. They use a model to evaluate response quality, not just string matching.
+
+Detailed implementation of RAGAS metrics and CI/CD pipeline integration — in [Chapter 23: Evals in CI/CD](../23-evals-in-cicd/README.md#step-5-ragas-metrics-for-rag).
+
 ## Common Errors
 
 ### Error 1: No Evals for Critical Scenarios
@@ -429,6 +601,40 @@ tests := []EvalTest{
 
 **Practice:** Bias/robustness evals are especially important after prompt changes that seem "cosmetic" (reformulating instructions, adding examples). They catch regressions that aren't visible in functional tests.
 
+### Error 5: Only Evaluating the Final Answer
+
+**Symptom:** The agent sometimes gives the correct answer but calls unnecessary or wrong tools. Evals show 90% pass rate, but in production the agent spends three times more tokens and time.
+
+**Cause:** Evals only check "answer matches expected." Intermediate steps — tool selection, retrieval quality, iteration count — are not evaluated.
+
+**Solution:**
+```go
+// BAD: Only check final answer
+func evalAgent(input, expected string) bool {
+    answer := runAgent(input)
+    return strings.Contains(answer, expected)
+}
+
+// GOOD: Evaluate each component separately
+func evalAgent(input string, eval ComponentEval) EvalResult {
+    answer, trajectory := runAgentWithTracing(input)
+
+    return EvalResult{
+        // Task Level: is the answer correct?
+        TaskPass: strings.Contains(answer, eval.ExpectedAnswer),
+
+        // Tool Level: was the correct tool called?
+        ToolPass: checkToolSelection(trajectory, eval.ExpectedTool),
+
+        // Trajectory Level: no extra steps?
+        TrajectoryPass: len(trajectory.Steps) <= eval.MaxSteps,
+
+        // Retrieval Level: were the right documents found?
+        RetrievalPass: checkRetrieval(trajectory, eval.ExpectedDocs),
+    }
+}
+```
+
 ## Mini-Exercises
 
 ### Exercise 1: Create Eval Suite
@@ -468,6 +674,7 @@ func compareMetrics(baseline, current EvalMetrics) bool {
 - [x] Test suite covers main usage scenarios
 - [x] Safety evals included for critical actions
 - [x] Bias/robustness evals included (tests on robustness to hints)
+- [x] Components evaluated separately (tool selection, retrieval, response)
 - [x] Metrics tracked (Pass Rate, Latency, Token Usage)
 - [x] Evals run automatically on changes
 - [x] Baseline metrics exist for comparison
@@ -476,6 +683,7 @@ func compareMetrics(baseline, current EvalMetrics) bool {
 **Not completed:**
 - [ ] No evals for critical scenarios
 - [ ] No bias/robustness evals (agent succumbs to hints but this isn't detected)
+- [ ] Only final answer evaluated (no component-level evaluation)
 - [ ] Evals run manually (not automatically)
 - [ ] No baseline metrics for comparison
 - [ ] Regressions not fixed
@@ -484,6 +692,9 @@ func compareMetrics(baseline, current EvalMetrics) bool {
 
 - **Tools:** How evals check tool selection, see [Chapter 03: Tools](../03-tools-and-function-calling/README.md)
 - **Safety:** How evals check safety, see [Chapter 05: Safety](../05-safety-and-hitl/README.md)
+- **Multi-Agent:** Metrics for Multi-Agent systems, see [Chapter 07: Multi-Agent Systems](../07-multi-agent/README.md)
+- **Architecture:** Agent components tested by evals, see [Chapter 09: Agent Anatomy](../09-agent-architecture/README.md)
+- **Evals in CI/CD:** Four-level evaluation system, Quality Gates, RAGAS — [Chapter 23: Evals in CI/CD](../23-evals-in-cicd/README.md)
 
 ## What's Next?
 

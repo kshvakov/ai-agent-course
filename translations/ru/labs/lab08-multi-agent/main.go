@@ -35,7 +35,7 @@ func runWorkerAgent(role, systemPrompt, question string, tools []openai.Tool, cl
 	// Простой цикл для работника (1-2 шага обычно)
 	for i := 0; i < 5; i++ {
 		req := openai.ChatCompletionRequest{
-			Model:    openai.GPT3Dot5Turbo,
+			Model:    "gpt-4o-mini",
 			Messages: messages,
 			Tools:   tools,
 		}
@@ -178,7 +178,7 @@ Collect results and provide a final answer to the user.`
 	// 4. Цикл Supervisor-а
 	for i := 0; i < 10; i++ {
 		req := openai.ChatCompletionRequest{
-			Model:    openai.GPT3Dot5Turbo,
+			Model:    "gpt-4o-mini",
 			Messages: messages,
 			Tools:   supervisorTools,
 		}

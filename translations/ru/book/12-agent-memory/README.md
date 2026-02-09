@@ -175,7 +175,7 @@ func runAgentWithMemory(ctx context.Context, client *openai.Client, memory Memor
     })
     
     resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    openai.GPT3Dot5Turbo,
+        Model:    "gpt-4o-mini",
         Messages: messages,
     })
     if err != nil {

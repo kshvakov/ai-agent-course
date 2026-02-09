@@ -78,7 +78,7 @@ func runEval(ctx context.Context, client *openai.Client, test EvalTest) bool {
     }
     
     resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    openai.GPT3Dot5Turbo,
+        Model:    "gpt-4o-mini",
         Messages: messages,
         Tools:    tools,
     })

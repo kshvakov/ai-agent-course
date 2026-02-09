@@ -99,7 +99,7 @@ supervisorMessages := []openai.ChatCompletionMessage{
 
 ```go
 supervisorResp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    openai.GPT4,
+    Model:    "gpt-4o",
     Messages: supervisorMessages,
     Tools:    supervisorTools,
 })
@@ -146,7 +146,7 @@ func askNetworkExpert(question string) string {
     
     // Запускаем Worker как отдельного агента
     workerResp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    openai.GPT3Dot5Turbo,
+        Model:    "gpt-4o-mini",
         Messages: workerMessages,  // Изолированный контекст!
         Tools:    workerTools,
     })
@@ -165,7 +165,7 @@ func askNetworkExpert(question string) string {
     })
     
     workerResp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    openai.GPT3Dot5Turbo,
+        Model:    "gpt-4o-mini",
         Messages: workerMessages,
         Tools:    workerTools,
     })
@@ -232,7 +232,7 @@ supervisorMessages = append(supervisorMessages, openai.ChatCompletionMessage{
 ```go
 // Отправляем Supervisor-у результаты Workers
 supervisorResp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    openai.GPT4,
+    Model:    "gpt-4o",
     Messages: supervisorMessages,  // Supervisor видит результаты обоих Workers!
     Tools:    supervisorTools,
 })
@@ -435,7 +435,7 @@ workflow := Workflow{
 
 ### A2A (Agent-to-Agent) протокол
 
-В паттернах выше агенты общаются через runtime (ваш код). A2A — это **стандартизированный протокол** для межагентной коммуникации, предложенный Google.
+В паттернах выше агенты общаются через runtime (ваш код). [A2A](https://google.github.io/A2A/) — это **стандартизированный протокол** для межагентной коммуникации, предложенный Google.
 
 **Ключевые концепции:**
 

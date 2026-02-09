@@ -502,6 +502,7 @@ func (a *FrameworkToolAdapter) Execute(ctx context.Context, args map[string]any)
 - **[Глава 03: Инструменты и Function Calling](../03-tools-and-function-calling/README.md)** — Интерфейсы инструментов — ключ к портабельности
 - **[Глава 10: Planning и Workflow-паттерны](../10-planning-and-workflows/README.md)** — Фреймворки часто предоставляют паттерны планирования
 - **[Глава 18: Протоколы Инструментов и Tool Servers](../18-tool-protocols-and-servers/README.md)** — Стандартные протоколы уменьшают vendor lock-in
+- **[Agent Skills](https://agentskills.io/)** — Открытый формат навыков агента (`SKILL.md`), поддерживаемый Cursor, Claude Code, VS Code и др. См. [Главу 09: Анатомия Агента](../09-agent-architecture/README.md#skills-навыки)
 
 ## Что дальше?
 

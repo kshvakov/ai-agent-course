@@ -472,7 +472,7 @@ func runAgentLoop(
         })
 
         resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-            Model:    openai.GPT3Dot5Turbo,
+            Model:    "gpt-4o-mini",
             Messages: messages,
             Tools:    tools,
         })
@@ -885,6 +885,3 @@ func (s *Store) Claim(ctx context.Context, workerID string) (*Task, error) {
 После понимания прод-паттернов workflow переходите к:
 - **[22. Prompt и Program Management](../22-prompt-program-management/README.md)** — Управление промптами и конфигурацией в продакшене
 
----
-
-**Навигация:** [← Глава 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md) | [Оглавление](../README.md) | [Глава 22: Prompt и Program Management →](../22-prompt-program-management/README.md)

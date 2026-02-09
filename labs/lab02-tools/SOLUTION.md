@@ -174,7 +174,7 @@ func main() {
 
 	// Request
 	req := openai.ChatCompletionRequest{
-		Model: openai.GPT3Dot5Turbo,
+		Model: "gpt-4o-mini",
 		Messages: []openai.ChatCompletionMessage{
 			{Role: openai.ChatMessageRoleUser, Content: "Is server 192.168.1.10 online?"},
 		},

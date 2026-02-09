@@ -99,7 +99,7 @@ supervisorMessages := []openai.ChatCompletionMessage{
 
 ```go
 supervisorResp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    openai.GPT4,
+    Model:    "gpt-4o",
     Messages: supervisorMessages,
     Tools:    supervisorTools,
 })
@@ -146,7 +146,7 @@ func askNetworkExpert(question string) string {
     
     // Run Worker as separate agent
     workerResp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    openai.GPT3Dot5Turbo,
+        Model:    "gpt-4o-mini",
         Messages: workerMessages,  // Isolated context!
         Tools:    workerTools,
     })
@@ -165,7 +165,7 @@ func askNetworkExpert(question string) string {
     })
     
     workerResp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    openai.GPT3Dot5Turbo,
+        Model:    "gpt-4o-mini",
         Messages: workerMessages,
         Tools:    workerTools,
     })
@@ -232,7 +232,7 @@ supervisorMessages = append(supervisorMessages, openai.ChatCompletionMessage{
 ```go
 // Send Worker results to Supervisor
 supervisorResp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    openai.GPT4,
+    Model:    "gpt-4o",
     Messages: supervisorMessages,  // Supervisor receives results from both Workers!
     Tools:    supervisorTools,
 })
@@ -249,6 +249,276 @@ finalMsg := supervisorResp2.Choices[0].Message
 4. **Runtime manages everything** — it intercepts Supervisor tool calls, runs Workers, collects results
 
 **Takeaway:** Multi-Agent isn't magic "commanding", but a mechanism for calling specialized agents via tool calls with context isolation.
+
+## Other Multi-Agent System Patterns
+
+Supervisor/Worker is the basic pattern. In practice, others are used as well.
+
+### Pattern: Router Agent
+
+Router Agent receives a request and routes it to one matching specialist. Unlike Supervisor, Router **does not coordinate** multiple agents — it selects one.
+
+```
+┌──────┐     ┌────────┐     ┌────────────────┐
+│ User │────→│ Router │────→│ Network Agent  │
+└──────┘     │        │     └────────────────┘
+             │        │────→│ DB Agent       │
+             │        │     └────────────────┘
+             │        │────→│ Security Agent │
+             └────────┘     └────────────────┘
+```
+
+**Implementation:**
+
+```go
+// Router determines which agent should handle the request
+func routeRequest(query string, client *openai.Client) (string, error) {
+    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+        Model: "gpt-4o-mini", // Cheap model — classification task
+        Messages: []openai.ChatCompletionMessage{
+            {
+                Role: openai.ChatMessageRoleSystem,
+                Content: `Classify the request and route to the correct specialist.
+Available specialists:
+- "network": connectivity, DNS, ports, network troubleshooting
+- "database": SQL, schemas, queries, DB performance
+- "security": access, vulnerabilities, incidents
+Return ONLY the specialist name.`,
+            },
+            {Role: openai.ChatMessageRoleUser, Content: query},
+        },
+        Temperature: 0,
+    })
+    if err != nil {
+        return "", err
+    }
+    return strings.TrimSpace(resp.Choices[0].Message.Content), nil
+}
+
+// Usage
+specialist, _ := routeRequest("Can't connect to PostgreSQL")
+// specialist = "database"
+result := runSpecialist(specialist, query) // Run the matching agent
+```
+
+**When Router beats Supervisor:**
+- Request belongs to a single domain (no coordination needed)
+- Minimal latency required (one LLM call for routing instead of several)
+- You have 10+ specialists — Router scales more easily
+
+### Pattern: Handoffs (Context Transfer)
+
+A Handoff is when one agent **transfers control** to another, including part of the context. Unlike Supervisor/Worker, there is no "boss" here — agents are peers.
+
+**Warm handoff** — next agent receives full context:
+
+```go
+type Handoff struct {
+    FromAgent string                          // Who transfers
+    ToAgent   string                          // Who receives
+    Context   []openai.ChatCompletionMessage  // What is transferred
+    Reason    string                          // Why
+}
+
+func performHandoff(h Handoff, client *openai.Client) (string, error) {
+    // Build context for receiving agent
+    handoffMessages := []openai.ChatCompletionMessage{
+        {
+            Role: openai.ChatMessageRoleSystem,
+            Content: fmt.Sprintf(
+                "You are a %s specialist. You received a handoff from %s.\nReason: %s\nContinue the conversation.",
+                h.ToAgent, h.FromAgent, h.Reason,
+            ),
+        },
+    }
+    // Append transferred context
+    handoffMessages = append(handoffMessages, h.Context...)
+
+    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+        Model:    "gpt-4o",
+        Messages: handoffMessages,
+        Tools:    getToolsForAgent(h.ToAgent),
+    })
+    if err != nil {
+        return "", err
+    }
+    return resp.Choices[0].Message.Content, nil
+}
+```
+
+**Cold handoff** — next agent receives only a summary:
+
+```go
+// Instead of full context, pass a compressed summary
+summary := summarizeConversation(messages)
+handoff := Handoff{
+    FromAgent: "l1_support",
+    ToAgent:   "l2_engineer",
+    Context: []openai.ChatCompletionMessage{
+        {Role: openai.ChatMessageRoleUser, Content: summary},
+    },
+    Reason: "Issue requires deeper investigation",
+}
+```
+
+**When to use Handoffs:**
+- Escalation (L1 Support → L2 Engineer)
+- Domain switch (a network problem turns out to be a DB problem)
+- Long-running tasks with multiple stages
+
+### Pattern: Subagents (Agent Hierarchy)
+
+A Subagent is an agent that another agent creates **dynamically** for a subtask. Unlike a Worker, a Subagent is created on the fly for a specific task.
+
+```go
+// Agent works on a task and realizes a subtask is needed
+func solveWithSubagent(task string, parentTools []openai.Tool) string {
+    // Parent agent decomposes the task
+    subtasks := decomposeTask(task)
+
+    var results []string
+    for _, subtask := range subtasks {
+        // Create a Subagent for each subtask
+        subResult := runSubagent(subtask, parentTools)
+        results = append(results, subResult)
+    }
+
+    // Combine results
+    return synthesizeResults(results)
+}
+
+func runSubagent(task string, tools []openai.Tool) string {
+    messages := []openai.ChatCompletionMessage{
+        {
+            Role:    openai.ChatMessageRoleSystem,
+            Content: "You are a focused agent. Complete the specific task given to you.",
+        },
+        {Role: openai.ChatMessageRoleUser, Content: task},
+    }
+
+    // Subagent runs in its own loop with available tools
+    return runAgentLoop(messages, tools, 5) // maxIterations = 5
+}
+```
+
+### Pattern: Custom DAG Workflows
+
+For tasks with complex dependencies — DAG (Directed Acyclic Graph). Agents execute in dependency order; independent ones run in parallel.
+
+```go
+type WorkflowStep struct {
+    AgentID      string   // Which agent executes
+    DependsOn    []string // Which steps it depends on
+    Task         string   // The task
+}
+
+type Workflow struct {
+    Steps []WorkflowStep
+}
+
+// Example: Incident analysis
+workflow := Workflow{
+    Steps: []WorkflowStep{
+        {AgentID: "log_analyzer", DependsOn: nil, Task: "Analyze logs from the last hour"},
+        {AgentID: "metrics_checker", DependsOn: nil, Task: "Check CPU and memory metrics"},
+        {AgentID: "correlator", DependsOn: []string{"log_analyzer", "metrics_checker"}, Task: "Correlate results"},
+        {AgentID: "reporter", DependsOn: []string{"correlator"}, Task: "Write incident report"},
+    },
+}
+
+// log_analyzer and metrics_checker run in parallel (no dependencies)
+// correlator waits for both results
+// reporter waits for correlator
+```
+
+For more on workflow patterns, see [Chapter 10: Planning and Workflows](../10-planning-and-workflows/README.md).
+
+### A2A (Agent-to-Agent) Protocol
+
+In the patterns above, agents communicate through runtime (your code). [A2A](https://google.github.io/A2A/) is a **standardized protocol** for inter-agent communication, proposed by Google.
+
+**Key concepts:**
+
+- **Agent Card** — JSON description of an agent: what it can do, what tasks it accepts.
+- **Task** — unit of work with a lifecycle: `submitted → working → completed/failed`.
+- **Message/Artifact** — data exchange between agents.
+
+```go
+// Agent Card — agent description for other agents
+type AgentCard struct {
+    Name         string   `json:"name"`
+    Description  string   `json:"description"`
+    URL          string   `json:"url"`           // Agent endpoint
+    Capabilities []string `json:"capabilities"`  // What it can do
+    InputSchema  json.RawMessage `json:"input_schema"` // What data it accepts
+}
+
+// Task — unit of work
+type A2ATask struct {
+    ID      string `json:"id"`
+    Status  string `json:"status"` // "submitted", "working", "completed", "failed"
+    Input   string `json:"input"`
+    Output  string `json:"output,omitempty"`
+}
+
+// Client agent sends a task to another agent
+func sendA2ATask(agentURL string, task A2ATask) (*A2ATask, error) {
+    body, _ := json.Marshal(task)
+    resp, err := http.Post(agentURL+"/tasks", "application/json", bytes.NewReader(body))
+    if err != nil {
+        return nil, err
+    }
+    defer resp.Body.Close()
+
+    var result A2ATask
+    json.NewDecoder(resp.Body).Decode(&result)
+    return &result, nil
+}
+```
+
+**When you need A2A:**
+- Agents run on **different servers** (microservice architecture)
+- Agents are written in **different languages** (Go + Python)
+- You need a **standard interface** for integrating with external agents
+
+**When A2A is overkill:**
+- All agents in one process — use tool calls (Supervisor/Worker)
+- Prototype — start with plain functions
+
+For more on A2A, see [Chapter 18: Tool Protocols](../18-tool-protocols-and-servers/README.md#a2a-protocol).
+
+### Scaling Multi-Agent Systems
+
+As load grows, a single Supervisor isn't enough.
+
+**Worker Pool:**
+
+```go
+type WorkerPool struct {
+    workers map[string]chan WorkerTask // Task channel for each Worker type
+    results chan WorkerResult
+}
+
+func (p *WorkerPool) Submit(agentType string, task string) {
+    p.workers[agentType] <- WorkerTask{Task: task, ResultCh: p.results}
+}
+```
+
+**Load balancing:**
+- Round-robin — distribute tasks evenly across Workers
+- By load — send to an idle Worker
+- By specialization — Router picks a Worker by task type
+
+### Decision Table: When to Use Which Pattern
+
+| Pattern | When to Use | Complexity |
+|---------|------------|------------|
+| Supervisor/Worker | Task requires coordinating multiple specialists | Medium |
+| Router | Request belongs to a single domain | Low |
+| Handoffs | Escalation, domain switch | Medium |
+| Subagents | Dynamic task decomposition | High |
+| DAG Workflow | Tasks with complex dependencies | High |
+| A2A | Distributed agents on different servers | High |
 
 ## Common Errors
 
@@ -372,6 +642,7 @@ When using Multi-Agent systems in production:
 
 - **Tools:** How Supervisor calls Workers via tool calls, see [Chapter 03: Tools](../03-tools-and-function-calling/README.md)
 - **Autonomy:** How Supervisor manages the work loop, see [Chapter 04: Autonomy](../04-autonomy-and-loops/README.md)
+- **Architecture:** Agent components (Runtime, Memory, Planning) that multi-agent systems are built from, see [Chapter 09: Agent Architecture](../09-agent-architecture/README.md)
 
 ## What's Next?
 

@@ -751,7 +751,7 @@ func authMiddleware(next http.Handler) http.Handler {
 
 **MCP — аутентификация через OAuth 2.1:**
 
-MCP использует OAuth 2.1 для удалённых серверов (Streamable HTTP транспорт). Клиент получает токен через стандартный OAuth-флоу и передаёт его в заголовке `Authorization`:
+MCP использует [OAuth 2.1](https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization) (IETF draft-ietf-oauth-v2-1) для удалённых серверов (Streamable HTTP транспорт). Клиент получает токен через стандартный OAuth-флоу и передаёт его в заголовке `Authorization`:
 
 ```go
 // MCP-клиент с аутентификацией для HTTP-транспорта

@@ -96,7 +96,7 @@ messages := []openai.ChatCompletionMessage{
 for i := 0; i < maxIterations; i++ {
     // 1. Отправляем запрос
     resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    openai.GPT3Dot5Turbo,
+        Model:    "gpt-4o-mini",
         Messages: messages,
         Tools:    tools,
     })

@@ -34,16 +34,18 @@ import "regexp"
 
 func sanitizePII(text string) string {
     // Маскируем email
-    emailRegex := regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`)
+    emailRegex := regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b`)
     text = emailRegex.ReplaceAllString(text, "[EMAIL_REDACTED]")
     
-    // Маскируем телефон
-    phoneRegex := regexp.MustCompile(`\b\d{3}-\d{3}-\d{4}\b`)
+    // Маскируем телефон (российский и международный формат)
+    phoneRegex := regexp.MustCompile(`[\+]?[78]\s?[\(-]?\d{3}[\)-]?\s?\d{3}[-]?\d{2}[-]?\d{2}`)
     text = phoneRegex.ReplaceAllString(text, "[PHONE_REDACTED]")
     
     return text
 }
 ```
+
+> **Примечание:** Регулярки выше — упрощённый пример для обучения. В production используйте специализированные библиотеки: [Microsoft Presidio](https://github.com/microsoft/presidio) для PII detection, [truffleHog](https://github.com/trufflesecurity/trufflehog) или [detect-secrets](https://github.com/Yelp/detect-secrets) для поиска секретов в коде. Они покрывают десятки форматов данных и регулярно обновляются.
 
 ### Шаг 2: Защита секретов
 

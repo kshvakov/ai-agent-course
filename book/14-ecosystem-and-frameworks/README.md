@@ -264,6 +264,53 @@ func (m *FrameworkMemory) Store(key string, value any) error {
 
 **Takeaway:** Your interfaces define the contract. Frameworks provide implementations.
 
+## Frameworks and Ecosystem
+
+### Overview of Real Frameworks
+
+In practice, most teams pick one of the popular frameworks. Here are the main players:
+
+**LangGraph (Python, LangChain).** Framework for building agents using state graphs. Each agent step is a graph node; transitions are defined by conditions. Best for complex workflows with branching and cycles.
+
+**CrewAI (Python).** Framework for multi-agent systems. Agents are organized into "crews" with roles and tasks. Convenient when multiple agents collaborate toward a common goal.
+
+**AutoGen (Microsoft, Python).** Framework for multi-agent systems focused on agent-to-agent dialogue. Agents communicate via messages, supports human-in-the-loop.
+
+**Semantic Kernel (Microsoft, .NET/Python).** Orchestrator framework that integrates LLMs with existing code through "plugins". Geared toward enterprise scenarios. Supports .NET and Python.
+
+### Comparison Table
+
+| Framework | Language | Strengths | Weaknesses |
+|-----------|----------|-----------|------------|
+| **LangGraph** | Python | Graph-based workflows, flexible state, streaming | Complex API, steep learning curve |
+| **CrewAI** | Python | Simple multi-agent coordination, roles | Less flexible for non-standard patterns |
+| **AutoGen** | Python | Conversational multi-agent systems, Microsoft backing | Heavyweight, hard to debug |
+| **Semantic Kernel** | .NET, Python | Enterprise-ready, Azure integration | Tied to Microsoft ecosystem |
+
+### MCP Ecosystem
+
+MCP (Model Context Protocol) is an open protocol for connecting tools to LLMs. The MCP ecosystem is growing fast: catalogs of MCP servers are appearing for databases, file systems, APIs, browsers, and other integrations.
+
+The advantage of MCP is one protocol for all tools. An agent connects to an MCP server and gets access to its tools without writing custom integration code. For more details, see [Chapter 18: Tool Protocols and Tool Servers](../18-tool-protocols-and-servers/README.md).
+
+### A2A Ecosystem
+
+A2A (Agent-to-Agent) is a protocol from Google for inter-agent communication. Each agent publishes an "Agent Card" describing its capabilities. Other agents discover it and send tasks via a standard HTTP API.
+
+A2A solves the interoperability problem: agents from different teams and frameworks interact through a single protocol. For more details, see [Chapter 18: Tool Protocols and Tool Servers](../18-tool-protocols-and-servers/README.md).
+
+### Why This Course Teaches from Scratch
+
+This course builds an agent from scratch for several reasons:
+
+1. **Understanding the foundation.** A framework hides details behind abstractions. When something breaks, you don't know where to look. By writing the agent loop, tool registry, and memory store yourself, you understand every component.
+
+2. **Informed choice.** After implementing from scratch, you know exactly what problems a framework solves. The decision to "use LangGraph" or "write custom" becomes deliberate, not accidental.
+
+3. **Portable knowledge.** Frameworks change. Knowledge of principles (agent loop, Function Calling, context management) transfers to any framework. Knowledge of a specific API does not.
+
+4. **Go as an explicit language.** Most frameworks are written in Python. This course uses Go, which forces you to implement patterns explicitly — no decorator "magic" or metaprogramming.
+
 ## Common Errors
 
 ### Error 1: Vendor Lock-In
@@ -455,6 +502,7 @@ Fill the matrix based on your specific requirements.
 - **[Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md)** — Tool interfaces are key to portability
 - **[Chapter 10: Planning and Workflow Patterns](../10-planning-and-workflows/README.md)** — Frameworks often provide planning patterns
 - **[Chapter 18: Tool Protocols and Tool Servers](../18-tool-protocols-and-servers/README.md)** — Standard protocols reduce vendor lock-in
+- **[Agent Skills](https://agentskills.io/)** — Open format for agent skills (`SKILL.md`), supported by Cursor, Claude Code, VS Code, and others. See [Chapter 09: Agent Anatomy](../09-agent-architecture/README.md#skills)
 
 ## What's Next?
 

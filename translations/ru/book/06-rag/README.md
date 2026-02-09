@@ -80,7 +80,7 @@ tools := []openai.Tool{
 
 ```go
 resp1, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    openai.GPT3Dot5Turbo,
+    Model:    "gpt-4o-mini",
     Messages: messages,
     Tools:    tools,
 })
@@ -139,7 +139,7 @@ messages = append(messages, openai.ChatCompletionMessage{
 ```go
 // Отправляем обновленную историю (с документацией!) в модель
 resp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    openai.GPT3Dot5Turbo,
+    Model:    "gpt-4o-mini",
     Messages: messages,  // Модель видит найденную документацию!
     Tools:    tools,
 })
@@ -1173,6 +1173,7 @@ func validatePipeline(pipeline Pipeline, allowedTools map[string]bool) error {
 - **Инструменты:** Как инструмент поиска интегрируется в агента, см. [Главу 03: Инструменты](../03-tools-and-function-calling/README.md). Проблема большого списка инструментов решается через tool retrieval (см. раздел "RAG для пространства действий" выше).
 - **Автономность:** Как RAG работает в цикле агента, см. [Главу 04: Автономность](../04-autonomy-and-loops/README.md)
 - **Tool Servers:** Как получать каталог инструментов динамически через tool servers, см. [Главу 18: Протоколы Инструментов](../18-tool-protocols-and-servers/README.md)
+- **MCP Resources:** MCP предоставляет стандартный механизм для доступа к данным (Resources) — [Model Context Protocol](https://modelcontextprotocol.io/)
 
 ## Что дальше?
 

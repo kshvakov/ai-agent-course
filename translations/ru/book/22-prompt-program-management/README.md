@@ -503,6 +503,7 @@ func testPrompt(promptContent string, testInputs []string) []PlaygroundResult {
 - **[Глава 18: Протоколы Инструментов](../18-tool-protocols-and-servers/README.md)** — MCP для раздачи промптов
 - **[Глава 19: Observability и Tracing](../19-observability-and-tracing/README.md)** — связь промптов с трассировкой
 - **[Глава 23: Evals в CI/CD](../23-evals-in-cicd/README.md)** — автоматическая проверка в pipeline
+- **[Agent Skills](https://agentskills.io/)** — формат `SKILL.md` как стандартный способ упаковки переиспользуемых промптов и инструкций
 
 ## Что дальше?
 

@@ -77,7 +77,7 @@ func main() {
 func runTest(ctx context.Context, client *openai.Client, name, prompt string, validator func(string) bool) TestResult {
 	fmt.Printf("Running %s...\n", name)
 	resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model: openai.GPT3Dot5Turbo,
+		Model: "gpt-4o-mini",
 		Messages: []openai.ChatCompletionMessage{{Role: openai.ChatMessageRoleUser, Content: prompt}},
 		Temperature: 0,
 	})
@@ -107,7 +107,7 @@ func runToolTest(ctx context.Context, client *openai.Client) TestResult {
 	}
 
 	resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model: openai.GPT3Dot5Turbo,
+		Model: "gpt-4o-mini",
 		Messages: []openai.ChatCompletionMessage{{Role: openai.ChatMessageRoleUser, Content: "Call the test_tool please."}},
 		Tools: tools,
 	})

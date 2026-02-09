@@ -226,7 +226,7 @@ Example pipeline JSON:
 	// 3. ЦИКЛ АГЕНТА
 	for i := 0; i < 10; i++ {
 		req := openai.ChatCompletionRequest{
-			Model:    openai.GPT3Dot5Turbo,
+			Model:    "gpt-4o-mini",
 			Messages: messages,
 			Tools:    tools,
 		}

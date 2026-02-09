@@ -83,7 +83,7 @@ func main() {
 		})
 
 		req := openai.ChatCompletionRequest{
-			Model:    openai.GPT3Dot5Turbo, // Или "local-model", имя часто игнорируется локальными серверами
+			Model:    "gpt-4o-mini", // Или "local-model", имя часто игнорируется локальными серверами
 			Messages: messages,
 		}
 

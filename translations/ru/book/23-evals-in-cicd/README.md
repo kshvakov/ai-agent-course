@@ -271,7 +271,9 @@ func evaluateMultiTurn(mtc MultiTurnCase, client *openai.Client) (float64, error
 
 ### Шаг 5: RAGAS-метрики для RAG
 
-Если агент использует RAG, нужны специализированные метрики:
+Если агент использует RAG, нужны специализированные метрики.
+
+> **Примечание:** Ниже показана упрощённая реализация RAGAS-метрик на Go. Реальный [RAGAS](https://docs.ragas.io/) — это Python-библиотека, в которой `isRelevant`, `scoreFaithfulness` и `scoreRelevance` реализованы через LLM-based evaluation. Пример показывает структуру метрик, а не production-реализацию.
 
 ```go
 // RAGAS (Retrieval Augmented Generation Assessment)

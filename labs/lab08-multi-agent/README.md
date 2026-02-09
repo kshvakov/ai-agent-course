@@ -129,4 +129,4 @@ Run system with prompt: *"Check if DB server db-host.example.com is accessible, 
 
 ---
 
-**Congratulations!** You've completed the course. Now you can build production AI agents.
+**Next step:** After completing Lab 08, proceed to [Lab 09: Context Optimization](../lab09-context-optimization/README.md) — managing the LLM context window.

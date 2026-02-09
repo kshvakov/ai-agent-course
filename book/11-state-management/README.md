@@ -441,7 +441,7 @@ func main() {
         }
 
         req := openai.ChatCompletionRequest{
-            Model:    openai.GPT3Dot5Turbo,
+            Model:    "gpt-4o-mini",
             Messages: messages,
             Tools:    tools,
         }
@@ -497,6 +497,380 @@ func main() {
     }
 }
 ```
+
+## Store: Database-Backed Storage
+
+The examples above use a `tasks.json` file to store state. This works for learning, but file storage is unreliable in production.
+
+### Why a File Isn't Production-Ready
+
+File storage has three problems:
+
+1. **No atomicity.** If the process crashes during a write, the file gets corrupted.
+2. **No concurrent access.** Two agents can't safely write to the same file.
+3. **No queries.** To find all incomplete tasks, you have to read the entire file.
+
+Databases solve all three problems. PostgreSQL is a solid choice for production. SQLite works well for local development.
+
+### StateStore: Storage Interface
+
+Separate the interface from the implementation. This lets you swap the store in tests and change it without rewriting agent logic.
+
+```go
+// StateStore defines the contract for agent state storage.
+// Implementations can use PostgreSQL, SQLite, or in-memory storage.
+type StateStore interface {
+    Save(ctx context.Context, task *Task) error
+    Get(ctx context.Context, id string) (*Task, error)
+    ListByState(ctx context.Context, state TaskState) ([]*Task, error)
+}
+```
+
+### PostgreSQL Implementation
+
+```go
+type PgStateStore struct {
+    db *sql.DB
+}
+
+func NewPgStateStore(dsn string) (*PgStateStore, error) {
+    db, err := sql.Open("pgx", dsn)
+    if err != nil {
+        return nil, fmt.Errorf("connect to postgres: %w", err)
+    }
+    return &PgStateStore{db: db}, nil
+}
+
+func (s *PgStateStore) Save(ctx context.Context, task *Task) error {
+    // UPSERT: insert a new task or update an existing one
+    query := `
+        INSERT INTO agent_tasks (id, user_input, state, result, error, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, now())
+        ON CONFLICT (id) DO UPDATE SET
+            state      = EXCLUDED.state,
+            result     = EXCLUDED.result,
+            error      = EXCLUDED.error,
+            updated_at = now()`
+
+    _, err := s.db.ExecContext(ctx, query,
+        task.ID, task.UserInput, task.State,
+        task.Result, task.Error, task.CreatedAt,
+    )
+    return err
+}
+
+func (s *PgStateStore) Get(ctx context.Context, id string) (*Task, error) {
+    task := &Task{}
+    err := s.db.QueryRowContext(ctx,
+        `SELECT id, user_input, state, result, error, created_at, updated_at
+         FROM agent_tasks WHERE id = $1`, id,
+    ).Scan(
+        &task.ID, &task.UserInput, &task.State,
+        &task.Result, &task.Error,
+        &task.CreatedAt, &task.UpdatedAt,
+    )
+    if errors.Is(err, sql.ErrNoRows) {
+        return nil, nil
+    }
+    return task, err
+}
+
+func (s *PgStateStore) ListByState(ctx context.Context, state TaskState) ([]*Task, error) {
+    rows, err := s.db.QueryContext(ctx,
+        `SELECT id, user_input, state, result, error, created_at, updated_at
+         FROM agent_tasks WHERE state = $1 ORDER BY created_at`, state,
+    )
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+    var tasks []*Task
+    for rows.Next() {
+        t := &Task{}
+        if err := rows.Scan(
+            &t.ID, &t.UserInput, &t.State,
+            &t.Result, &t.Error,
+            &t.CreatedAt, &t.UpdatedAt,
+        ); err != nil {
+            return nil, err
+        }
+        tasks = append(tasks, t)
+    }
+    return tasks, rows.Err()
+}
+```
+
+### Transactions for Atomic Updates
+
+When the agent executes a step, state must update atomically. If the step fails, the state must remain unchanged.
+
+```go
+func (s *PgStateStore) ExecuteStep(ctx context.Context, taskID string, stepFn func(*Task) error) error {
+    tx, err := s.db.BeginTx(ctx, nil)
+    if err != nil {
+        return fmt.Errorf("begin tx: %w", err)
+    }
+    defer tx.Rollback()
+
+    // SELECT ... FOR UPDATE locks the row for the duration of the step.
+    // Another agent won't be able to modify this task concurrently.
+    task := &Task{}
+    err = tx.QueryRowContext(ctx,
+        `SELECT id, user_input, state, result, error, created_at, updated_at
+         FROM agent_tasks WHERE id = $1 FOR UPDATE`, taskID,
+    ).Scan(
+        &task.ID, &task.UserInput, &task.State,
+        &task.Result, &task.Error,
+        &task.CreatedAt, &task.UpdatedAt,
+    )
+    if err != nil {
+        return fmt.Errorf("lock task: %w", err)
+    }
+
+    // Execute step business logic
+    if err := stepFn(task); err != nil {
+        return fmt.Errorf("step failed: %w", err)
+    }
+
+    // Save updated state inside the transaction
+    _, err = tx.ExecContext(ctx,
+        `UPDATE agent_tasks SET state=$1, result=$2, error=$3, updated_at=now() WHERE id=$4`,
+        task.State, task.Result, task.Error, task.ID,
+    )
+    if err != nil {
+        return fmt.Errorf("save state: %w", err)
+    }
+
+    return tx.Commit()
+}
+```
+
+The step either completes fully or rolls back. There is no "half-done" state.
+
+## MCP for State
+
+Model Context Protocol (MCP) lets you store and share agent state through standardized resources. For more on MCP, see [Chapter 18: Tool Protocols and Tool Servers](../18-tool-protocols-and-servers/README.md).
+
+### Why MCP for State?
+
+An MCP server acts as a single source of truth for state. Any agent or tool accesses it by URI. This solves two problems:
+
+1. **Shared access.** Multiple agents read and update the same state.
+2. **Standard protocol.** No need to write a custom API for each store.
+
+### State Resource
+
+Agent state is represented as an MCP resource with a URI:
+
+```
+state://agents/{agent_id}/tasks/{task_id}
+```
+
+One agent writes progress, another reads it and continues the work.
+
+### Example: Reading Shared State
+
+```go
+// MCPStateResource represents agent state as an MCP resource.
+type MCPStateResource struct {
+    URI       string    `json:"uri"`
+    AgentID   string    `json:"agent_id"`
+    TaskID    string    `json:"task_id"`
+    State     TaskState `json:"state"`
+    Plan      []string  `json:"plan,omitempty"`
+    Artifacts []string  `json:"artifacts,omitempty"`
+}
+
+// readSharedState reads another agent's state via MCP.
+// Agent A wrote progress, agent B reads it and continues.
+func readSharedState(
+    ctx context.Context,
+    mcpClient *mcp.Client,
+    agentID, taskID string,
+) (*MCPStateResource, error) {
+    uri := fmt.Sprintf("state://agents/%s/tasks/%s", agentID, taskID)
+
+    resource, err := mcpClient.ReadResource(ctx, uri)
+    if err != nil {
+        return nil, fmt.Errorf("read MCP resource %s: %w", uri, err)
+    }
+
+    var state MCPStateResource
+    if err := json.Unmarshal(resource.Content, &state); err != nil {
+        return nil, fmt.Errorf("decode state: %w", err)
+    }
+    return &state, nil
+}
+```
+
+This approach is useful in [multi-agent systems](../07-multi-agent/README.md), where multiple agents work on the same task.
+
+## Dynamic Context: Selecting Relevant State
+
+### Problem: Not Everything Fits in the Context
+
+The agent accumulates artifacts: logs, command outputs, intermediate data. Over time their volume exceeds the LLM context window. Send everything and the model loses focus. Send nothing and the model can't make decisions.
+
+The solution is to select only the relevant state for the current step.
+
+### Filtering by Relevance
+
+The strategy is simple: first take data from the current step, then fill the remainder with the most recent facts.
+
+```go
+// ContextSlice is a slice of state that fits inside the context window.
+type ContextSlice struct {
+    Goal          string     `json:"goal"`
+    CurrentStep   string     `json:"current_step"`
+    Facts         []Fact     `json:"facts"`
+    Artifacts     []Artifact `json:"artifacts"`
+    OpenQuestions []string   `json:"open_questions"`
+}
+
+// filterRelevantState selects only what the current step needs
+// from the full state.
+// maxBytes caps the size to avoid overflowing the context window.
+func filterRelevantState(state *AgentState, currentStep string, maxBytes int) *ContextSlice {
+    slice := &ContextSlice{
+        Goal:          state.Goal,
+        CurrentStep:   currentStep,
+        OpenQuestions: state.OpenQuestions,
+    }
+
+    usedBytes := 0
+
+    // Priority 1: artifacts for the current step
+    for _, a := range state.Artifacts {
+        if a.Step == currentStep && usedBytes+a.Bytes <= maxBytes {
+            slice.Artifacts = append(slice.Artifacts, a)
+            usedBytes += a.Bytes
+        }
+    }
+
+    // Priority 2: most recent facts (fresh data is more likely relevant)
+    for i := len(state.KnownFacts) - 1; i >= 0; i-- {
+        factSize := len(state.KnownFacts[i].Value)
+        if usedBytes+factSize > maxBytes {
+            break
+        }
+        slice.Facts = append(slice.Facts, state.KnownFacts[i])
+        usedBytes += factSize
+    }
+
+    return slice
+}
+```
+
+### When You Need This
+
+Filtering becomes critical when the agent runs for more than 5-10 steps. For short tasks you can skip it. For more on context management, see [Chapter 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md).
+
+## Advanced Checkpoint Strategies
+
+The basic Checkpoint implementation (structure, save/load, agent loop integration) is covered in [Chapter 09: Agent Architecture](../09-agent-architecture/README.md). Here we look at advanced strategies for production.
+
+### When to Save: Checkpoint Granularity
+
+A checkpoint is a snapshot of state you can return to. Save frequency is a trade-off between reliability and performance:
+
+| Strategy | When to save | Pros | Cons |
+|----------|-------------|------|------|
+| `every_step` | After every tool call | Minimal progress loss | Many DB writes |
+| `every_iteration` | After every loop iteration | Balance of reliability and I/O | Lose intermediate steps |
+| `on_state_change` | Only on state transition | Minimal I/O | Lose progress within a state |
+
+### CheckpointManager
+
+```go
+type CheckpointStrategy string
+
+const (
+    CheckpointEveryStep      CheckpointStrategy = "every_step"
+    CheckpointEveryIteration CheckpointStrategy = "every_iteration"
+    CheckpointOnStateChange  CheckpointStrategy = "on_state_change"
+)
+
+type CheckpointManager struct {
+    store    StateStore
+    strategy CheckpointStrategy
+    maxAge   time.Duration // Maximum checkpoint age
+    maxCount int           // How many checkpoints to keep per task
+}
+
+// MaybeSave saves a checkpoint if the current trigger matches the strategy.
+func (cm *CheckpointManager) MaybeSave(
+    ctx context.Context,
+    task *Task,
+    trigger CheckpointStrategy,
+) error {
+    if trigger != cm.strategy {
+        return nil // Not our trigger — skip
+    }
+    return cm.store.Save(ctx, task)
+}
+```
+
+### Validation Before Resume
+
+You can't blindly resume a task from a checkpoint. The checkpoint may be stale, and the state may be invalid.
+
+```go
+// ValidateAndResume loads a checkpoint and verifies it's usable.
+func (cm *CheckpointManager) ValidateAndResume(ctx context.Context, taskID string) (*Task, error) {
+    task, err := cm.store.Get(ctx, taskID)
+    if err != nil {
+        return nil, fmt.Errorf("load checkpoint: %w", err)
+    }
+    if task == nil {
+        return nil, fmt.Errorf("checkpoint not found: %s", taskID)
+    }
+
+    // Check 1: checkpoint is not expired
+    age := time.Since(task.UpdatedAt)
+    if age > cm.maxAge {
+        return nil, fmt.Errorf("checkpoint expired: age %v exceeds max %v", age, cm.maxAge)
+    }
+
+    // Check 2: state allows resumption
+    switch task.State {
+    case TaskCompleted:
+        return task, nil // Already done, no re-execution needed
+    case TaskRunning, TaskFailed:
+        return task, nil // Can resume
+    default:
+        return nil, fmt.Errorf("cannot resume from state: %s", task.State)
+    }
+}
+```
+
+### Checkpoint Rotation
+
+Checkpoints accumulate. Without cleanup they waste storage and complicate recovery. Rotation keeps only the last N checkpoints and deletes expired ones.
+
+```go
+// Cleanup removes expired checkpoints, keeping the last maxCount.
+func (cm *CheckpointManager) Cleanup(ctx context.Context, taskID string) (int64, error) {
+    result, err := cm.store.(*PgStateStore).db.ExecContext(ctx,
+        `DELETE FROM agent_checkpoints
+         WHERE task_id = $1
+           AND created_at < $2
+           AND id NOT IN (
+               SELECT id FROM agent_checkpoints
+               WHERE task_id = $1
+               ORDER BY created_at DESC
+               LIMIT $3
+           )`,
+        taskID, time.Now().Add(-cm.maxAge), cm.maxCount,
+    )
+    if err != nil {
+        return 0, fmt.Errorf("cleanup checkpoints: %w", err)
+    }
+    return result.RowsAffected()
+}
+```
+
+Good practice: run rotation after every successful save or on a schedule.
 
 ## Common Errors
 

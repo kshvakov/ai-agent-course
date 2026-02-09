@@ -546,7 +546,7 @@ func main() {
         
         for {
             req := openai.ChatCompletionRequest{
-                Model:    openai.GPT4,
+                Model:    "gpt-4o",
                 Messages: messages,
                 Tools:    tools,
             }

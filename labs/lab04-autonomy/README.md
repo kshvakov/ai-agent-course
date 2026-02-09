@@ -45,6 +45,15 @@ Point 4.c provides the "magic" — the agent looks at the result and decides wha
 
 **Note:** For more complex tasks (5+ steps), **explicit planning** (Plan-and-Solve) is used, which you'll study in Lab 06.
 
+### Advanced Topics
+
+The book covers additional patterns that extend the basic Agent Loop:
+
+- **Parallel Tool Calls** — the model can return multiple `tool_calls` in a single iteration. For example, "Check status of nginx and postgresql" returns two calls at once. Runtime can execute them in parallel via `sync.WaitGroup`.
+- **Multi-Model Agent Loop** — use a cheap model (gpt-4o-mini) for tool selection and argument generation, and a powerful model (gpt-4o) for result analysis and final response. Up to 50x cost savings at 10,000+ tasks per day.
+
+See more: [Chapter 04: Autonomy and Loops](../../book/04-autonomy-and-loops/README.md)
+
 ## Task
 In `main.go` — large template.
 

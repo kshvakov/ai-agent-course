@@ -23,6 +23,18 @@ A regular agent only knows what it was trained on (up to its cut-off date). It d
 
 In this lab we implement **simple RAG** (keyword search). In production, **vector search** (Semantic Search) is used, which searches by meaning, not by words.
 
+### Advanced RAG Techniques
+
+In production, basic RAG is enhanced with Advanced RAG techniques:
+
+- **Query Transformation** — rewrite the query before search (Query Rewriting, Sub-Query Decomposition, HyDE)
+- **Routing** — route the query to the right data source (wiki, SQL, metrics API)
+- **Hybrid Search** — combine keyword search (BM25) and vector search with Reciprocal Rank Fusion
+- **Reranking** — rerank results via cross-encoder or LLM for higher precision
+- **Self-RAG** — the model assesses retrieval quality and decides: answer, refine query, or search more
+
+See more: [Chapter 06: RAG and Knowledge Base](../../book/06-rag/README.md)
+
 ## Task
 
 In `main.go` implement a RAG system for the agent.

@@ -21,6 +21,15 @@ When an agent works in a long dialogue or executes many steps in an autonomous l
 3. **Summarization** — compress old messages via LLM
 4. **Adaptive management** — choose technique based on fill level
 
+### Advanced Techniques (from the book)
+
+Chapter 13 covers additional strategies:
+
+- **Token Counting** — precise counting via tiktoken (production) or approximate by words (1 token ≈ 0.75 words for EN, ≈ 0.5 words for RU/Cyrillic)
+- **truncateToTokenLimit** — context truncation preserving System Prompt and the user's last message
+- **Compression strategies** — Semantic Compression (keep meaning, drop filler), Key-Value Extraction (facts as "key: value" pairs), standard summarization
+- **Incremental Summarization** — update the existing summary with new messages instead of re-summarizing entire history. O(n) in tokens instead of O(n²)
+
 See more: [Chapter 13: Context Engineering](../../book/13-context-engineering/README.md)
 
 ## Task
@@ -99,4 +108,4 @@ Assistant: Yes, of course! Your name is Ivan, you're a DevOps engineer.
 
 ---
 
-**Next step:** After successfully completing Lab 09 you've mastered all key agent techniques! You can proceed to study [Multi-Agent Systems](../lab08-multi-agent/README.md) or [RAG](../lab07-rag/README.md).
+**Next step:** After completing Lab 09, proceed to [Lab 10: Planning and Workflows](../lab10-planning-workflows/README.md) — task decomposition, dependency resolution, and state persistence.

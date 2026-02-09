@@ -80,7 +80,7 @@ tools := []openai.Tool{
 
 ```go
 resp1, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    openai.GPT3Dot5Turbo,
+    Model:    "gpt-4o-mini",
     Messages: messages,
     Tools:    tools,
 })
@@ -139,7 +139,7 @@ messages = append(messages, openai.ChatCompletionMessage{
 ```go
 // Send updated history (with documentation!) to model
 resp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    openai.GPT3Dot5Turbo,
+    Model:    "gpt-4o-mini",
     Messages: messages,  // Model receives found documentation!
     Tools:    tools,
 })
@@ -215,6 +215,366 @@ Chunk 1: "Phoenix server restart protocol: step 1..."
 Chunk 2: "Step 2: Turn off load balancer..."
 Chunk 3: "Step 3: Restart server..."
 ```
+
+## Advanced RAG Techniques
+
+Basic RAG works like this: user query → search → retrieved documents → response. In practice, this isn't enough. The query can be vague, search can be imprecise, and results can be irrelevant.
+
+Let's look at techniques that solve these problems.
+
+### RAG Evolution
+
+```
+Basic RAG          Advanced RAG           Agentic RAG
+┌──────────┐       ┌──────────────┐       ┌──────────────────┐
+│ Query    │       │ Query        │       │ Agent decides:   │
+│   ↓      │       │   ↓          │       │ - Search or not  │
+│ Search   │       │ Transform    │       │ - Where to search│
+│   ↓      │       │   ↓          │       │ - Is it enough   │
+│ Retrieve │       │ Route        │       │ - Search more    │
+│   ↓      │       │   ↓          │       │   ↓              │
+│ Generate │       │ Hybrid Search│       │ Iterative        │
+│          │       │   ↓          │       │ search loop      │
+│          │       │ Rerank       │       │                  │
+│          │       │   ↓          │       │                  │
+│          │       │ Generate     │       │                  │
+└──────────┘       └──────────────┘       └──────────────────┘
+```
+
+### Query Transformation
+
+**Problem:** A user writes "server is down". Searching for this query won't find the document "Server failure recovery procedure".
+
+**Solution:** Transform the query before searching — rephrase, expand, or break it into sub-queries.
+
+**Technique 1: Query Rewriting**
+
+```go
+// Rewrite the query before search for better retrieval
+func rewriteQuery(originalQuery string, client *openai.Client) (string, error) {
+    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+        Model: "gpt-4o-mini", // Cheap model — simple task
+        Messages: []openai.ChatCompletionMessage{
+            {
+                Role: openai.ChatMessageRoleSystem,
+                Content: `Rewrite the user query to be more specific for document search.
+Return ONLY the rewritten query, nothing else.
+Examples:
+- "server is down" → "server failure recovery procedure"
+- "DB is slow" → "PostgreSQL performance diagnostics high latency"`,
+            },
+            {Role: openai.ChatMessageRoleUser, Content: originalQuery},
+        },
+        Temperature: 0,
+    })
+    if err != nil {
+        return originalQuery, err // Fall back to original
+    }
+    return resp.Choices[0].Message.Content, nil
+}
+```
+
+**Technique 2: Sub-Query Decomposition**
+
+A complex query is broken into several simpler ones. Results are merged.
+
+```go
+// "Compare nginx config on prod and staging" breaks into:
+// 1. "nginx configuration production"
+// 2. "nginx configuration staging"
+subQueries := decomposeQuery(userQuery)
+var allResults []SearchResult
+for _, sq := range subQueries {
+    results := searchKnowledgeBase(sq)
+    allResults = append(allResults, results...)
+}
+```
+
+**Technique 3: HyDE (Hypothetical Document Embeddings)**
+
+Instead of searching by the query, ask the model to generate a **hypothetical answer**. Then search for documents similar to that answer.
+
+```go
+// Step 1: Model generates a hypothetical document
+hypothetical := generateHypotheticalAnswer(query)
+// query: "how to set up SSL"
+// hypothetical: "To set up SSL on nginx: 1. Obtain a certificate... 2. Add to config..."
+
+// Step 2: Search for documents similar to the hypothetical answer
+embedding := embedText(hypothetical)
+results := vectorDB.Search(embedding, topK=5)
+// Finds real documents about SSL setup, even if written differently
+```
+
+**Why this works:** The embedding of a hypothetical document is closer to the embedding of the real document than the embedding of a short query.
+
+### Routing (Query Routing)
+
+**Problem:** You have multiple data sources: a wiki, SQL database, monitoring API. The query "server response time for the last hour" won't be found in the wiki — you need the metrics database.
+
+**Solution:** Classify the query and route it to the right source.
+
+```go
+type QueryRoute struct {
+    Source   string // "wiki", "sql", "metrics_api", "vector_db"
+    Query    string // Original or transformed query
+    Reason   string // Why this source
+}
+
+func routeQuery(query string, client *openai.Client) (QueryRoute, error) {
+    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+        Model: "gpt-4o-mini",
+        Messages: []openai.ChatCompletionMessage{
+            {
+                Role: openai.ChatMessageRoleSystem,
+                Content: `Classify the query and route to the correct data source.
+Available sources:
+- "wiki": documentation, procedures, runbooks
+- "sql": structured data, tables, historical records
+- "metrics_api": real-time metrics, monitoring data
+- "vector_db": semantic search in knowledge base
+
+Return JSON: {"source": "...", "query": "...", "reason": "..."}`,
+            },
+            {Role: openai.ChatMessageRoleUser, Content: query},
+        },
+        Temperature: 0,
+    })
+    if err != nil {
+        return QueryRoute{Source: "vector_db", Query: query}, err
+    }
+
+    var route QueryRoute
+    json.Unmarshal([]byte(resp.Choices[0].Message.Content), &route)
+    return route, nil
+}
+
+// Usage:
+route, _ := routeQuery("server response time for the last hour")
+// route.Source = "metrics_api"
+// route.Reason = "query about real-time metrics"
+```
+
+### Hybrid Search
+
+**Problem:** Vector search finds meaning well but struggles with exact terms. Keyword search is the opposite. The query "error ORA-12154" needs both keyword search for "ORA-12154" and semantic search for "Oracle connection error".
+
+**Solution:** Combine both approaches and merge results.
+
+```go
+type SearchResult struct {
+    ChunkID string
+    Text    string
+    Score   float64
+}
+
+func hybridSearch(query string, topK int) []SearchResult {
+    // 1. Keyword search (BM25)
+    keywordResults := bm25Search(query, topK)
+
+    // 2. Vector search (Semantic)
+    embedding := embedQuery(query)
+    vectorResults := vectorDB.Search(embedding, topK)
+
+    // 3. Reciprocal Rank Fusion (RRF) — merge results
+    return reciprocalRankFusion(keywordResults, vectorResults, topK)
+}
+
+// RRF: combines ranks from different lists
+func reciprocalRankFusion(lists ...[]SearchResult) []SearchResult {
+    scores := make(map[string]float64) // chunkID → combined score
+    k := 60.0 // RRF constant (standard value)
+
+    for _, list := range lists {
+        for rank, result := range list {
+            scores[result.ChunkID] += 1.0 / (k + float64(rank+1))
+        }
+    }
+
+    // Sort by combined score (descending)
+    // ... sort and return top-K ...
+}
+```
+
+**When each approach works best:**
+
+| Query Type | Keyword | Vector | Hybrid |
+|------------|---------|--------|--------|
+| "ORA-12154" | Excellent | Poor | Excellent |
+| "can't connect to database" | Poor | Excellent | Excellent |
+| "ORA-12154 won't connect" | Medium | Medium | Excellent |
+
+### Reranking
+
+**Problem:** Search returned 20 results. Not all are equally relevant. Passing all 20 into context wastes tokens.
+
+**Solution:** After initial retrieval, rerank results using a more accurate (but slower) model.
+
+```go
+func rerankResults(query string, results []SearchResult, topK int) []SearchResult {
+    // Use LLM to score relevance of each result
+    type scored struct {
+        Result SearchResult
+        Score  float64
+    }
+    var scored []scored
+
+    for _, r := range results {
+        score := scoreRelevance(query, r.Text) // cross-encoder or LLM
+        scored = append(scored, scored{Result: r, Score: score})
+    }
+
+    // Sort by score (descending)
+    sort.Slice(scored, func(i, j int) bool {
+        return scored[i].Score > scored[j].Score
+    })
+
+    // Return top-K
+    result := make([]SearchResult, 0, topK)
+    for i := 0; i < topK && i < len(scored); i++ {
+        result = append(result, scored[i].Result)
+    }
+    return result
+}
+```
+
+**Two-stage pipeline:** Fast retrieval (BM25/vector, top-100) → Precise reranking (cross-encoder, top-5).
+
+### Self-RAG (Self-Assessment of Retrieval Quality)
+
+**Problem:** The agent found documents, but they may be irrelevant, outdated, or incomplete. Basic RAG doesn't notice this.
+
+**Solution:** The model assesses retrieved document quality and decides: answer, refine the query, or search more.
+
+```go
+type RetrievalAssessment struct {
+    IsRelevant  bool   `json:"is_relevant"`  // Are documents relevant to the query?
+    IsSufficient bool  `json:"is_sufficient"` // Is there enough information to answer?
+    Action      string `json:"action"`        // "answer", "refine_query", "search_more"
+    RefinedQuery string `json:"refined_query,omitempty"` // Refined query (if needed)
+}
+
+func assessRetrieval(query string, docs []SearchResult, client *openai.Client) (RetrievalAssessment, error) {
+    docsText := formatDocs(docs)
+    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+        Model: "gpt-4o-mini",
+        Messages: []openai.ChatCompletionMessage{
+            {
+                Role: openai.ChatMessageRoleSystem,
+                Content: `Assess if the retrieved documents are relevant and sufficient to answer the query.
+Return JSON: {"is_relevant": bool, "is_sufficient": bool, "action": "answer"|"refine_query"|"search_more", "refined_query": "..."}`,
+            },
+            {
+                Role: openai.ChatMessageRoleUser,
+                Content: fmt.Sprintf("Query: %s\n\nRetrieved documents:\n%s", query, docsText),
+            },
+        },
+        Temperature: 0,
+    })
+    if err != nil {
+        return RetrievalAssessment{IsRelevant: true, IsSufficient: true, Action: "answer"}, err
+    }
+
+    var assessment RetrievalAssessment
+    json.Unmarshal([]byte(resp.Choices[0].Message.Content), &assessment)
+    return assessment, nil
+}
+```
+
+**Self-RAG in a loop:**
+
+```go
+func selfRAG(query string, maxAttempts int) ([]SearchResult, error) {
+    currentQuery := query
+
+    for attempt := 0; attempt < maxAttempts; attempt++ {
+        docs := hybridSearch(currentQuery, 10)
+        assessment, _ := assessRetrieval(currentQuery, docs)
+
+        switch assessment.Action {
+        case "answer":
+            return docs, nil // Documents are sufficient — answer
+        case "refine_query":
+            currentQuery = assessment.RefinedQuery // Refine the query
+        case "search_more":
+            // Expand search (more top-K or different source)
+            moreDocs := hybridSearch(currentQuery, 20)
+            docs = append(docs, moreDocs...)
+            return docs, nil
+        }
+    }
+    return nil, fmt.Errorf("could not find sufficient documents after %d attempts", maxAttempts)
+}
+```
+
+### Agentic RAG (RAG as an Agent Tool)
+
+**Problem:** Self-RAG assesses retrieval quality but can't make complex decisions: which source to use, whether to combine information from multiple documents, or solve multi-hop tasks (where the answer requires a chain of searches).
+
+**Solution:** RAG is embedded into the Agent Loop (a.k.a. ReAct Loop — see [Chapter 04](../04-autonomy-and-loops/README.md)). The agent decides when to search, where to search, and whether it has enough information.
+
+```go
+// Agentic RAG: RAG is simply agent tools
+tools := []openai.Tool{
+    // Tool 1: Search documentation
+    {
+        Function: &openai.FunctionDefinition{
+            Name:        "search_docs",
+            Description: "Search documentation and runbooks. Use when you need procedures or technical details.",
+            Parameters:  searchParamsSchema,
+        },
+    },
+    // Tool 2: SQL query to metrics database
+    {
+        Function: &openai.FunctionDefinition{
+            Name:        "query_metrics",
+            Description: "Query metrics database. Use when you need historical data or statistics.",
+            Parameters:  sqlParamsSchema,
+        },
+    },
+    // Tool 3: Search similar incidents
+    {
+        Function: &openai.FunctionDefinition{
+            Name:        "search_incidents",
+            Description: "Search past incidents for similar issues and their resolutions.",
+            Parameters:  searchParamsSchema,
+        },
+    },
+}
+
+// Agent decides on its own:
+// Iteration 1: search_docs("nginx 502 error troubleshooting")
+// Iteration 2: query_metrics("SELECT avg(latency) FROM requests WHERE status=502 AND time > now()-1h")
+// Iteration 3: search_incidents("nginx 502 upstream timeout")
+// Iteration 4: Final answer combining information from all sources
+```
+
+**Multi-hop RAG (search chains):**
+
+```
+Query: "Why did the payments service go down yesterday?"
+
+Step 1: search_incidents("payments service outage yesterday")
+       → "Incident INC-4521: payments went down due to DB timeout"
+
+Step 2: search_docs("payments database connection configuration")
+       → "Payments uses PostgreSQL on db-prod-03, connection pool = 20"
+
+Step 3: query_metrics("SELECT connections FROM pg_stat WHERE time = yesterday")
+       → "Peak connections: 150 (with limit of 100)"
+
+Step 4: Final answer: "Payments went down due to connection pool exhaustion.
+        Peak was 150 connections with a limit of 100. Recommendation: increase pool to 200."
+```
+
+**Differences between approaches:**
+
+| Approach | Who makes decisions | Where's the logic |
+|----------|-------------------|------------------|
+| Basic RAG | Rigid pipeline | Code (hardcoded) |
+| Advanced RAG | Pipeline with branching | Code + config |
+| Self-RAG | Model assesses quality | Model (assessment) |
+| Agentic RAG | Agent controls everything | Agent Loop |
 
 ## RAG for Action Space (Tool Retrieval)
 
@@ -813,6 +1173,7 @@ More on production readiness: [Chapter 19: Observability](../19-observability-an
 - **Tools:** How search tool integrates into agent, see [Chapter 03: Tools](../03-tools-and-function-calling/README.md). The problem of large tool lists is solved via tool retrieval (see "RAG for Action Space" section above).
 - **Autonomy:** How RAG works in the agent loop, see [Chapter 04: Autonomy](../04-autonomy-and-loops/README.md)
 - **Tool Servers:** How to retrieve tool catalogs dynamically via tool servers, see [Chapter 18: Tool Protocols](../18-tool-protocols-and-servers/README.md)
+- **MCP Resources:** MCP provides a standard mechanism for data access (Resources) — [Model Context Protocol](https://modelcontextprotocol.io/)
 
 ## What's Next?
 

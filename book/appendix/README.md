@@ -30,6 +30,8 @@ This section contains reference information: glossary of terms, checklists, SOP 
 
 **See also:** [Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md#step-3-model-response-tool-call)
 
+**MCP (Model Context Protocol)** — protocol for connecting tools and data to LLM agents (Anthropic). Provides a standard interface for Resources, Tools, and Prompts.
+
 **Artifact / artifact_id** — a large tool result (file, logs, JSON, HTML, etc.) that the runtime stores outside `messages[]`. The model only receives a short excerpt plus an `artifact_id`. This reduces cost/latency and helps avoid context overflows.
 
 **See also:** [Chapter 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md)
@@ -46,9 +48,11 @@ This section contains reference information: glossary of terms, checklists, SOP 
 
 **See also:** [Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md#react-loop-autonomy-loop)
 
+**Skills** — reusable agent behavior modules. Contain instructions loaded into context depending on the task.
+
 ### LLM and Context
 
-**Context Window** — maximum number of tokens a model can process in one request. Limits dialogue history size. Examples: GPT-3.5: 4k tokens, GPT-4 Turbo: 128k tokens.
+**Context Window** — maximum number of tokens a model can process in one request. Limits dialogue history size. Examples: GPT-4o: 128k tokens, GPT-4o-mini: 128k tokens, Claude 3.5 Sonnet: 200k tokens.
 
 **See also:** [Chapter 01: LLM Physics](../01-llm-fundamentals/README.md#context-window)
 
@@ -122,6 +126,12 @@ This section contains reference information: glossary of terms, checklists, SOP 
 
 **See also:** [Chapter 06: RAG and Knowledge Base](../06-rag/README.md)
 
+**Agentic RAG** — RAG integrated into the Agent Loop. The agent decides when and where to search, evaluates result quality, and can search again.
+
+**Self-RAG** — RAG with self-assessment. The model evaluates relevance of retrieved documents and decides whether to answer, refine the query, or search again.
+
+**Hybrid Search** — combination of keyword search (BM25) and vector search. Merges results via Reciprocal Rank Fusion.
+
 ### Planning and Architecture
 
 **Planning** — the agent's ability to break down a complex task into a sequence of simple steps and execute them in the correct order. Levels: implicit (ReAct), explicit (Plan-and-Solve), hierarchical.
@@ -131,6 +141,8 @@ This section contains reference information: glossary of terms, checklists, SOP 
 **State Management** — managing task execution state: progress, what's done, what's pending, resumption capability. Includes tool idempotency, retries with exponential backoff, deadlines, persist state.
 
 **See also:** [Chapter 11: State Management](../11-state-management/README.md)
+
+**Checkpoint** — a snapshot of agent state at a given point in time. Allows resuming work after a failure without losing progress.
 
 **Reflexion** — agent self-correction technique through error analysis. Cycle: Act → Observe → Fail → REFLECT → Plan Again. Agent analyzes why action didn't work and plans again.
 
@@ -150,15 +162,33 @@ This section contains reference information: glossary of terms, checklists, SOP 
 
 **See also:** [Chapter 05: Safety and Human-in-the-Loop](../05-safety-and-hitl/README.md#prompt-injection)
 
+**Defense in Depth** — multi-layered security strategy. Each layer (input validation, runtime checks, output filtering, monitoring) protects against different types of attacks.
+
+**Red Teaming** — systematic testing of an agent for vulnerabilities. A team of "attackers" tries to make the agent break its rules.
+
 **Eval (Evaluation)** — test to check agent work quality. Can check answer correctness, tool selection, SOP following, safety. In production systems used in CI/CD.
 
 **See also:** [Chapter 08: Evals and Reliability](../08-evals-and-reliability/README.md)
+
+**DeepEval** — framework for evaluating LLM application quality. Provides metrics: faithfulness, answer relevancy, context precision.
+
+**Multi-turn Evaluation** — evaluating an agent in multi-step dialogues. Checks context coherence and correctness of actions at each step.
+
+**RAGAS** — metrics framework for RAG systems. Measures context precision, context recall, faithfulness, and answer relevance.
 
 ### Multi-Agent Systems
 
 **Multi-Agent System (MAS)** — system of multiple agents working together. Can use Supervisor/Worker patterns, context isolation, task routing between specialized agents.
 
 **See also:** [Chapter 07: Multi-Agent Systems](../07-multi-agent/README.md)
+
+**A2A (Agent-to-Agent)** — inter-agent communication protocol (Google). Standardizes task exchange between agents via Agent Card, Task lifecycle, and Message/Artifact.
+
+**Handoff** — transferring control from one agent to another with part of the context. Used during escalation or domain switch.
+
+**Router Agent** — an agent that classifies requests and routes them to the appropriate specialist.
+
+**Subagent** — a dynamically created agent for a subtask. Unlike a Worker, it's spawned on the fly for a specific task.
 
 ## Checklists
 

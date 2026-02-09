@@ -31,6 +31,8 @@ $$P(x_{t+1} | x_1, ..., x_t)$$
 
 **What does this mean in practice?**
 
+> **Note:** The examples below use Function Calling — a mechanism for calling tools via the LLM API. See [Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md) for a detailed explanation. For now, it's enough to understand that the model receives tool descriptions (`tools[]`) and selects the right one based on `Description`.
+
 #### Example 1: DevOps — Magic vs Reality
 
 **Magic (as usually explained):**
@@ -106,7 +108,7 @@ messages := []openai.ChatCompletionMessage{
 }
 
 req := openai.ChatCompletionRequest{
-    Model:    openai.GPT3Dot5Turbo,
+    Model:    "gpt-4o-mini",
     Messages: messages,
     Tools:    tools,  // Note: the model receives tool descriptions!
 }
@@ -200,275 +202,46 @@ Numbers like "probability 0.85" are **illustrations** for understanding. OpenAI/
 #### Example 2: Support — Magic vs Reality
 
 **Magic:**
-> Prompt: `"User reports error 500"`  
+> Prompt: `"User reports error 500"`
 > Model predicts: "First I'll gather context via `get_ticket_details`" (probability 0.9)
 
-**Reality:**
+**Reality:** The principle is the same as in the DevOps example. The model receives 4 tools (`get_ticket_details`, `check_account_status`, `search_kb`, `draft_reply`) with descriptions. It selects `get_ticket_details` because its `Description` contains "Use this FIRST when user reports an error" — the best semantic match for the request.
 
-**What gets sent:**
-
-```go
-systemPrompt := `You are a Customer Support agent.
-When user reports an error, first gather context using get_ticket_details.
-When user asks about account, use check_account_status.
-When you find a solution, use draft_reply to create a response.`
-
-tools := []openai.Tool{
-    {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "get_ticket_details",
-            Description: "Get ticket details including user info, error logs, and history. Use this FIRST when user reports an error or problem.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "ticket_id": {"type": "string"}
-                },
-                "required": ["ticket_id"]
-            }`),
-        },
-    },
-    {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "check_account_status",
-            Description: "Check if a user account is active, locked, or suspended. Use this when user asks about account status or login issues.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "user_id": {"type": "string"}
-                },
-                "required": ["user_id"]
-            }`),
-        },
-    },
-    {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "search_kb",
-            Description: "Search knowledge base for solutions to common problems. Use this after gathering ticket details to find similar cases.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"}
-                },
-                "required": ["query"]
-            }`),
-        },
-    },
-    {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "draft_reply",
-            Description: "Draft a reply message to the ticket. Use this when you have a solution or need to ask user for more information.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "ticket_id": {"type": "string"},
-                    "message": {"type": "string"}
-                },
-                "required": ["ticket_id", "message"]
-            }`),
-        },
-    },
-}
-
-messages := []openai.ChatCompletionMessage{
-    {Role: "system", Content: systemPrompt},
-    {Role: "user", Content: "User reports error 500"},
-}
-```
-
-**What the model returns:**
-
-```json
-{
-  "role": "assistant",
-  "tool_calls": [
-    {
-      "id": "call_xyz789",
-      "function": {
-        "name": "get_ticket_details",
-        "arguments": "{\"ticket_id\": \"TICKET-12345\"}"
-      }
-    }
-  ]
-}
-```
-
-**How did the model choose `get_ticket_details`?**
-
-The model saw **4 tools**:
-- [x] `get_ticket_details`: "Use this FIRST when user reports an error"
-- [ ] `check_account_status`: "Use this when user asks about account status"
-- [ ] `search_kb`: "Use this after gathering ticket details" (too early)
-- [ ] `draft_reply`: "Use this when you have a solution" (no solution yet)
-
-Request: "User reports error 500"
-
-The model matched:
-- [x] `get_ticket_details` — description says "FIRST when user reports an error" → **selects this**
-- Others don't fit the context
-
-**Example of sequential tool selection:**
+The model selects tools **sequentially**:
 
 ```go
 // Iteration 1: User reports an error
-userInput := "User reports error 500"
 // Model selects: get_ticket_details (gathers context)
 
-// Iteration 2: After receiving ticket details
-// Model receives in context: "Error 500, user_id: 12345"
+// Iteration 2: Ticket details now appear in context
 // Model selects: search_kb("error 500") (searches for solution)
 
-// Iteration 3: After searching KB
-// Model sees solution in context
+// Iteration 3: KB solution now appears in context
 // Model selects: draft_reply(ticket_id, solution) (creates response)
 ```
 
-**Takeaway:** The model selects tools sequentially, based on:
-1. **Current user request**
-2. **Results of previous tools** (in context)
-3. **Tool descriptions** (`Description`)
-
-**Runtime:**
-- Parses `ticket_id` from JSON
-- Calls real function `getTicketDetails("TICKET-12345")`
-- Returns result to model as a message with role `tool`
-- Model receives result and continues work
+Runtime parses the tool call on each iteration, executes the function, and returns the result. More on the tool call protocol in [Chapter 03](../03-tools-and-function-calling/README.md).
 
 #### Example 3: Data Analytics — Magic vs Reality
 
 **Magic:**
-> Prompt: `"Show sales for the last month"`  
+> Prompt: `"Show sales for the last month"`
 > Model predicts: "I'll formulate SQL query via `sql_select`" (probability 0.95)
 
-**Reality:**
-
-**What gets sent:**
-
-```go
-systemPrompt := `You are a Data Analyst.
-When user asks for data, first check table schema using describe_table.
-Then formulate SQL query and use sql_select tool.
-If data quality is questionable, use check_data_quality.`
-
-tools := []openai.Tool{
-    {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "describe_table",
-            Description: "Get table schema including column names, types, and constraints. Use this FIRST when user asks about data structure or before writing SQL queries.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "table_name": {"type": "string", "description": "Name of the table"}
-                },
-                "required": ["table_name"]
-            }`),
-        },
-    },
-    {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "sql_select",
-            Description: "Execute a SELECT query on the database. ONLY SELECT queries allowed. Use this when user asks for specific data or reports.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "SQL SELECT query"}
-                },
-                "required": ["query"]
-            }`),
-        },
-    },
-    {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "check_data_quality",
-            Description: "Check for data quality issues: nulls, duplicates, outliers. Use this when user asks about data quality or before analysis.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "table_name": {"type": "string"}
-                },
-                "required": ["table_name"]
-            }`),
-        },
-    },
-}
-```
-
-**What the model returns:**
+**Reality:** The model receives 3 tools (`describe_table`, `sql_select`, `check_data_quality`). The request "Show sales for the last month" best matches `sql_select` with description "when user asks for specific data or reports". The model generates SQL directly in the arguments:
 
 ```json
 {
-  "role": "assistant",
-  "tool_calls": [
-    {
-      "function": {
-        "name": "sql_select",
-        "arguments": "{\"query\": \"SELECT region, SUM(amount) FROM sales WHERE date >= NOW() - INTERVAL '1 month' GROUP BY region\"}"
-      }
+  "tool_calls": [{
+    "function": {
+      "name": "sql_select",
+      "arguments": "{\"query\": \"SELECT region, SUM(amount) FROM sales WHERE date >= NOW() - INTERVAL '1 month' GROUP BY region\"}"
     }
-  ]
+  }]
 }
 ```
 
-**How did the model choose `sql_select`?**
-
-The model saw **3 tools**:
-- [ ] `describe_table`: "Use this FIRST when user asks about data structure" (user is not asking about structure)
-- [x] `sql_select`: "Use this when user asks for specific data or reports"
-- [ ] `check_data_quality`: "Use this when user asks about data quality" (not about quality)
-
-Request: "Show sales for the last month"
-
-The model matched:
-- [x] `sql_select` — description says "when user asks for specific data" → **selects this**
-- Others don't fit
-
-**Example with a different request:**
-
-```go
-userInput := "What fields are in the sales table?"
-
-// Model sees the same 3 tools
-// Matches:
-// - describe_table: "Use this FIRST when user asks about data structure" → SELECTS THIS
-// - sql_select: about executing queries → doesn't fit
-// - check_data_quality: about data quality → doesn't fit
-
-// Model returns:
-// tool_calls: [{function: {name: "describe_table", arguments: "{\"table_name\": \"sales\"}"}}]
-```
-
-**Example of sequential selection:**
-
-```go
-// Iteration 1: User asks about sales
-userInput := "Why did sales drop in region X?"
-// Model selects: describe_table("sales") (need to understand structure first)
-
-// Iteration 2: After receiving table schema
-// Model receives in context: "columns: date, region, amount"
-// Model selects: sql_select("SELECT region, SUM(amount) FROM sales WHERE region='X' GROUP BY date")
-
-// Iteration 3: After receiving data
-// Model analyzes results and may select: check_data_quality("sales")
-// if data quality needs to be checked before output
-```
-
-**Takeaway:** The model selects tools based on:
-1. **Semantic matching** of request and `Description`
-2. **Sequence** (schema first, then query)
-3. **Context** of previous results
-
-**Runtime:**
-- Validates that it's a SELECT (not DELETE/DROP!)
-- Executes SQL through a secure connection (read-only)
-- Returns results to model
-- Model formats results for user
+For complex questions, the model uses tools **sequentially**: first `describe_table` (learn the structure), then `sql_select` (get data), then `check_data_quality` (check quality). Runtime validates that it's a SELECT (not DELETE/DROP!) and executes the query through a read-only connection. More details in [Chapter 03](../03-tools-and-function-calling/README.md).
 
 ### Why Is This Important for Engineers?
 

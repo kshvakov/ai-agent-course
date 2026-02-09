@@ -69,7 +69,7 @@ messages := []openai.ChatCompletionMessage{
 }
 
 req := openai.ChatCompletionRequest{
-    Model:    openai.GPT3Dot5Turbo,
+    Model:    "gpt-4o-mini",
     Messages: messages,
     Tools:    tools,  // Модель видит описание инструментов!
     Temperature: 0,
@@ -237,7 +237,7 @@ messages = append(messages, openai.ChatCompletionMessage{
 
 // Отправляем обновленную историю в модель снова
 resp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    openai.GPT3Dot5Turbo,
+    Model:    "gpt-4o-mini",
     Messages: messages,  // Теперь включает результат инструмента!
     Tools:    tools,
 })
@@ -1109,6 +1109,7 @@ func validateToolCall(call openai.ToolCall) error {
 - **Физика LLM:** Почему модель выбирает tool call вместо текста, см. [Главу 01: Физика LLM](../01-llm-fundamentals/README.md)
 - **Промптинг:** Как описать инструменты так, чтобы модель их правильно использовала, см. [Главу 02: Промптинг](../02-prompt-engineering/README.md)
 - **Цикл:** Как результаты инструментов возвращаются в модель, см. [Главу 04: Автономность](../04-autonomy-and-loops/README.md)
+- **MCP:** Стандартный протокол подключения инструментов к агентам — [Model Context Protocol](https://modelcontextprotocol.io/). Подробности в [Главе 18: Протоколы Инструментов](../18-tool-protocols-and-servers/README.md)
 
 ## Полный пример: от начала до конца
 
@@ -1167,7 +1168,7 @@ func main() {
     // 4. Цикл агента
     for i := 0; i < 10; i++ {
         resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-            Model:       openai.GPT3Dot5Turbo,
+            Model:       "gpt-4o-mini",
             Messages:    messages,
             Tools:       tools,
             Temperature: 0, // Детерминированное поведение

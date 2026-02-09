@@ -34,7 +34,7 @@ func main() {
 
 	// 3. Form the request
 	// req := openai.ChatCompletionRequest{
-	//     Model: openai.GPT3Dot5Turbo, // Or your local model name
+	//     Model: "gpt-4o-mini", // Or your local model name
 	//     Messages: []openai.ChatCompletionMessage{
 	//         {Role: openai.ChatMessageRoleUser, Content: "Is server 192.168.1.10 online?"},
 	//     },

@@ -61,7 +61,7 @@ messages := []openai.ChatCompletionMessage{
 }
 
 resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    openai.GPT3Dot5Turbo,
+    Model:    "gpt-4o-mini",
     Messages: messages,
     Tools:    tools,
 })
@@ -130,7 +130,7 @@ messages := []openai.ChatCompletionMessage{
 }
 
 resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    openai.GPT3Dot5Turbo,
+    Model:    "gpt-4o-mini",
     Messages: messages,
     Tools:    tools,
 })
@@ -205,7 +205,7 @@ messages = append(messages, openai.ChatCompletionMessage{
 
 // Шаг 6: Отправляем снова - теперь модель видит подтверждение и может вызвать инструмент
 resp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    openai.GPT3Dot5Turbo,
+    Model:    "gpt-4o-mini",
     Messages: messages,  // Теперь включает подтверждение!
     Tools:    tools,
 })
@@ -287,7 +287,7 @@ for {
     // Внутренний цикл (Agent)
     for {
         resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-            Model:    openai.GPT3Dot5Turbo,
+            Model:    "gpt-4o-mini",
             Messages: messages,
             Tools:    tools,
         })

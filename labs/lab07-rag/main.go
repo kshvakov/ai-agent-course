@@ -112,7 +112,7 @@ If you don't know the procedure, search first. Always follow the policies you fi
 	// 3. THE LOOP
 	for i := 0; i < 10; i++ {
 		req := openai.ChatCompletionRequest{
-			Model:    openai.GPT3Dot5Turbo,
+			Model:    "gpt-4o-mini",
 			Messages: messages,
 			Tools:    tools,
 		}

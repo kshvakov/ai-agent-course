@@ -209,7 +209,7 @@ Conversation:
     
     // Call LLM
     resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: openai.GPT3Dot5Turbo,
+        Model: "gpt-4o-mini",
         Messages: []openai.ChatCompletionMessage{
             {
                 Role:    openai.ChatMessageRoleSystem,

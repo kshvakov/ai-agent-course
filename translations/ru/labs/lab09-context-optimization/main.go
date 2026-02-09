@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/sashabaranov/go-openai"
 )
@@ -65,8 +64,8 @@ func main() {
 		"У нас есть автоматизированное тестирование.",
 		"Мы используем SonarQube для анализа кода.",
 		"У нас есть staging окружение для тестирования.",
-		"Как меня зовут?", // Проверка памяти
-		"Где я работаю?",  // Проверка памяти
+		"Как меня зовут?",   // Проверка памяти
+		"Где я работаю?",    // Проверка памяти
 		"Какой у нас стек?", // Проверка памяти
 	}
 
@@ -88,8 +87,8 @@ func main() {
 
 		// Отправляем запрос
 		resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-			Model:    openai.GPT3Dot5Turbo,
-			Messages: messages,
+			Model:       "gpt-4o-mini",
+			Messages:    messages,
 			Temperature: 0.7,
 		})
 		if err != nil {
@@ -140,14 +139,14 @@ func summarizeMessages(ctx context.Context, client *openai.Client, messages []op
 	// TODO: Создайте промпт для саммаризации
 	// TODO: Вызовите LLM для создания саммари
 	// TODO: Верните результат
-	
+
 	// Подсказка: Используйте такой промпт:
 	// "Summarize this conversation, keeping only:
 	//  1. Important decisions made
 	//  2. Key facts discovered
 	//  3. Current state of the task
 	//  Conversation: [текст]"
-	
+
 	return ""
 }
 
@@ -177,10 +176,9 @@ func prioritizeMessages(messages []openai.ChatCompletionMessage, maxTokens int) 
 // Если > 90% — применяем саммаризацию
 func adaptiveContextManagement(ctx context.Context, client *openai.Client, messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
 	usedTokens := countTokensInMessages(messages)
-	
+	_ = usedTokens
 	// TODO: Реализуйте логику выбора техники оптимизации
 	// Подсказка: Используйте threshold80 и threshold90
-	
+
 	return messages
 }
-

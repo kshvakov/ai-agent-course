@@ -117,7 +117,7 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) (str
     // THE LOOP с логированием
     for i := 0; i < 5; i++ {
         req := openai.ChatCompletionRequest{
-            Model:    openai.GPT3Dot5Turbo,
+            Model:    "gpt-4o-mini",
             Messages: messages,
             Tools:    tools,
         }
@@ -401,7 +401,7 @@ func main() {
         log.Printf("AGENT_ITERATION: run_id=%s iteration=%d", runID, i)
 
         req := openai.ChatCompletionRequest{
-            Model:    openai.GPT3Dot5Turbo,
+            Model:    "gpt-4o-mini",
             Messages: messages,
             Tools:    tools,
         }
@@ -700,7 +700,7 @@ func runWorker(ctx context.Context, client *openai.Client, workerName string, ta
         )
 
         resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-            Model:    openai.GPT4,
+            Model:    "gpt-4o",
             Messages: messages,
             Tools:    tools,
         })

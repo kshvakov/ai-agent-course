@@ -59,7 +59,7 @@ func createPlan(ctx context.Context, client *openai.Client, task string) (*Plan,
 Только JSON, без дополнительного текста.`, task)
 
 	resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model: openai.GPT3Dot5Turbo,
+		Model: "gpt-4o-mini",
 		Messages: []openai.ChatCompletionMessage{
 			{Role: "user", Content: prompt},
 		},

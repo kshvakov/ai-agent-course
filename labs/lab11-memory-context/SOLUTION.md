@@ -140,7 +140,7 @@ Importance: 1-10, where 10 is very important (user name, preferences),
 1-3 is temporary information (server status). Extract only facts with importance >= 5.`, conversation)
 
 	resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model: openai.GPT3Dot5Turbo,
+		Model: "gpt-4o-mini",
 		Messages: []openai.ChatCompletionMessage{
 			{Role: "user", Content: prompt},
 		},
@@ -180,7 +180,7 @@ Conversation:
 Summary (maximum 200 words):`, conversationText)
 
 	resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model: openai.GPT3Dot5Turbo,
+		Model: "gpt-4o-mini",
 		Messages: []openai.ChatCompletionMessage{
 			{Role: "user", Content: prompt},
 		},

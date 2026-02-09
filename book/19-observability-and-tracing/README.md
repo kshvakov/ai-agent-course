@@ -117,7 +117,7 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) (str
     // THE LOOP with logging
     for i := 0; i < 5; i++ {
         req := openai.ChatCompletionRequest{
-            Model:    openai.GPT3Dot5Turbo,
+            Model:    "gpt-4o-mini",
             Messages: messages,
             Tools:    tools,
         }
@@ -401,7 +401,7 @@ func main() {
         log.Printf("AGENT_ITERATION: run_id=%s iteration=%d", runID, i)
 
         req := openai.ChatCompletionRequest{
-            Model:    openai.GPT3Dot5Turbo,
+            Model:    "gpt-4o-mini",
             Messages: messages,
             Tools:    tools,
         }
@@ -468,6 +468,469 @@ func main() {
     }
 }
 ```
+
+## Distributed Tracing — OpenTelemetry for Agents
+
+So far we've been logging events as a flat list: `TOOL_START`, `TOOL_END`, `AGENT_ITERATION`. This works for a single agent. But once the agent calls external services (APIs, databases, other agents), flat logs won't help. You can't see what exactly slowed down the chain.
+
+Distributed Tracing solves this problem. Each operation becomes a **span** — a time segment with a start, end, and context. Spans nest inside each other, forming a tree.
+
+### Span-Based Tracing for Agents
+
+For an agent, the span tree looks like this:
+
+```
+agent_run (root span)
+├── llm_call (iteration 1)
+│   └── openai_api_request
+├── tool_call: check_disk
+│   └── ssh_connection
+├── llm_call (iteration 2)
+│   └── openai_api_request
+├── tool_call: clean_logs
+│   └── file_system_operation
+└── llm_call (iteration 3 — final answer)
+```
+
+Each span contains: operation name, start and end time, attributes (run_id, tool_name, tokens_used), and a reference to its parent span.
+
+### OpenTelemetry: Initialization
+
+OpenTelemetry (OTEL) is the standard for tracing. It supports export to Jaeger, Zipkin, Grafana Tempo, and other backends.
+
+Tracer initialization:
+
+```go
+import (
+    "go.opentelemetry.io/otel"
+    "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+    "go.opentelemetry.io/otel/sdk/resource"
+    sdktrace "go.opentelemetry.io/otel/sdk/trace"
+    semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+)
+
+func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
+    exporter, err := otlptracehttp.New(ctx,
+        otlptracehttp.WithEndpoint("localhost:4318"),
+        otlptracehttp.WithInsecure(),
+    )
+    if err != nil {
+        return nil, fmt.Errorf("create exporter: %w", err)
+    }
+
+    tp := sdktrace.NewTracerProvider(
+        sdktrace.WithBatcher(exporter),
+        sdktrace.WithResource(resource.NewWithAttributes(
+            semconv.SchemaURL,
+            semconv.ServiceNameKey.String("devops-agent"),
+        )),
+    )
+
+    otel.SetTracerProvider(tp)
+    return tp, nil
+}
+```
+
+### Spans for Agent Iterations and Tool Calls
+
+Wrap each agent step in a span:
+
+```go
+import (
+    "go.opentelemetry.io/otel"
+    "go.opentelemetry.io/otel/attribute"
+    "go.opentelemetry.io/otel/trace"
+)
+
+var tracer = otel.Tracer("devops-agent")
+
+func runAgentWithTracing(ctx context.Context, client *openai.Client, userInput string) (string, error) {
+    // Root span — the entire agent run
+    ctx, rootSpan := tracer.Start(ctx, "agent_run",
+        trace.WithAttributes(
+            attribute.String("user_input", userInput),
+            attribute.String("run_id", generateRunID()),
+        ),
+    )
+    defer rootSpan.End()
+
+    messages := []openai.ChatCompletionMessage{
+        {Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
+        {Role: openai.ChatMessageRoleUser, Content: userInput},
+    }
+
+    for i := 0; i < maxIterations; i++ {
+        // Span for each loop iteration
+        ctx, iterSpan := tracer.Start(ctx, "agent_iteration",
+            trace.WithAttributes(attribute.Int("iteration", i)),
+        )
+
+        // Span for LLM call
+        llmCtx, llmSpan := tracer.Start(ctx, "llm_call",
+            trace.WithAttributes(attribute.String("model", model)),
+        )
+
+        resp, err := client.CreateChatCompletion(llmCtx, req)
+        if err != nil {
+            llmSpan.RecordError(err)
+            llmSpan.End()
+            iterSpan.End()
+            return "", err
+        }
+
+        llmSpan.SetAttributes(
+            attribute.Int("tokens.prompt", resp.Usage.PromptTokens),
+            attribute.Int("tokens.completion", resp.Usage.CompletionTokens),
+            attribute.Int("tokens.total", resp.Usage.TotalTokens),
+        )
+        llmSpan.End()
+
+        msg := resp.Choices[0].Message
+        if len(msg.ToolCalls) == 0 {
+            rootSpan.SetAttributes(attribute.String("final_answer", msg.Content))
+            iterSpan.End()
+            return msg.Content, nil
+        }
+
+        // Span for each tool call
+        for _, toolCall := range msg.ToolCalls {
+            _, toolSpan := tracer.Start(ctx, "tool_call",
+                trace.WithAttributes(
+                    attribute.String("tool.name", toolCall.Function.Name),
+                    attribute.String("tool.args", toolCall.Function.Arguments),
+                ),
+            )
+
+            result, err := executeTool(toolCall)
+            if err != nil {
+                toolSpan.RecordError(err)
+                toolSpan.SetAttributes(attribute.Bool("tool.error", true))
+            } else {
+                toolSpan.SetAttributes(attribute.String("tool.result", result))
+            }
+            toolSpan.End()
+        }
+
+        iterSpan.End()
+    }
+
+    return "", nil
+}
+```
+
+### Propagation: Passing Context Between Services
+
+When your agent calls an external HTTP service, the tracing context must travel with it. OTEL uses `traceparent` and `tracestate` HTTP headers:
+
+```go
+import (
+    "go.opentelemetry.io/otel/propagation"
+    "net/http"
+)
+
+// Sender: inject context into HTTP headers
+func callExternalService(ctx context.Context, url string) (*http.Response, error) {
+    req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+
+    // OTEL injects traceparent into request headers
+    otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+
+    return http.DefaultClient.Do(req)
+}
+
+// Receiver: extract context from HTTP headers
+func handleRequest(w http.ResponseWriter, r *http.Request) {
+    // Extract trace context from incoming request
+    ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+
+    // Spans in this service now belong to the original trace
+    ctx, span := tracer.Start(ctx, "external_service.handle")
+    defer span.End()
+
+    // ... handle request ...
+}
+```
+
+After this, you see a single trace spanning all services in Jaeger or Grafana Tempo.
+
+> **OTEL exporters:** For local development, Jaeger is convenient (`docker run -p 16686:16686 jaegertracing/all-in-one`). For production — Grafana Tempo or Zipkin. OTEL supports all of them through a single API.
+
+## Multi-Agent Tracing
+
+In [Chapter 07: Multi-Agent Systems](../07-multi-agent/README.md) we split agents into a Supervisor and Workers. Each Worker is a separate agent loop with its own context. Without tracing, you can't tell which Worker stalled, which one failed, or how the task flowed through the entire system.
+
+### Parent-Child: Supervisor Span → Worker Span
+
+The key idea: the Supervisor's span becomes the **parent** of Worker spans. This gives you the full execution tree:
+
+```
+supervisor_run
+├── llm_call (Supervisor decides who to delegate to)
+├── worker_call: network_expert
+│   ├── llm_call
+│   └── tool_call: ping_host
+├── worker_call: db_expert
+│   ├── llm_call
+│   └── tool_call: check_db_version
+└── llm_call (Supervisor assembles final answer)
+```
+
+### Code: Passing Trace Context from Supervisor to Worker
+
+```go
+// Worker receives context with trace information from Supervisor
+func runWorker(ctx context.Context, client *openai.Client, workerName string, task string, tools []openai.Tool) (string, error) {
+    // Create child span — it automatically attaches to the parent from ctx
+    ctx, span := tracer.Start(ctx, "worker_call",
+        trace.WithAttributes(
+            attribute.String("worker.name", workerName),
+            attribute.String("worker.task", task),
+        ),
+    )
+    defer span.End()
+
+    messages := []openai.ChatCompletionMessage{
+        {Role: openai.ChatMessageRoleSystem, Content: fmt.Sprintf("You are %s.", workerName)},
+        {Role: openai.ChatMessageRoleUser, Content: task},
+    }
+
+    for i := 0; i < 5; i++ {
+        _, llmSpan := tracer.Start(ctx, "worker_llm_call",
+            trace.WithAttributes(attribute.Int("iteration", i)),
+        )
+
+        resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+            Model:    "gpt-4o",
+            Messages: messages,
+            Tools:    tools,
+        })
+
+        llmSpan.SetAttributes(
+            attribute.Int("tokens.total", resp.Usage.TotalTokens),
+        )
+        llmSpan.End()
+
+        if err != nil {
+            span.RecordError(err)
+            return "", err
+        }
+
+        msg := resp.Choices[0].Message
+        if len(msg.ToolCalls) == 0 {
+            span.SetAttributes(attribute.String("worker.result", msg.Content))
+            return msg.Content, nil
+        }
+
+        for _, tc := range msg.ToolCalls {
+            _, toolSpan := tracer.Start(ctx, "worker_tool_call",
+                trace.WithAttributes(
+                    attribute.String("tool.name", tc.Function.Name),
+                ),
+            )
+            result, _ := executeTool(tc)
+            toolSpan.End()
+
+            messages = append(messages, openai.ChatCompletionMessage{
+                Role: openai.ChatMessageRoleTool, Content: result, ToolCallID: tc.ID,
+            })
+        }
+
+        messages = append(messages, msg)
+    }
+
+    return "", fmt.Errorf("worker %s exceeded max iterations", workerName)
+}
+```
+
+The Supervisor calls Workers by passing `ctx`:
+
+```go
+func runSupervisor(ctx context.Context, client *openai.Client, userInput string) (string, error) {
+    ctx, span := tracer.Start(ctx, "supervisor_run",
+        trace.WithAttributes(attribute.String("user_input", userInput)),
+    )
+    defer span.End()
+
+    // Supervisor decides who to delegate to
+    // ... (LLM call for routing) ...
+
+    // ctx already contains the Supervisor's trace context.
+    // Worker creates a child span automatically.
+    networkResult, err := runWorker(ctx, client, "network_expert", "Check connectivity to db-host:5432", networkTools)
+    if err != nil {
+        span.RecordError(err)
+        return "", err
+    }
+
+    dbResult, err := runWorker(ctx, client, "db_expert", "Get PostgreSQL version", dbTools)
+    if err != nil {
+        span.RecordError(err)
+        return "", err
+    }
+
+    span.SetAttributes(
+        attribute.String("network_result", networkResult),
+        attribute.String("db_result", dbResult),
+    )
+
+    // ... Supervisor assembles final answer ...
+    return finalAnswer, nil
+}
+```
+
+### Cross-Agent Correlation
+
+Trace ID propagates automatically through `ctx`. All spans within a single trace share the same `trace_id`. In Jaeger you search by this ID and see the full path: from user request through Supervisor to each Worker and back.
+
+If a Worker runs as a separate HTTP service, use propagation from the previous section — pass `traceparent` through headers.
+
+## Component-Level Metrics
+
+Aggregate metrics (`total_tokens`, `avg_latency`) show the overall picture. But for diagnostics you need granularity: which tool is slow? Which LLM call burns the most tokens? Which search query returns irrelevant results?
+
+### Per-Component Metrics
+
+Three categories of component-level metrics:
+
+| Component | Metrics | Purpose |
+|-----------|---------|---------|
+| **Tool** | Latency, error rate, calls/min | Find slow tools |
+| **LLM** | Tokens, latency, cost per call | Optimize token spend |
+| **Retrieval** | Relevance score, docs found, latency | Improve RAG quality |
+
+### Code: Collecting Component Metrics
+
+```go
+// ComponentMetrics collects metrics for each agent component
+type ComponentMetrics struct {
+    mu      sync.Mutex
+    tools   map[string]*ToolMetrics
+    llm     *LLMMetrics
+    retrieval *RetrievalMetrics
+}
+
+type ToolMetrics struct {
+    Name         string
+    TotalCalls   int64
+    TotalErrors  int64
+    TotalLatency time.Duration
+}
+
+type LLMMetrics struct {
+    TotalCalls       int64
+    TotalTokens      int64
+    TotalPromptTokens int64
+    TotalCompletionTokens int64
+    TotalLatency     time.Duration
+    TotalCost        float64
+}
+
+type RetrievalMetrics struct {
+    TotalQueries     int64
+    TotalDocuments   int64
+    TotalLatency     time.Duration
+    RelevanceScores  []float64 // for computing average
+}
+
+func NewComponentMetrics() *ComponentMetrics {
+    return &ComponentMetrics{
+        tools:     make(map[string]*ToolMetrics),
+        llm:       &LLMMetrics{},
+        retrieval: &RetrievalMetrics{},
+    }
+}
+```
+
+Recording metrics on tool call:
+
+```go
+func (cm *ComponentMetrics) RecordToolCall(name string, latency time.Duration, err error) {
+    cm.mu.Lock()
+    defer cm.mu.Unlock()
+
+    m, ok := cm.tools[name]
+    if !ok {
+        m = &ToolMetrics{Name: name}
+        cm.tools[name] = m
+    }
+
+    m.TotalCalls++
+    m.TotalLatency += latency
+    if err != nil {
+        m.TotalErrors++
+    }
+}
+
+func (cm *ComponentMetrics) RecordLLMCall(promptTokens, completionTokens int, latency time.Duration, costPerToken float64) {
+    cm.mu.Lock()
+    defer cm.mu.Unlock()
+
+    cm.llm.TotalCalls++
+    cm.llm.TotalPromptTokens += int64(promptTokens)
+    cm.llm.TotalCompletionTokens += int64(completionTokens)
+    cm.llm.TotalTokens += int64(promptTokens + completionTokens)
+    cm.llm.TotalLatency += latency
+    cm.llm.TotalCost += float64(promptTokens+completionTokens) * costPerToken
+}
+
+func (cm *ComponentMetrics) RecordRetrieval(docsFound int, relevanceScore float64, latency time.Duration) {
+    cm.mu.Lock()
+    defer cm.mu.Unlock()
+
+    cm.retrieval.TotalQueries++
+    cm.retrieval.TotalDocuments += int64(docsFound)
+    cm.retrieval.TotalLatency += latency
+    cm.retrieval.RelevanceScores = append(cm.retrieval.RelevanceScores, relevanceScore)
+}
+```
+
+Usage in agent loop:
+
+```go
+metrics := NewComponentMetrics()
+
+// On LLM call
+llmStart := time.Now()
+resp, err := client.CreateChatCompletion(ctx, req)
+metrics.RecordLLMCall(
+    resp.Usage.PromptTokens,
+    resp.Usage.CompletionTokens,
+    time.Since(llmStart),
+    0.000003, // $3 per 1M tokens
+)
+
+// On tool call
+toolStart := time.Now()
+result, err := executeTool(toolCall)
+metrics.RecordToolCall(toolCall.Function.Name, time.Since(toolStart), err)
+```
+
+### Linking Traces to Evals
+
+Traces show **how** the agent performed the task. Evals show **how well** it did. The trace → eval link gives you the full picture:
+
+```go
+type TracedEvalResult struct {
+    TraceID       string  `json:"trace_id"`        // OpenTelemetry trace ID
+    EvalLevel     string  `json:"eval_level"`       // task, tool, trajectory, topic
+    Score         float64 `json:"score"`
+    ToolsUsed     []string `json:"tools_used"`
+    TotalTokens   int     `json:"total_tokens"`
+    TotalLatency  string  `json:"total_latency"`
+}
+
+// After agent run completes: record eval result linked to trace
+func recordTracedEval(ctx context.Context, result TracedEvalResult) {
+    span := trace.SpanFromContext(ctx)
+    result.TraceID = span.SpanContext().TraceID().String()
+
+    // Now you can find the full trace in Jaeger by TraceID
+    // and understand WHY the eval failed
+    log.Printf("EVAL_RESULT: %+v", result)
+}
+```
+
+When an eval in CI/CD shows a regression (see [Chapter 23: Evals in CI/CD](../23-evals-in-cicd/README.md)), you take the `trace_id` from the result, find the trace in Jaeger, and see the full chain: which tool returned an unexpected result, which LLM call burned abnormally many tokens, where the error occurred.
 
 ## Common Errors
 

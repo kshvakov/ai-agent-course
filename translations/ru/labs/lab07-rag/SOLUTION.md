@@ -123,7 +123,7 @@ If you don't know the procedure, search first. Always follow the policies you fi
 	// THE AGENT LOOP
 	for i := 0; i < 10; i++ {
 		req := openai.ChatCompletionRequest{
-			Model:    openai.GPT3Dot5Turbo,
+			Model:    "gpt-4o-mini",
 			Messages: messages,
 			Tools:    tools,
 			Temperature: 0.1,

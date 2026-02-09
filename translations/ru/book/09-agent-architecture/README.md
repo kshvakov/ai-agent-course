@@ -349,7 +349,7 @@ func planAndSolve(ctx context.Context, client *openai.Client, task string) {
 Создай план действий. Каждый шаг должен быть конкретным и выполнимым.`, task)
     
     planResp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: openai.GPT4,
+        Model: "gpt-4o",
         Messages: []openai.ChatCompletionMessage{
             {Role: "system", Content: "Ты планировщик задач. Создавай детальные планы."},
             {Role: "user", Content: planPrompt},
@@ -759,7 +759,7 @@ func runAgent(ctx context.Context, client *openai.Client, registry *ToolRegistry
     
     for i := 0; i < maxIterations; i++ {
         resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-            Model: openai.GPT3Dot5Turbo,
+            Model: "gpt-4o-mini",
             Messages: messages,
             Tools: tools,
         })
@@ -835,6 +835,8 @@ sequenceDiagram
 
 Агент с фиксированным System Prompt ограничен. Навыки (Skills) позволяют динамически менять поведение агента в зависимости от задачи.
 
+[Agent Skills](https://agentskills.io/) — открытый формат для расширения возможностей агентов. Стандарт поддерживается Cursor, Claude Code, VS Code, GitHub и другими инструментами. По сути, навык — это папка с файлом `SKILL.md`. Агент загружает его содержимое в контекст по мере необходимости.
+
 ### Зачем нужны навыки?
 
 Представьте: агент для DevOps умеет работать с Docker. Завтра появляется задача работы с Kubernetes. Без навыков придётся переписывать System Prompt и добавлять инструкции прямо в код.
@@ -851,12 +853,63 @@ sequenceDiagram
 
 ### Skills — Магия vs Реальность
 
-**❌ Магия (как обычно объясняют):**
+**Магия (как обычно объясняют):**
 > Навыки — это AI-модули, которые агент "выучил" и применяет автоматически.
 
-**✅ Реальность (как на самом деле):**
+**Реальность (как на самом деле):**
 
 Навык — это текстовый файл с инструкциями. Агент загружает его содержимое в контекст перед запросом к LLM. Модель просто получает дополнительный текст в промпте. Никакого обучения не происходит.
+
+### Формат Agent Skills (SKILL.md)
+
+[Спецификация Agent Skills](https://agentskills.io/specification) определяет стандартный файловый формат. Навык — это директория с файлом `SKILL.md`:
+
+```
+docker-debugging/
+├── SKILL.md        # Обязательно: метаданные + инструкции
+├── scripts/        # Опционально: исполняемый код
+├── references/     # Опционально: дополнительная документация
+└── assets/         # Опционально: шаблоны, схемы
+```
+
+Файл `SKILL.md` содержит YAML frontmatter и Markdown-инструкции:
+
+```yaml
+---
+name: docker-debugging
+description: >
+  Debug Docker containers — check status, logs, resources,
+  restart loops. Use when user mentions Docker problems.
+---
+
+# Docker Debugging
+
+## When to use this skill
+Use when the user reports Docker container issues...
+
+## Steps
+1. Check container status (docker ps)
+2. Read logs (docker logs)
+3. Check resources (docker stats)
+4. If container is restarting — check exit code
+5. Never run docker rm -f without confirmation
+```
+
+Два поля обязательны: `name` (идентификатор, строчные буквы + дефисы) и `description` (когда применять навык). Markdown-тело содержит инструкции.
+
+### Progressive Disclosure (Постепенное раскрытие)
+
+Навыки используют трёхуровневую загрузку для экономии контекста:
+
+1. **Discovery.** При старте агент загружает только `name` и `description` каждого навыка. Это ~100 токенов на навык.
+2. **Activation.** Когда задача совпадает с описанием навыка, агент читает полное тело `SKILL.md` в контекст.
+3. **Execution.** Агент следует инструкциям, подгружая файлы из `scripts/`, `references/` только по мере необходимости.
+
+Агент остаётся быстрым, но при этом имеет доступ к детальным инструкциям по запросу.
+
+### Реализация загрузки навыков в Runtime
+
+Ниже — один из способов реализовать загрузку навыков в Runtime агента. Поле `Instruction` соответствует телу файла `SKILL.md`. Поиск по триггерам — упрощённый вариант. Продвинутые реализации (Cursor, Claude Code) позволяют LLM самой решать, какой навык активировать, на основе `description`.
 
 #### Определение навыка
 
@@ -963,7 +1016,9 @@ prompt := registry.BuildPrompt(baseSystemPrompt, skills)
 // prompt теперь содержит базовый промпт + инструкции по Docker-отладке
 ```
 
-Навыки расширяют поведение агента без изменения кода. Новый навык — это новый вызов `Register()`, а не рефакторинг.
+Навыки расширяют поведение агента без изменения кода. Новый навык — это новый файл `SKILL.md`, а не рефакторинг.
+
+Полная спецификация формата: [Agent Skills Specification](https://agentskills.io/specification). Примеры навыков доступны в [GitHub-репозитории](https://github.com/anthropics/skills).
 
 ## Subagents (Под-агенты)
 
@@ -1035,7 +1090,7 @@ func SpawnSubagent(
     // Под-агент выполняет свой цикл
     for i := 0; i < config.MaxIterations; i++ {
         resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-            Model:    openai.GPT4,
+            Model:    "gpt-4o",
             Messages: messages,
             Tools:    registry.ToOpenAITools(),
         })
@@ -1129,10 +1184,10 @@ monitorResult, err := SpawnSubagent(ctx, client, SubagentConfig{
 
 ### Checkpoint — Магия vs Реальность
 
-**❌ Магия (как обычно объясняют):**
+**Магия (как обычно объясняют):**
 > Агент автоматически запоминает своё состояние и продолжает с места остановки.
 
-**✅ Реальность (как на самом деле):**
+**Реальность (как на самом деле):**
 
 Состояние агента — это массив `messages[]` и метаданные (номер итерации, статус). Вы сериализуете их в JSON и сохраняете на диск. При перезапуске загружаете и продолжаете цикл с того же места.
 
@@ -1220,7 +1275,7 @@ func runAgentWithCheckpoints(
 
     for i := startIteration; i < maxIterations; i++ {
         resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-            Model:    openai.GPT4,
+            Model:    "gpt-4o",
             Messages: messages,
             Tools:    registry.ToOpenAITools(),
         })
@@ -1402,6 +1457,7 @@ func compressContext(messages []openai.ChatCompletionMessage, maxTokens int) []o
 - **[Глава 03: Инструменты и Function Calling](../03-tools-and-function-calling/README.md)** — Как Runtime выполняет инструменты
 - **[Глава 04: Автономность и Циклы](../04-autonomy-and-loops/README.md)** — Как Planning работает в цикле агента
 - **[Глава 13: Context Engineering](../13-context-engineering/README.md)** — Детальные техники оптимизации контекста (саммаризация, отбор фактов, бюджеты токенов)
+- **[Agent Skills Specification](https://agentskills.io/specification)** — Открытый формат навыков агента (`SKILL.md`)
 
 ## Что дальше?
 

@@ -62,7 +62,7 @@ tools := []openai.Tool{
 
 ```go
 req := openai.ChatCompletionRequest{
-    Model:    openai.GPT3Dot5Turbo,
+    Model:    "gpt-4o-mini",
     Messages: messages,
     Tools:    tools,  // Pass list of tools
 }

@@ -83,7 +83,7 @@ for {
     
     // 3. Отправляем ВСЮ историю в API
     resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    openai.GPT3Dot5Turbo,
+        Model:    "gpt-4o-mini",
         Messages: messages,  // Вся история!
     })
     

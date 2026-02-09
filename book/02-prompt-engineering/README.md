@@ -76,7 +76,7 @@ Constraints:
 - If unsure about an action — ask the user
 
 Response format:
-- If you need to call a tool — use Tool Calling
+- If you need to call a tool — use Function Calling
 - If you need to clarify — respond with text
 
 SOP for incidents:
@@ -264,12 +264,12 @@ Assistant: {"tool": "check_status", "args": {"hostname": "web-01"}}  // Same for
 
 **Result:** Model clearly understands the pattern and follows it.
 
-!!! warning "Few-shot sets not only format but also hidden hints"
-    Examples in few-shot can not only show the response format but also **implicitly hint at the desired conclusion**. The model may "pick up" patterns from examples and shift responses toward what's shown in demonstrations, even if it doesn't match actual data or the task.
-    
-    **Problem:** If correct answers in examples are always in position "A", or all examples lead to one type of solution, the model may adopt this positional or thematic bias.
-    
-    **Solution:** Use diverse examples, shuffle positions of correct answers, include counterexamples. See section ["How not to hint at the answer"](#how-not-to-hint-at-the-answer) below.
+> **Important: Few-shot sets not only format but also hidden hints.**
+> Examples in few-shot can not only show the response format but also **implicitly hint at the desired conclusion**. The model may "pick up" patterns from examples and shift responses toward what's shown in demonstrations, even if it doesn't match actual data or the task.
+>
+> **Problem:** If correct answers in examples are always in position "A", or all examples lead to one type of solution, the model may adopt this positional or thematic bias.
+>
+> **Solution:** Use diverse examples, shuffle positions of correct answers, include counterexamples. See section ["How not to hint at the answer"](#how-not-to-hint-at-the-answer) below.
 
 ### Connection of ICL with Other Techniques
 
@@ -585,12 +585,12 @@ Iteration 3:
 
 **Important:** This isn't "magic" — the model simply processes results of previous tools in context (`messages[]`) and generates the next step based on this context.
 
-!!! warning "CoT can be post-hoc (after the fact)"
-    The chain of reasoning (CoT) that the model generates **does not necessarily reflect the actual inference process**. The model may first "solve" the task (based on probabilistic mechanism) and then generate a "nice explanation" for that solution.
-    
-    **Problem:** A nice CoT is not proof of correctness. The model may confidently rationalize an incorrect conclusion.
-    
-    **Solution:** Don't rely on CoT as the sole source of truth. Verify answers through tools, evals, and runtime validation. For critical decisions, use Human-in-the-Loop regardless of explanation quality.
+> **Important: CoT can be post-hoc (after the fact).**
+> The chain of reasoning (CoT) that the model generates **does not necessarily reflect the actual inference process**. The model may first "solve" the task (based on probabilistic mechanism) and then generate a "nice explanation" for that solution.
+>
+> **Problem:** A nice CoT is not proof of correctness. The model may confidently rationalize an incorrect conclusion.
+>
+> **Solution:** Don't rely on CoT as the sole source of truth. Verify answers through tools, evals, and runtime validation. For critical decisions, use Human-in-the-Loop regardless of explanation quality.
 
 See more: **[Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md)** — how ReAct Loop and iterative agent process work.
 

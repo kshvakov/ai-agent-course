@@ -96,7 +96,7 @@ Conversation:
     
     // Вызываем LLM для саммаризации
     resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: openai.GPT3Dot5Turbo,
+        Model: "gpt-4o-mini",
         Messages: []openai.ChatCompletionMessage{
             {
                 Role:    openai.ChatMessageRoleSystem,
@@ -294,7 +294,7 @@ func main() {
 		fmt.Printf("📊 Токенов использовано: %d / %d (%.1f%%)\n", usedTokens, maxContextTokens, float64(usedTokens)/float64(maxContextTokens)*100)
 
 		resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-			Model:     openai.GPT3Dot5Turbo,
+			Model:     "gpt-4o-mini",
 			Messages:  messages,
 			Temperature: 0.7,
 		})
@@ -376,7 +376,7 @@ Conversation:
 %s`, conversation)
 	
 	resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model: openai.GPT3Dot5Turbo,
+		Model: "gpt-4o-mini",
 		Messages: []openai.ChatCompletionMessage{
 			{
 				Role:    openai.ChatMessageRoleSystem,

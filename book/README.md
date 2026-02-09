@@ -124,7 +124,7 @@ If you're an experienced developer and want to quickly understand the essence:
    
    // 2. Request to model
    resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-       Model: openai.GPT3Dot5Turbo,
+       Model: "gpt-4o-mini",
        Messages: []openai.ChatCompletionMessage{
            {Role: "system", Content: "You are a DevOps engineer"},
            {Role: "user", Content: "Check server status"},

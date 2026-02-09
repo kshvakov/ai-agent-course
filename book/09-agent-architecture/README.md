@@ -349,7 +349,7 @@ Task: %s
 Create action plan. Each step should be specific and executable.`, task)
     
     planResp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: openai.GPT4,
+        Model: "gpt-4o",
         Messages: []openai.ChatCompletionMessage{
             {Role: "system", Content: "You are a task planner. Create detailed plans."},
             {Role: "user", Content: planPrompt},
@@ -759,7 +759,7 @@ func runAgent(ctx context.Context, client *openai.Client, registry *ToolRegistry
     
     for i := 0; i < maxIterations; i++ {
         resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-            Model: openai.GPT3Dot5Turbo,
+            Model: "gpt-4o-mini",
             Messages: messages,
             Tools: tools,
         })
@@ -830,6 +830,508 @@ sequenceDiagram
 - Runtime manages entire loop and executes real functions
 - History (`messages[]`) is collected by Runtime and passed in each request
 - Tool results are added to history before next request
+
+## Skills
+
+An agent with a fixed System Prompt is limited. Skills let you dynamically change agent behavior depending on the task.
+
+[Agent Skills](https://agentskills.io/) is an open format for extending agent capabilities with specialized knowledge and workflows. The standard is supported by Cursor, Claude Code, VS Code, GitHub, and other tools. At its core, a skill is a folder with a `SKILL.md` file. The agent loads its content into context on demand.
+
+### Why Skills?
+
+Imagine: your DevOps agent works with Docker. Tomorrow a Kubernetes task comes in. Without skills, you'd rewrite the System Prompt and hardcode instructions.
+
+With skills, you just load the right behavior module.
+
+### A Skill Is Not a Tool
+
+A skill and a tool are different things. A tool performs a concrete action (calls API, reads file). A skill describes **how to behave** in a given situation.
+
+**Analogy:**
+- **Tool** — hammer, saw, screwdriver (concrete actions)
+- **Skill** — instruction "how to assemble a cabinet" (sequence of actions and rules)
+
+### Skills — Magic vs Reality
+
+**Wrong (how it's usually explained):**
+> Skills are AI modules the agent "learned" and applies automatically.
+
+**Reality (how it actually works):**
+
+A skill is a text file with instructions. The agent loads its content into context before the LLM request. The model simply receives additional text in the prompt. No training happens.
+
+### Agent Skills Format (SKILL.md)
+
+The [Agent Skills specification](https://agentskills.io/specification) defines a standard file format. A skill is a directory with a `SKILL.md` file:
+
+```
+docker-debugging/
+├── SKILL.md        # Required: metadata + instructions
+├── scripts/        # Optional: executable code
+├── references/     # Optional: additional documentation
+└── assets/         # Optional: templates, schemas
+```
+
+The `SKILL.md` file contains YAML frontmatter and Markdown instructions:
+
+```yaml
+---
+name: docker-debugging
+description: >
+  Debug Docker containers — check status, logs, resources,
+  restart loops. Use when user mentions Docker problems.
+---
+
+# Docker Debugging
+
+## When to use this skill
+Use when the user reports Docker container issues...
+
+## Steps
+1. Check container status (docker ps)
+2. Read logs (docker logs)
+3. Check resources (docker stats)
+4. If container is restarting — check exit code
+5. Never run docker rm -f without confirmation
+```
+
+Two fields are required: `name` (identifier, lowercase + hyphens) and `description` (when to use this skill). The Markdown body contains the actual instructions.
+
+### Progressive Disclosure
+
+Skills use a three-level loading pattern to manage context efficiently:
+
+1. **Discovery.** At startup, the agent loads only `name` and `description` of each available skill. This costs ~100 tokens per skill.
+2. **Activation.** When the task matches a skill's description, the agent reads the full `SKILL.md` body into context.
+3. **Execution.** The agent follows the instructions, loading referenced files (`scripts/`, `references/`) only when needed.
+
+This way, the agent stays fast while having access to detailed instructions on demand.
+
+### Implementing Skill Loading in Runtime
+
+Below is one way to implement skill loading in your agent's Runtime. The `Instruction` field corresponds to the body of a `SKILL.md` file. Trigger-based matching shown here is a simplified approach — production implementations (Cursor, Claude Code) let the LLM itself decide which skill to activate based on `description`.
+
+#### Skill definition
+
+```go
+// SkillDefinition describes a skill
+type SkillDefinition struct {
+    Name        string   // Unique skill name
+    Description string   // When to use this skill
+    Triggers    []string // Keywords for automatic loading
+    Instruction string   // Instruction text (added to prompt)
+}
+```
+
+#### Skill Registry
+
+Similar to the Tool Registry, skills are stored in a registry. The registry finds matching skills by keywords in the user's request.
+
+```go
+// SkillRegistry is the agent's skill registry
+type SkillRegistry struct {
+    skills map[string]SkillDefinition
+}
+
+func NewSkillRegistry() *SkillRegistry {
+    return &SkillRegistry{
+        skills: make(map[string]SkillDefinition),
+    }
+}
+
+func (r *SkillRegistry) Register(skill SkillDefinition) {
+    r.skills[skill.Name] = skill
+}
+
+// FindByTrigger finds skills by keyword in user input
+func (r *SkillRegistry) FindByTrigger(userInput string) []SkillDefinition {
+    var matched []SkillDefinition
+    for _, skill := range r.skills {
+        for _, trigger := range skill.Triggers {
+            if strings.Contains(strings.ToLower(userInput), trigger) {
+                matched = append(matched, skill)
+                break
+            }
+        }
+    }
+    return matched
+}
+
+// BuildPrompt assembles System Prompt with loaded skills
+func (r *SkillRegistry) BuildPrompt(basePrompt string, skills []SkillDefinition) string {
+    if len(skills) == 0 {
+        return basePrompt
+    }
+
+    var sb strings.Builder
+    sb.WriteString(basePrompt)
+    sb.WriteString("\n\n## Loaded Skills\n\n")
+    for _, skill := range skills {
+        sb.WriteString("### " + skill.Name + "\n")
+        sb.WriteString(skill.Instruction + "\n\n")
+    }
+    return sb.String()
+}
+```
+
+#### Usage example
+
+```go
+registry := NewSkillRegistry()
+
+// Register skills
+registry.Register(SkillDefinition{
+    Name:        "docker-debugging",
+    Description: "Docker container debugging",
+    Triggers:    []string{"docker", "container"},
+    Instruction: `When working with Docker:
+1. First check container status (docker ps)
+2. Read logs (docker logs)
+3. Check resources (docker stats)
+4. If container is restarting — check exit code
+5. Never run docker rm -f without confirmation`,
+})
+
+registry.Register(SkillDefinition{
+    Name:        "incident-response",
+    Description: "Incident response",
+    Triggers:    []string{"incident", "outage", "502", "500", "downtime"},
+    Instruction: `During an incident:
+1. Determine severity (P1/P2/P3)
+2. Gather facts, don't guess
+3. Check monitoring and logs
+4. Apply minimal fix (rollback)
+5. Verify recovery
+6. Don't optimize during a fire`,
+})
+
+// Agent receives a request
+userInput := "Docker container keeps restarting"
+
+// Find matching skills
+skills := registry.FindByTrigger(userInput)
+
+// Build prompt with skills
+prompt := registry.BuildPrompt(baseSystemPrompt, skills)
+// prompt now contains base prompt + Docker debugging instructions
+```
+
+Skills extend agent behavior without code changes. A new skill is a new `SKILL.md` file, not a refactor.
+
+For the full format specification, see [Agent Skills Specification](https://agentskills.io/specification). Example skills are available in the [GitHub repository](https://github.com/anthropics/skills).
+
+## Subagents
+
+Sometimes a task is too complex for a single agent. Or the agent needs to handle a subtask without polluting the main context. For this, an agent can spawn a subagent.
+
+### When Subagent, When Tool?
+
+**Tool** is the right choice when:
+- Action is simple and deterministic
+- Result is predictable
+- No "thinking" required
+
+**Subagent** is the right choice when:
+- Subtask requires reasoning and multiple steps
+- Separate context is needed (to keep the main one clean)
+- Subtask is complex on its own
+
+**Example:**
+
+```
+Task: "Deploy new service and set up monitoring"
+
+Tool approach (bad for complex tasks):
+  → deploy_service("my-app")     // Single action, no flexibility
+  → setup_monitoring("my-app")   // Single action, no flexibility
+
+Subagent approach (good for complex tasks):
+  → Subagent 1: "Deploy service" (5-10 steps with reasoning)
+  → Subagent 2: "Set up monitoring" (3-5 steps with reasoning)
+```
+
+### Parent — Child Relationship
+
+The parent agent creates a subagent with:
+- **Separate System Prompt** — specialized for the specific task
+- **Its own tool set** — only what the subtask needs
+- **Its own context** — doesn't inherit the parent's full history
+- **Iteration limit** — subagent can't run forever
+
+When the subagent finishes, the result returns to the parent as plain text.
+
+```go
+// SubagentConfig holds subagent configuration
+type SubagentConfig struct {
+    Name          string // Name for logging
+    SystemPrompt  string // Instructions for subagent
+    Tools         []Tool // Available tools
+    MaxIterations int    // Iteration limit
+}
+
+// SpawnSubagent creates and runs a subagent to execute a subtask.
+// The subagent runs its own loop and returns a text result.
+func SpawnSubagent(
+    ctx context.Context,
+    client *openai.Client,
+    config SubagentConfig,
+    task string,
+) (string, error) {
+    messages := []openai.ChatCompletionMessage{
+        {Role: "system", Content: config.SystemPrompt},
+        {Role: "user", Content: task},
+    }
+
+    registry := NewToolRegistry()
+    for _, tool := range config.Tools {
+        registry.Register(tool)
+    }
+
+    // Subagent runs its own loop
+    for i := 0; i < config.MaxIterations; i++ {
+        resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+            Model:    "gpt-4o",
+            Messages: messages,
+            Tools:    registry.ToOpenAITools(),
+        })
+        if err != nil {
+            return "", fmt.Errorf("subagent %s: %w", config.Name, err)
+        }
+
+        msg := resp.Choices[0].Message
+        messages = append(messages, msg)
+
+        // No tool_calls — subagent finished
+        if len(msg.ToolCalls) == 0 {
+            return msg.Content, nil
+        }
+
+        // Execute subagent's tools
+        for _, tc := range msg.ToolCalls {
+            tool, exists := registry.Get(tc.Function.Name)
+            if !exists {
+                messages = append(messages, openai.ChatCompletionMessage{
+                    Role:       "tool",
+                    Content:    fmt.Sprintf("Error: unknown tool %s", tc.Function.Name),
+                    ToolCallID: tc.ID,
+                })
+                continue
+            }
+            result, err := tool.Execute(json.RawMessage(tc.Function.Arguments))
+            if err != nil {
+                result = fmt.Sprintf("Error: %v", err)
+            }
+            messages = append(messages, openai.ChatCompletionMessage{
+                Role:       "tool",
+                Content:    result,
+                ToolCallID: tc.ID,
+            })
+        }
+    }
+
+    return "", fmt.Errorf("subagent %s: iteration limit exceeded (%d)", config.Name, config.MaxIterations)
+}
+```
+
+### Example: Parent Agent Spawns Subagents
+
+```go
+// Parent agent received a complex task
+task := "Deploy payment-api service and set up alerts"
+
+// Subagent for deployment
+deployResult, err := SpawnSubagent(ctx, client, SubagentConfig{
+    Name:          "deploy-agent",
+    SystemPrompt:  "You are a deployment specialist. Deploy the service properly.",
+    Tools:         []Tool{&DeployTool{}, &HealthCheckTool{}},
+    MaxIterations: 10,
+}, "Deploy payment-api service to production")
+
+if err != nil {
+    log.Fatalf("Deploy failed: %v", err)
+}
+
+// Subagent for monitoring (receives context from first)
+monitorResult, err := SpawnSubagent(ctx, client, SubagentConfig{
+    Name:          "monitoring-agent",
+    SystemPrompt:  "You are a monitoring specialist. Set up alerts.",
+    Tools:         []Tool{&CreateAlertTool{}, &ListMetricsTool{}},
+    MaxIterations: 5,
+}, fmt.Sprintf("Set up alerts for payment-api. Deploy context: %s", deployResult))
+```
+
+Subagents are a special case of multi-agent systems. For more on coordinating multiple agents, delegation patterns, and orchestration, see [Chapter 07: Multi-Agent](../07-multi-agent/README.md).
+
+## Checkpoint and Resume
+
+Long-running agents work for minutes and hours. During that time, the network can drop, an API limit can hit, or the process can restart. Without a state-saving mechanism, all work is lost.
+
+### Why This Matters
+
+Imagine: an agent analyzes 50 servers. On server 47, the API connection drops. Without checkpoint, the agent starts over — 47 API calls wasted. With checkpoint, it continues from server 48.
+
+### Saving Strategies
+
+**Per-iteration** — save after each loop iteration:
+- Simple to implement
+- May be excessive for short tasks
+- Good for long tasks with predictable step count
+
+**Per-tool-call** — save after each tool call:
+- More granular control
+- Useful when tool calls are expensive or slow
+- Avoids repeating already-executed calls
+
+### Checkpoint — Magic vs Reality
+
+**Wrong (how it's usually explained):**
+> The agent automatically remembers its state and continues from where it stopped.
+
+**Reality (how it actually works):**
+
+Agent state is a `messages[]` array plus metadata (iteration number, status). You serialize them to JSON and save to disk. On restart, you load and continue the loop from the same place.
+
+#### Checkpoint structure
+
+```go
+// Checkpoint is a snapshot of agent state
+type Checkpoint struct {
+    ID        string                          `json:"id"`
+    CreatedAt time.Time                       `json:"created_at"`
+    Iteration int                             `json:"iteration"`
+    Messages  []openai.ChatCompletionMessage  `json:"messages"`
+    TaskID    string                          `json:"task_id"`
+    Status    string                          `json:"status"` // "in_progress", "completed", "failed"
+}
+```
+
+#### Save and load
+
+```go
+// SaveCheckpoint saves agent state to disk
+func SaveCheckpoint(dir string, cp Checkpoint) error {
+    data, err := json.MarshalIndent(cp, "", "  ")
+    if err != nil {
+        return fmt.Errorf("marshal checkpoint: %w", err)
+    }
+
+    path := filepath.Join(dir, cp.TaskID+".json")
+    return os.WriteFile(path, data, 0644)
+}
+
+// LoadCheckpoint loads the last checkpoint for a task.
+// Returns nil, nil if no checkpoint found — agent starts from scratch.
+func LoadCheckpoint(dir, taskID string) (*Checkpoint, error) {
+    path := filepath.Join(dir, taskID+".json")
+
+    data, err := os.ReadFile(path)
+    if err != nil {
+        if os.IsNotExist(err) {
+            return nil, nil // No checkpoint — start from scratch
+        }
+        return nil, fmt.Errorf("read checkpoint: %w", err)
+    }
+
+    var cp Checkpoint
+    if err := json.Unmarshal(data, &cp); err != nil {
+        return nil, fmt.Errorf("unmarshal checkpoint: %w", err)
+    }
+    return &cp, nil
+}
+```
+
+#### Agent with checkpoint support
+
+```go
+func runAgentWithCheckpoints(
+    ctx context.Context,
+    client *openai.Client,
+    registry *ToolRegistry,
+    taskID, userInput string,
+) error {
+    checkpointDir := "./checkpoints"
+
+    // Try to restore from checkpoint
+    cp, err := LoadCheckpoint(checkpointDir, taskID)
+    if err != nil {
+        return err
+    }
+
+    var messages []openai.ChatCompletionMessage
+    startIteration := 0
+
+    if cp != nil && cp.Status == "in_progress" {
+        // Restoring — take history and iteration number from checkpoint
+        messages = cp.Messages
+        startIteration = cp.Iteration
+        log.Printf("Restored checkpoint: iteration %d", startIteration)
+    } else {
+        // No checkpoint found — start from scratch
+        messages = []openai.ChatCompletionMessage{
+            {Role: "system", Content: systemPrompt},
+            {Role: "user", Content: userInput},
+        }
+    }
+
+    for i := startIteration; i < maxIterations; i++ {
+        resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+            Model:    "gpt-4o",
+            Messages: messages,
+            Tools:    registry.ToOpenAITools(),
+        })
+        if err != nil {
+            // API error — save checkpoint and exit
+            SaveCheckpoint(checkpointDir, Checkpoint{
+                TaskID:    taskID,
+                Iteration: i,
+                Messages:  messages,
+                Status:    "in_progress",
+                CreatedAt: time.Now(),
+            })
+            return fmt.Errorf("API error (checkpoint saved at iteration %d): %w", i, err)
+        }
+
+        msg := resp.Choices[0].Message
+        messages = append(messages, msg)
+
+        if len(msg.ToolCalls) == 0 {
+            // Task completed — save final checkpoint
+            SaveCheckpoint(checkpointDir, Checkpoint{
+                TaskID:    taskID,
+                Iteration: i,
+                Messages:  messages,
+                Status:    "completed",
+                CreatedAt: time.Now(),
+            })
+            return nil
+        }
+
+        // Execute tools
+        for _, tc := range msg.ToolCalls {
+            tool, _ := registry.Get(tc.Function.Name)
+            result, _ := tool.Execute(json.RawMessage(tc.Function.Arguments))
+            messages = append(messages, openai.ChatCompletionMessage{
+                Role:       "tool",
+                Content:    result,
+                ToolCallID: tc.ID,
+            })
+        }
+
+        // Save checkpoint after each iteration
+        SaveCheckpoint(checkpointDir, Checkpoint{
+            TaskID:    taskID,
+            Iteration: i + 1,
+            Messages:  messages,
+            Status:    "in_progress",
+            CreatedAt: time.Now(),
+        })
+    }
+
+    return nil
+}
+```
+
+Checkpoint is insurance. For short tasks (2-3 iterations), it's overkill. For long tasks (10+ iterations) or expensive API calls, it's essential.
 
 ## Common Errors
 
@@ -955,6 +1457,7 @@ func compressContext(messages []openai.ChatCompletionMessage, maxTokens int) []o
 - **[Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md)** — How Runtime executes tools
 - **[Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md)** — How Planning works in agent loop
 - **[Chapter 13: Context Engineering](../13-context-engineering/README.md)** — Detailed context optimization techniques (summarization, fact selection, token budgets)
+- **[Agent Skills Specification](https://agentskills.io/specification)** — Open format for agent skills (`SKILL.md`)
 
 ## What's Next?
 

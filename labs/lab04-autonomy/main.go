@@ -56,7 +56,7 @@ func main() {
 	// 3. THE LOOP
 	for i := 0; i < 5; i++ {
 		req := openai.ChatCompletionRequest{
-			Model:    openai.GPT3Dot5Turbo,
+			Model:    "gpt-4o-mini",
 			Messages: messages,
 			Tools:    tools,
 		}

@@ -112,7 +112,7 @@ func runWorkerAgent(role, prompt, question string, tools []openai.Tool, client *
     // Простой цикл для работника (1-2 шага обычно)
     for i := 0; i < 5; i++ {
         resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-            Model: openai.GPT3Dot5Turbo,
+            Model: "gpt-4o-mini",
             Messages: messages,
             Tools: tools,
         })

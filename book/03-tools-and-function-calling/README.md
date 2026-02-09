@@ -69,7 +69,7 @@ messages := []openai.ChatCompletionMessage{
 }
 
 req := openai.ChatCompletionRequest{
-    Model:    openai.GPT3Dot5Turbo,
+    Model:    "gpt-4o-mini",
     Messages: messages,
     Tools:    tools,  // The model receives the tool descriptions!
     Temperature: 0,
@@ -237,7 +237,7 @@ messages = append(messages, openai.ChatCompletionMessage{
 
 // Send updated history to the model again
 resp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    openai.GPT3Dot5Turbo,
+    Model:    "gpt-4o-mini",
     Messages: messages,  // Now includes the tool result!
     Tools:    tools,
 })
@@ -830,6 +830,145 @@ if !json.Valid([]byte(call.Function.Arguments)) {
 
 Key rule: the repair step must not change intent. It only fixes the format to match the schema.
 
+## Model Selection Strategy for Different Stages
+
+### Why Use Different Models?
+
+In the examples above, we used a single model (`GPT3Dot5Turbo`) for every stage: both tool selection and result analysis. In a tutorial, that's fine. In production, it's not.
+
+Different stages of the agent's work require different capabilities:
+
+| Stage | What the Model Does | Required Capability | Suitable Model |
+|-------|---------------------|---------------------|----------------|
+| Tool Selection | Matches the request to tool descriptions | Instruction following, structured output | Fast and cheap (GPT-4o-mini, Claude Haiku) |
+| Argument Generation | Fills in the JSON Schema for arguments | JSON generation, schema adherence | Fast and cheap |
+| Result Analysis | Analyzes tool output, formulates a response | Reasoning, information synthesis | Powerful (GPT-4o, Claude Sonnet) |
+| Complex Planning | Decides which tools to call and in what order | Planning, multi-step reasoning | Powerful |
+
+**Bottom line:** Tool selection is a simple classification task. Result analysis is a reasoning task. Paying for GPT-4o at the "pick ping from three tools" stage is wasteful.
+
+### How It Works — Magic vs Reality
+
+**Magic (how it's usually explained):**
+> "Use the best model for everything. It'll handle it."
+
+**Reality (how it actually works):**
+
+An agent makes 5–15 LLM calls per task. If each call costs $0.01 (GPT-4o) instead of $0.0002 (GPT-4o-mini), the difference is 50x per task. At 10,000 tasks per day, that's $1,000 vs $20.
+
+In practice: use a cheap model where the task is simple, a powerful one where reasoning is needed.
+
+### Implementation: ModelRouter
+
+```go
+// ModelSelector picks a model depending on the agent's current stage.
+type ModelSelector struct {
+    ToolCallModel   string // Model for tool selection and argument generation
+    AnalysisModel   string // Model for result analysis and final response
+    ComplexModel    string // Model for complex tasks (planning, multi-tool)
+}
+
+func NewModelSelector() *ModelSelector {
+    return &ModelSelector{
+        ToolCallModel: "gpt-4o-mini",      // Fast, cheap, good at following instructions
+        AnalysisModel: "gpt-4o",            // Powerful, good at reasoning
+        ComplexModel:  "gpt-4o",            // For complex planning
+    }
+}
+
+// SelectModel determines which model to use for the current iteration.
+// needsToolCall: whether we expect a tool call on this step.
+// toolCount: number of available tools (affects selection complexity).
+func (ms *ModelSelector) SelectModel(needsToolCall bool, toolCount int) string {
+    if !needsToolCall {
+        // Result analysis stage — needs a powerful model
+        return ms.AnalysisModel
+    }
+    if toolCount > 20 {
+        // Many tools — complex selection, needs a powerful model
+        return ms.ComplexModel
+    }
+    // Regular tool call — a cheap model is enough
+    return ms.ToolCallModel
+}
+```
+
+### How to Determine the Stage?
+
+Runtime knows which stage the agent is at. The rule is simple:
+
+```go
+func isToolCallExpected(messages []openai.ChatCompletionMessage) bool {
+    if len(messages) == 0 {
+        return true // First call — most likely needs a tool call
+    }
+    lastMsg := messages[len(messages)-1]
+
+    // If the last message is a tool result,
+    // the model will analyze the result.
+    // But it MAY call another tool.
+    if lastMsg.Role == openai.ChatMessageRoleTool {
+        return true // Could be a tool call or a final response
+    }
+    return true
+}
+```
+
+**Important nuance:** In practice, you don't always know in advance whether the model will call a tool or respond with text. A simpler strategy is often used — **switch after N tool calls**:
+
+```go
+// Simple strategy: first N iterations use a cheap model,
+// the final iteration (when tool calls stop) uses a powerful one.
+func (ms *ModelSelector) SelectByIteration(iteration int, lastResponseHadToolCalls bool) string {
+    if lastResponseHadToolCalls {
+        // Still running tools — cheap model
+        return ms.ToolCallModel
+    }
+    // Tools are done — switch to powerful model for the final response
+    return ms.AnalysisModel
+}
+```
+
+### Usage in the Agent Loop
+
+```go
+selector := NewModelSelector()
+lastHadToolCalls := true // First iteration — expect a tool call
+
+for i := 0; i < maxIterations; i++ {
+    model := selector.SelectByIteration(i, lastHadToolCalls)
+
+    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+        Model:    model,  // Different model at different stages!
+        Messages: messages,
+        Tools:    tools,
+    })
+    if err != nil {
+        return fmt.Errorf("LLM call failed: %w", err)
+    }
+
+    msg := resp.Choices[0].Message
+    messages = append(messages, msg)
+    lastHadToolCalls = len(msg.ToolCalls) > 0
+
+    if !lastHadToolCalls {
+        fmt.Printf("[model=%s] Final: %s\n", model, msg.Content)
+        break
+    }
+
+    fmt.Printf("[model=%s] Tool calls: %d\n", model, len(msg.ToolCalls))
+    // ... execute tools ...
+}
+```
+
+### When You DON'T Need Different Models
+
+- **Prototype / MVP:** A single model is simpler. Optimize later.
+- **Low volume:** If the agent makes 1–2 calls per day, the savings don't justify the complexity.
+- **Critical consistency:** Some tasks require one model to "remember" its reasoning across iterations. Switching models can break the chain of thought.
+
+For more on cost and optimization, see [Chapter 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md).
+
 ## Common Errors
 
 ### Error 1: Model Doesn't Generate tool_call
@@ -970,6 +1109,7 @@ func validateToolCall(call openai.ToolCall) error {
 - **LLM Physics:** Why the model chooses tool call instead of text, see [Chapter 01: LLM Physics](../01-llm-fundamentals/README.md)
 - **Prompting:** How to describe tools so the model uses them correctly, see [Chapter 02: Prompting](../02-prompt-engineering/README.md)
 - **Loop:** How tool results are returned to the model, see [Chapter 04: Autonomy](../04-autonomy-and-loops/README.md)
+- **MCP:** Standard protocol for connecting tools to agents — [Model Context Protocol](https://modelcontextprotocol.io/). Details in [Chapter 18: Tool Protocols](../18-tool-protocols-and-servers/README.md)
 
 ## Complete Example: From Start to Finish
 
@@ -1028,7 +1168,7 @@ func main() {
     // 4. Agent loop
     for i := 0; i < 10; i++ {
         resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-            Model:       openai.GPT3Dot5Turbo,
+            Model:       "gpt-4o-mini",
             Messages:    messages,
             Tools:       tools,
             Temperature: 0, // Deterministic behavior

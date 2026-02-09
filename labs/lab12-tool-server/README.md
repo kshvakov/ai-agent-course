@@ -50,6 +50,12 @@ Tools evolve over time:
 - Tool server checks compatibility
 - Return error if versions don't match
 
+### Standard Protocols: MCP and A2A
+
+In production, standard protocols are increasingly used:
+- **MCP (Model Context Protocol)** — open standard from Anthropic for connecting agents to tools. One protocol — any tool, like USB for AI.
+- **A2A (Agent-to-Agent Protocol)** — protocol from Google for agent-to-agent communication. Solves "agent ↔ agent", while MCP solves "agent ↔ tool".
+
 See more: [Chapter 18: Tool Protocols and Tool Servers](../../book/18-tool-protocols-and-servers/README.md)
 
 ## Task

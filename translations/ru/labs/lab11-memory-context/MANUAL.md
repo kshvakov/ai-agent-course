@@ -164,7 +164,7 @@ func extractFacts(ctx context.Context, client *openai.Client, conversation strin
 1-3 - временная информация (статус сервера, временные события).`, conversation)
 
     resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: openai.GPT3Dot5Turbo,
+        Model: "gpt-4o-mini",
         Messages: []openai.ChatCompletionMessage{
             {Role: "user", Content: prompt},
         },
@@ -208,7 +208,7 @@ func summarizeConversation(ctx context.Context, client *openai.Client, messages 
 Резюме (максимум 200 слов):`, conversationText)
 
     resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: openai.GPT3Dot5Turbo,
+        Model: "gpt-4o-mini",
         Messages: []openai.ChatCompletionMessage{
             {Role: "user", Content: prompt},
         },

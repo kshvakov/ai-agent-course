@@ -136,7 +136,7 @@ func (c *LayeredContext) Summarize(ctx context.Context, client *openai.Client) e
     }
     
     resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: openai.GPT3Dot5Turbo,
+        Model: "gpt-4o-mini",
         Messages: []openai.ChatCompletionMessage{
             {Role: "system", Content: "Ты агент саммаризации. Извлекай ключевые факты и решения."},
             {Role: "user", Content: prompt},
@@ -419,7 +419,7 @@ constraint:budget: Не более 100$ в месяц
     }
 
     resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: openai.GPT4oMini,
+        Model: "gpt-4o-mini",
         Messages: []openai.ChatCompletionMessage{
             {Role: "system", Content: "Ты сжимаешь контекст. Будь максимально кратким."},
             {Role: "user", Content: prompt},
@@ -497,7 +497,7 @@ func incrementalSummarize(
     }
 
     resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: openai.GPT4oMini,
+        Model: "gpt-4o-mini",
         Messages: []openai.ChatCompletionMessage{
             {Role: "system", Content: "Ты обновляешь саммари разговора. Будь точным и кратким."},
             {Role: "user", Content: prompt},
