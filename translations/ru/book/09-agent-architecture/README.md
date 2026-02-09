@@ -831,6 +831,453 @@ sequenceDiagram
 - История (`messages[]`) собирается Runtime'ом и передается в каждый запрос
 - Результаты инструментов добавляются в историю перед следующим запросом
 
+## Skills (Навыки)
+
+Агент с фиксированным System Prompt ограничен. Навыки (Skills) позволяют динамически менять поведение агента в зависимости от задачи.
+
+### Зачем нужны навыки?
+
+Представьте: агент для DevOps умеет работать с Docker. Завтра появляется задача работы с Kubernetes. Без навыков придётся переписывать System Prompt и добавлять инструкции прямо в код.
+
+С навыками вы просто загружаете нужный модуль поведения.
+
+### Skill — это не Tool
+
+Навык и инструмент — разные вещи. Инструмент выполняет конкретное действие (вызывает API, читает файл). Навык описывает **как себя вести** в определённой ситуации.
+
+**Аналогия:**
+- **Tool** — молоток, пила, отвёртка (конкретные действия)
+- **Skill** — инструкция "как собрать шкаф" (последовательность действий и правила)
+
+### Skills — Магия vs Реальность
+
+**❌ Магия (как обычно объясняют):**
+> Навыки — это AI-модули, которые агент "выучил" и применяет автоматически.
+
+**✅ Реальность (как на самом деле):**
+
+Навык — это текстовый файл с инструкциями. Агент загружает его содержимое в контекст перед запросом к LLM. Модель просто получает дополнительный текст в промпте. Никакого обучения не происходит.
+
+#### Определение навыка
+
+```go
+// SkillDefinition — описание навыка
+type SkillDefinition struct {
+    Name        string   // Уникальное имя навыка
+    Description string   // Когда использовать этот навык
+    Triggers    []string // Ключевые слова для автоматической загрузки
+    Instruction string   // Текст инструкции (добавляется в промпт)
+}
+```
+
+#### Skill Registry (Реестр навыков)
+
+По аналогии с Tool Registry навыки хранятся в реестре. Реестр умеет находить подходящие навыки по ключевым словам в запросе пользователя.
+
+```go
+// SkillRegistry — реестр навыков агента
+type SkillRegistry struct {
+    skills map[string]SkillDefinition
+}
+
+func NewSkillRegistry() *SkillRegistry {
+    return &SkillRegistry{
+        skills: make(map[string]SkillDefinition),
+    }
+}
+
+func (r *SkillRegistry) Register(skill SkillDefinition) {
+    r.skills[skill.Name] = skill
+}
+
+// FindByTrigger ищет навыки по ключевому слову в запросе
+func (r *SkillRegistry) FindByTrigger(userInput string) []SkillDefinition {
+    var matched []SkillDefinition
+    for _, skill := range r.skills {
+        for _, trigger := range skill.Triggers {
+            if strings.Contains(strings.ToLower(userInput), trigger) {
+                matched = append(matched, skill)
+                break
+            }
+        }
+    }
+    return matched
+}
+
+// BuildPrompt собирает System Prompt с загруженными навыками
+func (r *SkillRegistry) BuildPrompt(basePrompt string, skills []SkillDefinition) string {
+    if len(skills) == 0 {
+        return basePrompt
+    }
+
+    var sb strings.Builder
+    sb.WriteString(basePrompt)
+    sb.WriteString("\n\n## Загруженные навыки\n\n")
+    for _, skill := range skills {
+        sb.WriteString("### " + skill.Name + "\n")
+        sb.WriteString(skill.Instruction + "\n\n")
+    }
+    return sb.String()
+}
+```
+
+#### Пример использования
+
+```go
+registry := NewSkillRegistry()
+
+// Регистрируем навыки
+registry.Register(SkillDefinition{
+    Name:        "docker-debugging",
+    Description: "Отладка Docker-контейнеров",
+    Triggers:    []string{"docker", "контейнер", "container"},
+    Instruction: `При работе с Docker:
+1. Сначала проверь статус контейнера (docker ps)
+2. Прочитай логи (docker logs)
+3. Проверь ресурсы (docker stats)
+4. Если контейнер перезапускается — проверь exit code
+5. Никогда не делай docker rm -f без подтверждения`,
+})
+
+registry.Register(SkillDefinition{
+    Name:        "incident-response",
+    Description: "Реагирование на инциденты",
+    Triggers:    []string{"инцидент", "авария", "502", "500", "даунтайм"},
+    Instruction: `При инциденте:
+1. Определи severity (P1/P2/P3)
+2. Собери факты, не гадай
+3. Проверь мониторинг и логи
+4. Примени минимальный фикс (rollback)
+5. Верифицируй восстановление
+6. Не оптимизируй во время пожара`,
+})
+
+// Агент получает запрос
+userInput := "Docker-контейнер постоянно перезапускается"
+
+// Находим подходящие навыки
+skills := registry.FindByTrigger(userInput)
+
+// Собираем промпт с навыками
+prompt := registry.BuildPrompt(baseSystemPrompt, skills)
+// prompt теперь содержит базовый промпт + инструкции по Docker-отладке
+```
+
+Навыки расширяют поведение агента без изменения кода. Новый навык — это новый вызов `Register()`, а не рефакторинг.
+
+## Subagents (Под-агенты)
+
+Иногда задача слишком сложна для одного агента. Или агенту нужно выполнить подзадачу, не засоряя основной контекст. Для этого агент может создать под-агента.
+
+### Когда под-агент, а когда инструмент?
+
+**Инструмент (Tool)** подходит, когда:
+- Действие простое и детерминированное
+- Результат предсказуем
+- Не нужно "думать" над задачей
+
+**Под-агент (Subagent)** подходит, когда:
+- Подзадача требует рассуждений и нескольких шагов
+- Нужен отдельный контекст (чтобы не загрязнять основной)
+- Подзадача сама по себе сложная
+
+**Пример:**
+
+```
+Задача: "Разверни новый сервис и настрой мониторинг"
+
+Tool-подход (плохо для сложных задач):
+  → deploy_service("my-app")     // Одно действие, нет гибкости
+  → setup_monitoring("my-app")   // Одно действие, нет гибкости
+
+Subagent-подход (хорошо для сложных задач):
+  → Под-агент 1: "Разверни сервис" (5-10 шагов с рассуждениями)
+  → Под-агент 2: "Настрой мониторинг" (3-5 шагов с рассуждениями)
+```
+
+### Связь "Родитель — Потомок"
+
+Родительский агент создаёт под-агента с:
+- **Отдельным System Prompt** — специализация под конкретную задачу
+- **Своим набором инструментов** — только то, что нужно для подзадачи
+- **Своим контекстом** — не наследует всю историю родителя
+- **Ограничением по итерациям** — под-агент не может работать бесконечно
+
+Когда под-агент завершает работу, результат возвращается родителю как обычный текст.
+
+```go
+// SubagentConfig — конфигурация под-агента
+type SubagentConfig struct {
+    Name          string // Имя для логирования
+    SystemPrompt  string // Инструкции для под-агента
+    Tools         []Tool // Доступные инструменты
+    MaxIterations int    // Лимит итераций
+}
+
+// SpawnSubagent создаёт и запускает под-агента для выполнения подзадачи.
+// Под-агент работает в собственном цикле и возвращает текстовый результат.
+func SpawnSubagent(
+    ctx context.Context,
+    client *openai.Client,
+    config SubagentConfig,
+    task string,
+) (string, error) {
+    messages := []openai.ChatCompletionMessage{
+        {Role: "system", Content: config.SystemPrompt},
+        {Role: "user", Content: task},
+    }
+
+    registry := NewToolRegistry()
+    for _, tool := range config.Tools {
+        registry.Register(tool)
+    }
+
+    // Под-агент выполняет свой цикл
+    for i := 0; i < config.MaxIterations; i++ {
+        resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+            Model:    openai.GPT4,
+            Messages: messages,
+            Tools:    registry.ToOpenAITools(),
+        })
+        if err != nil {
+            return "", fmt.Errorf("subagent %s: %w", config.Name, err)
+        }
+
+        msg := resp.Choices[0].Message
+        messages = append(messages, msg)
+
+        // Нет tool_calls — под-агент завершил работу
+        if len(msg.ToolCalls) == 0 {
+            return msg.Content, nil
+        }
+
+        // Выполняем инструменты под-агента
+        for _, tc := range msg.ToolCalls {
+            tool, exists := registry.Get(tc.Function.Name)
+            if !exists {
+                messages = append(messages, openai.ChatCompletionMessage{
+                    Role:       "tool",
+                    Content:    fmt.Sprintf("Error: unknown tool %s", tc.Function.Name),
+                    ToolCallID: tc.ID,
+                })
+                continue
+            }
+            result, err := tool.Execute(json.RawMessage(tc.Function.Arguments))
+            if err != nil {
+                result = fmt.Sprintf("Error: %v", err)
+            }
+            messages = append(messages, openai.ChatCompletionMessage{
+                Role:       "tool",
+                Content:    result,
+                ToolCallID: tc.ID,
+            })
+        }
+    }
+
+    return "", fmt.Errorf("subagent %s: превышен лимит итераций (%d)", config.Name, config.MaxIterations)
+}
+```
+
+### Пример: Родительский агент запускает под-агентов
+
+```go
+// Родительский агент получил сложную задачу
+task := "Разверни сервис payment-api и настрой алерты"
+
+// Под-агент для деплоя
+deployResult, err := SpawnSubagent(ctx, client, SubagentConfig{
+    Name:          "deploy-agent",
+    SystemPrompt:  "Ты специалист по деплою. Разверни сервис по всем правилам.",
+    Tools:         []Tool{&DeployTool{}, &HealthCheckTool{}},
+    MaxIterations: 10,
+}, "Разверни сервис payment-api в production")
+
+if err != nil {
+    log.Fatalf("Деплой провален: %v", err)
+}
+
+// Под-агент для мониторинга (получает контекст от первого)
+monitorResult, err := SpawnSubagent(ctx, client, SubagentConfig{
+    Name:          "monitoring-agent",
+    SystemPrompt:  "Ты специалист по мониторингу. Настрой алерты.",
+    Tools:         []Tool{&CreateAlertTool{}, &ListMetricsTool{}},
+    MaxIterations: 5,
+}, fmt.Sprintf("Настрой алерты для payment-api. Контекст деплоя: %s", deployResult))
+```
+
+Под-агенты — частный случай мульти-агентных систем. Подробнее о координации нескольких агентов, паттернах делегирования и оркестрации см. [Глава 07: Multi-Agent](../07-multi-agent/README.md).
+
+## Checkpoint и Resume (Сохранение и восстановление)
+
+Долгоживущие агенты работают минутами и часами. За это время может упасть сеть, закончиться лимит API или перезапуститься процесс. Без механизма сохранения состояния вся работа теряется.
+
+### Зачем это нужно?
+
+Представьте: агент анализирует 50 серверов. На 47-м сервере падает соединение с API. Без checkpoint агент начнёт всё сначала — 47 вызовов API впустую. С checkpoint — продолжит с 48-го.
+
+### Стратегии сохранения
+
+**Per-iteration** — сохранение после каждой итерации цикла:
+- Просто реализовать
+- Может быть избыточным для коротких задач
+- Подходит для длинных задач с предсказуемым числом шагов
+
+**Per-tool-call** — сохранение после каждого вызова инструмента:
+- Более гранулярный контроль
+- Полезно, когда вызовы инструментов дорогие или медленные
+- Позволяет не повторять уже выполненные вызовы
+
+### Checkpoint — Магия vs Реальность
+
+**❌ Магия (как обычно объясняют):**
+> Агент автоматически запоминает своё состояние и продолжает с места остановки.
+
+**✅ Реальность (как на самом деле):**
+
+Состояние агента — это массив `messages[]` и метаданные (номер итерации, статус). Вы сериализуете их в JSON и сохраняете на диск. При перезапуске загружаете и продолжаете цикл с того же места.
+
+#### Структура checkpoint
+
+```go
+// Checkpoint — снимок состояния агента
+type Checkpoint struct {
+    ID        string                          `json:"id"`
+    CreatedAt time.Time                       `json:"created_at"`
+    Iteration int                             `json:"iteration"`
+    Messages  []openai.ChatCompletionMessage  `json:"messages"`
+    TaskID    string                          `json:"task_id"`
+    Status    string                          `json:"status"` // "in_progress", "completed", "failed"
+}
+```
+
+#### Сохранение и загрузка
+
+```go
+// SaveCheckpoint сохраняет состояние агента на диск
+func SaveCheckpoint(dir string, cp Checkpoint) error {
+    data, err := json.MarshalIndent(cp, "", "  ")
+    if err != nil {
+        return fmt.Errorf("marshal checkpoint: %w", err)
+    }
+
+    path := filepath.Join(dir, cp.TaskID+".json")
+    return os.WriteFile(path, data, 0644)
+}
+
+// LoadCheckpoint загружает последний checkpoint для задачи.
+// Возвращает nil, nil если checkpoint не найден — агент начнёт с нуля.
+func LoadCheckpoint(dir, taskID string) (*Checkpoint, error) {
+    path := filepath.Join(dir, taskID+".json")
+
+    data, err := os.ReadFile(path)
+    if err != nil {
+        if os.IsNotExist(err) {
+            return nil, nil // Нет checkpoint — начинаем с нуля
+        }
+        return nil, fmt.Errorf("read checkpoint: %w", err)
+    }
+
+    var cp Checkpoint
+    if err := json.Unmarshal(data, &cp); err != nil {
+        return nil, fmt.Errorf("unmarshal checkpoint: %w", err)
+    }
+    return &cp, nil
+}
+```
+
+#### Агент с поддержкой checkpoint
+
+```go
+func runAgentWithCheckpoints(
+    ctx context.Context,
+    client *openai.Client,
+    registry *ToolRegistry,
+    taskID, userInput string,
+) error {
+    checkpointDir := "./checkpoints"
+
+    // Пытаемся восстановиться из checkpoint
+    cp, err := LoadCheckpoint(checkpointDir, taskID)
+    if err != nil {
+        return err
+    }
+
+    var messages []openai.ChatCompletionMessage
+    startIteration := 0
+
+    if cp != nil && cp.Status == "in_progress" {
+        // Восстанавливаемся — берём историю и номер итерации из checkpoint
+        messages = cp.Messages
+        startIteration = cp.Iteration
+        log.Printf("Восстановлен checkpoint: итерация %d", startIteration)
+    } else {
+        // Checkpoint не найден — начинаем с нуля
+        messages = []openai.ChatCompletionMessage{
+            {Role: "system", Content: systemPrompt},
+            {Role: "user", Content: userInput},
+        }
+    }
+
+    for i := startIteration; i < maxIterations; i++ {
+        resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+            Model:    openai.GPT4,
+            Messages: messages,
+            Tools:    registry.ToOpenAITools(),
+        })
+        if err != nil {
+            // Ошибка API — сохраняем checkpoint и выходим
+            SaveCheckpoint(checkpointDir, Checkpoint{
+                TaskID:    taskID,
+                Iteration: i,
+                Messages:  messages,
+                Status:    "in_progress",
+                CreatedAt: time.Now(),
+            })
+            return fmt.Errorf("API error (checkpoint saved at iteration %d): %w", i, err)
+        }
+
+        msg := resp.Choices[0].Message
+        messages = append(messages, msg)
+
+        if len(msg.ToolCalls) == 0 {
+            // Задача завершена — сохраняем финальный checkpoint
+            SaveCheckpoint(checkpointDir, Checkpoint{
+                TaskID:    taskID,
+                Iteration: i,
+                Messages:  messages,
+                Status:    "completed",
+                CreatedAt: time.Now(),
+            })
+            return nil
+        }
+
+        // Выполняем инструменты
+        for _, tc := range msg.ToolCalls {
+            tool, _ := registry.Get(tc.Function.Name)
+            result, _ := tool.Execute(json.RawMessage(tc.Function.Arguments))
+            messages = append(messages, openai.ChatCompletionMessage{
+                Role:       "tool",
+                Content:    result,
+                ToolCallID: tc.ID,
+            })
+        }
+
+        // Сохраняем checkpoint после каждой итерации
+        SaveCheckpoint(checkpointDir, Checkpoint{
+            TaskID:    taskID,
+            Iteration: i + 1,
+            Messages:  messages,
+            Status:    "in_progress",
+            CreatedAt: time.Now(),
+        })
+    }
+
+    return nil
+}
+```
+
+Checkpoint — это страховка. Для коротких задач (2-3 итерации) он избыточен. Для длинных задач (10+ итераций) или дорогих вызовов API — обязателен.
+
 ## Типовые ошибки
 
 ### Ошибка 1: История переполняется

@@ -496,6 +496,378 @@ func main() {
 }
 ```
 
+## Store: Database-backed хранение
+
+В примерах выше мы используем файл `tasks.json` для хранения состояния. Для учебных целей это работает, но в продакшене файловое хранилище ненадёжно.
+
+### Почему файл — не продакшен
+
+Файловое хранение имеет три проблемы:
+
+1. **Нет атомарности.** Если процесс упадёт во время записи, файл повредится.
+2. **Нет конкурентного доступа.** Два агента не могут безопасно писать в один файл.
+3. **Нет запросов.** Чтобы найти все незавершённые задачи, нужно прочитать весь файл.
+
+Базы данных решают все три проблемы. PostgreSQL — надёжный выбор для продакшена. SQLite — хороший вариант для локальной разработки.
+
+### StateStore: интерфейс хранилища
+
+Отделяем интерфейс от реализации. Это позволяет подменять хранилище в тестах и менять его без переписывания логики агента.
+
+```go
+// StateStore — контракт хранения состояния агента.
+// Реализация может использовать PostgreSQL, SQLite или in-memory хранилище.
+type StateStore interface {
+    Save(ctx context.Context, task *Task) error
+    Get(ctx context.Context, id string) (*Task, error)
+    ListByState(ctx context.Context, state TaskState) ([]*Task, error)
+}
+```
+
+### Реализация на PostgreSQL
+
+```go
+type PgStateStore struct {
+    db *sql.DB
+}
+
+func NewPgStateStore(dsn string) (*PgStateStore, error) {
+    db, err := sql.Open("pgx", dsn)
+    if err != nil {
+        return nil, fmt.Errorf("connect to postgres: %w", err)
+    }
+    return &PgStateStore{db: db}, nil
+}
+
+func (s *PgStateStore) Save(ctx context.Context, task *Task) error {
+    // UPSERT: вставляем новую задачу или обновляем существующую
+    query := `
+        INSERT INTO agent_tasks (id, user_input, state, result, error, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, now())
+        ON CONFLICT (id) DO UPDATE SET
+            state      = EXCLUDED.state,
+            result     = EXCLUDED.result,
+            error      = EXCLUDED.error,
+            updated_at = now()`
+
+    _, err := s.db.ExecContext(ctx, query,
+        task.ID, task.UserInput, task.State,
+        task.Result, task.Error, task.CreatedAt,
+    )
+    return err
+}
+
+func (s *PgStateStore) Get(ctx context.Context, id string) (*Task, error) {
+    task := &Task{}
+    err := s.db.QueryRowContext(ctx,
+        `SELECT id, user_input, state, result, error, created_at, updated_at
+         FROM agent_tasks WHERE id = $1`, id,
+    ).Scan(
+        &task.ID, &task.UserInput, &task.State,
+        &task.Result, &task.Error,
+        &task.CreatedAt, &task.UpdatedAt,
+    )
+    if errors.Is(err, sql.ErrNoRows) {
+        return nil, nil
+    }
+    return task, err
+}
+
+func (s *PgStateStore) ListByState(ctx context.Context, state TaskState) ([]*Task, error) {
+    rows, err := s.db.QueryContext(ctx,
+        `SELECT id, user_input, state, result, error, created_at, updated_at
+         FROM agent_tasks WHERE state = $1 ORDER BY created_at`, state,
+    )
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+    var tasks []*Task
+    for rows.Next() {
+        t := &Task{}
+        if err := rows.Scan(
+            &t.ID, &t.UserInput, &t.State,
+            &t.Result, &t.Error,
+            &t.CreatedAt, &t.UpdatedAt,
+        ); err != nil {
+            return nil, err
+        }
+        tasks = append(tasks, t)
+    }
+    return tasks, rows.Err()
+}
+```
+
+### Транзакции для атомарных обновлений
+
+Когда агент выполняет шаг, нужно обновить состояние атомарно. Если шаг упал — состояние не должно измениться.
+
+```go
+func (s *PgStateStore) ExecuteStep(ctx context.Context, taskID string, stepFn func(*Task) error) error {
+    tx, err := s.db.BeginTx(ctx, nil)
+    if err != nil {
+        return fmt.Errorf("begin tx: %w", err)
+    }
+    defer tx.Rollback()
+
+    // SELECT ... FOR UPDATE блокирует запись на время выполнения шага.
+    // Другой агент не сможет изменить эту задачу параллельно.
+    task := &Task{}
+    err = tx.QueryRowContext(ctx,
+        `SELECT id, user_input, state, result, error, created_at, updated_at
+         FROM agent_tasks WHERE id = $1 FOR UPDATE`, taskID,
+    ).Scan(
+        &task.ID, &task.UserInput, &task.State,
+        &task.Result, &task.Error,
+        &task.CreatedAt, &task.UpdatedAt,
+    )
+    if err != nil {
+        return fmt.Errorf("lock task: %w", err)
+    }
+
+    // Выполняем бизнес-логику шага
+    if err := stepFn(task); err != nil {
+        return fmt.Errorf("step failed: %w", err)
+    }
+
+    // Сохраняем обновлённое состояние внутри транзакции
+    _, err = tx.ExecContext(ctx,
+        `UPDATE agent_tasks SET state=$1, result=$2, error=$3, updated_at=now() WHERE id=$4`,
+        task.State, task.Result, task.Error, task.ID,
+    )
+    if err != nil {
+        return fmt.Errorf("save state: %w", err)
+    }
+
+    return tx.Commit()
+}
+```
+
+Шаг либо выполнится полностью, либо откатится. Промежуточного «половинного» состояния не будет.
+
+## MCP для состояния
+
+Model Context Protocol (MCP) позволяет хранить и передавать состояние агента через стандартизированные ресурсы. Подробнее о MCP — в [Главе 08: MCP](../08-mcp/README.md).
+
+### Зачем MCP для состояния?
+
+MCP-сервер выступает единым хранилищем состояния. Любой агент или инструмент обращается к нему по URI. Это решает две задачи:
+
+1. **Общий доступ.** Несколько агентов читают и обновляют одно состояние.
+2. **Стандартный протокол.** Не нужно писать свой API для каждого хранилища.
+
+### Ресурс состояния
+
+Состояние агента представляется как MCP-ресурс с URI:
+
+```
+state://agents/{agent_id}/tasks/{task_id}
+```
+
+Один агент записывает прогресс, другой читает его и продолжает работу.
+
+### Пример: чтение общего состояния
+
+```go
+// MCPStateResource описывает состояние агента как MCP-ресурс.
+type MCPStateResource struct {
+    URI       string    `json:"uri"`
+    AgentID   string    `json:"agent_id"`
+    TaskID    string    `json:"task_id"`
+    State     TaskState `json:"state"`
+    Plan      []string  `json:"plan,omitempty"`
+    Artifacts []string  `json:"artifacts,omitempty"`
+}
+
+// readSharedState читает состояние другого агента через MCP.
+// Агент A записал прогресс, агент B читает и продолжает.
+func readSharedState(
+    ctx context.Context,
+    mcpClient *mcp.Client,
+    agentID, taskID string,
+) (*MCPStateResource, error) {
+    uri := fmt.Sprintf("state://agents/%s/tasks/%s", agentID, taskID)
+
+    resource, err := mcpClient.ReadResource(ctx, uri)
+    if err != nil {
+        return nil, fmt.Errorf("read MCP resource %s: %w", uri, err)
+    }
+
+    var state MCPStateResource
+    if err := json.Unmarshal(resource.Content, &state); err != nil {
+        return nil, fmt.Errorf("decode state: %w", err)
+    }
+    return &state, nil
+}
+```
+
+Такой подход полезен в [мульти-агентных системах](../07-multi-agent/README.md), где несколько агентов работают над одной задачей.
+
+## Dynamic Context: выбор релевантного состояния
+
+### Проблема: не всё помещается в контекст
+
+Агент накапливает артефакты: логи, результаты команд, промежуточные данные. Со временем их объём превышает контекстное окно LLM. Если отправить всё — модель потеряет фокус. Если не отправить ничего — модель не сможет принять решение.
+
+Решение — выбирать только релевантное состояние для текущего шага.
+
+### Фильтрация по релевантности
+
+Стратегия простая: сначала берём данные текущего шага, потом заполняем остаток последними фактами.
+
+```go
+// ContextSlice — срез состояния, который помещается в контекстное окно.
+type ContextSlice struct {
+    Goal          string     `json:"goal"`
+    CurrentStep   string     `json:"current_step"`
+    Facts         []Fact     `json:"facts"`
+    Artifacts     []Artifact `json:"artifacts"`
+    OpenQuestions []string   `json:"open_questions"`
+}
+
+// filterRelevantState выбирает из полного состояния только то,
+// что нужно для текущего шага.
+// maxBytes ограничивает объём, чтобы не переполнить контекстное окно.
+func filterRelevantState(state *AgentState, currentStep string, maxBytes int) *ContextSlice {
+    slice := &ContextSlice{
+        Goal:          state.Goal,
+        CurrentStep:   currentStep,
+        OpenQuestions: state.OpenQuestions,
+    }
+
+    usedBytes := 0
+
+    // Приоритет 1: артефакты текущего шага
+    for _, a := range state.Artifacts {
+        if a.Step == currentStep && usedBytes+a.Bytes <= maxBytes {
+            slice.Artifacts = append(slice.Artifacts, a)
+            usedBytes += a.Bytes
+        }
+    }
+
+    // Приоритет 2: последние факты (свежие данные чаще релевантны)
+    for i := len(state.KnownFacts) - 1; i >= 0; i-- {
+        factSize := len(state.KnownFacts[i].Value)
+        if usedBytes+factSize > maxBytes {
+            break
+        }
+        slice.Facts = append(slice.Facts, state.KnownFacts[i])
+        usedBytes += factSize
+    }
+
+    return slice
+}
+```
+
+### Когда это нужно
+
+Фильтрация становится критичной, когда агент работает дольше 5-10 шагов. На коротких задачах можно обойтись без неё. Подробнее об управлении контекстом — в [Главе 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md).
+
+## Продвинутые стратегии Checkpoint
+
+### Когда сохранять: гранулярность чекпоинтов
+
+Чекпоинт — это снимок состояния, к которому можно вернуться. Частота сохранений — компромисс между надёжностью и производительностью:
+
+| Стратегия | Когда сохраняем | Плюс | Минус |
+|-----------|----------------|------|-------|
+| `every_step` | После каждого tool call | Минимальная потеря прогресса | Много записей в БД |
+| `every_iteration` | После каждой итерации цикла | Баланс надёжности и I/O | Теряем промежуточные шаги |
+| `on_state_change` | Только при смене состояния | Минимум I/O | Теряем прогресс внутри состояния |
+
+### CheckpointManager
+
+```go
+type CheckpointStrategy string
+
+const (
+    CheckpointEveryStep      CheckpointStrategy = "every_step"
+    CheckpointEveryIteration CheckpointStrategy = "every_iteration"
+    CheckpointOnStateChange  CheckpointStrategy = "on_state_change"
+)
+
+type CheckpointManager struct {
+    store    StateStore
+    strategy CheckpointStrategy
+    maxAge   time.Duration // Максимальный возраст чекпоинта
+    maxCount int           // Сколько чекпоинтов хранить на задачу
+}
+
+// MaybeSave сохраняет чекпоинт, если текущий триггер совпадает со стратегией.
+func (cm *CheckpointManager) MaybeSave(
+    ctx context.Context,
+    task *Task,
+    trigger CheckpointStrategy,
+) error {
+    if trigger != cm.strategy {
+        return nil // Не наш триггер — пропускаем
+    }
+    return cm.store.Save(ctx, task)
+}
+```
+
+### Валидация перед возобновлением
+
+Нельзя слепо возобновлять задачу из чекпоинта. Чекпоинт может устареть, а состояние — оказаться некорректным.
+
+```go
+// ValidateAndResume загружает чекпоинт и проверяет его пригодность.
+func (cm *CheckpointManager) ValidateAndResume(ctx context.Context, taskID string) (*Task, error) {
+    task, err := cm.store.Get(ctx, taskID)
+    if err != nil {
+        return nil, fmt.Errorf("load checkpoint: %w", err)
+    }
+    if task == nil {
+        return nil, fmt.Errorf("checkpoint not found: %s", taskID)
+    }
+
+    // Проверка 1: чекпоинт не устарел
+    age := time.Since(task.UpdatedAt)
+    if age > cm.maxAge {
+        return nil, fmt.Errorf("checkpoint expired: age %v exceeds max %v", age, cm.maxAge)
+    }
+
+    // Проверка 2: состояние допускает возобновление
+    switch task.State {
+    case TaskCompleted:
+        return task, nil // Уже завершено, повторное выполнение не нужно
+    case TaskRunning, TaskFailed:
+        return task, nil // Можно возобновить
+    default:
+        return nil, fmt.Errorf("cannot resume from state: %s", task.State)
+    }
+}
+```
+
+### Ротация чекпоинтов
+
+Чекпоинты накапливаются. Без очистки они занимают место и усложняют восстановление. Ротация оставляет только последние N чекпоинтов и удаляет устаревшие.
+
+```go
+// Cleanup удаляет устаревшие чекпоинты, оставляя maxCount последних.
+func (cm *CheckpointManager) Cleanup(ctx context.Context, taskID string) (int64, error) {
+    result, err := cm.store.(*PgStateStore).db.ExecContext(ctx,
+        `DELETE FROM agent_checkpoints
+         WHERE task_id = $1
+           AND created_at < $2
+           AND id NOT IN (
+               SELECT id FROM agent_checkpoints
+               WHERE task_id = $1
+               ORDER BY created_at DESC
+               LIMIT $3
+           )`,
+        taskID, time.Now().Add(-cm.maxAge), cm.maxCount,
+    )
+    if err != nil {
+        return 0, fmt.Errorf("cleanup checkpoints: %w", err)
+    }
+    return result.RowsAffected()
+}
+```
+
+Хорошая практика — запускать ротацию после каждого успешного сохранения или по расписанию.
+
 ## Типовые ошибки
 
 ### Ошибка 1: Нет идемпотентности

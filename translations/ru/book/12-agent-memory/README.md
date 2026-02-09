@@ -197,6 +197,164 @@ func runAgentWithMemory(ctx context.Context, client *openai.Client, memory Memor
 }
 ```
 
+## Checkpoint и Resume
+
+Агент может работать часами над сложной задачей. Если процесс упадёт посередине, потеряется весь прогресс. Checkpoint сохраняет состояние разговора периодически. При сбое агент возобновляет работу с последней сохранённой точки.
+
+### Периодическое сохранение состояния
+
+Checkpoint — это снимок состояния агента в конкретный момент: история сообщений, содержимое памяти, текущий шаг выполнения. Сохраняйте checkpoint после каждого значимого шага (вызов инструмента, ответ пользователю).
+
+```go
+type MemoryCheckpoint struct {
+    RunID     string                `json:"run_id"`
+    Step      int                   `json:"step"`
+    Messages  []Message             `json:"messages"`
+    Memory    map[string]MemoryItem `json:"memory"`
+    ToolState map[string]any        `json:"tool_state"`
+    CreatedAt time.Time             `json:"created_at"`
+}
+
+func saveCheckpoint(ctx context.Context, store CheckpointStore, cp MemoryCheckpoint) error {
+    data, err := json.Marshal(cp)
+    if err != nil {
+        return fmt.Errorf("не удалось сериализовать checkpoint: %w", err)
+    }
+
+    key := fmt.Sprintf("checkpoint:%s:%d", cp.RunID, cp.Step)
+    return store.Set(ctx, key, data, 24*time.Hour) // TTL 24 часа
+}
+
+func loadCheckpoint(ctx context.Context, store CheckpointStore, runID string) (*MemoryCheckpoint, error) {
+    // Ищем последний checkpoint для данного run
+    pattern := fmt.Sprintf("checkpoint:%s:*", runID)
+    keys, err := store.Keys(ctx, pattern)
+    if err != nil {
+        return nil, err
+    }
+
+    if len(keys) == 0 {
+        return nil, nil // Нет checkpoint — начинаем с нуля
+    }
+
+    // Берём последний по номеру шага
+    sort.Strings(keys)
+    lastKey := keys[len(keys)-1]
+
+    data, err := store.Get(ctx, lastKey)
+    if err != nil {
+        return nil, err
+    }
+
+    var cp MemoryCheckpoint
+    if err := json.Unmarshal(data, &cp); err != nil {
+        return nil, fmt.Errorf("не удалось десериализовать checkpoint: %w", err)
+    }
+
+    return &cp, nil
+}
+```
+
+### Resume после сбоя
+
+При запуске агент проверяет наличие checkpoint. Если он есть, восстанавливает состояние и продолжает с прерванного шага:
+
+```go
+func runAgentWithCheckpoints(ctx context.Context, client *openai.Client, store CheckpointStore, runID, input string) (string, error) {
+    // Пытаемся восстановиться из checkpoint
+    cp, err := loadCheckpoint(ctx, store, runID)
+    if err != nil {
+        return "", fmt.Errorf("ошибка загрузки checkpoint: %w", err)
+    }
+
+    var messages []Message
+    step := 0
+
+    if cp != nil {
+        // Восстанавливаем состояние из checkpoint
+        messages = cp.Messages
+        step = cp.Step
+        log.Printf("Восстановлены из checkpoint: run=%s, step=%d", runID, step)
+    } else {
+        // Начинаем с нуля
+        messages = []Message{
+            {Role: "system", Content: "Ты полезный ассистент."},
+            {Role: "user", Content: input},
+        }
+    }
+
+    // Продолжаем agent loop
+    for {
+        step++
+        resp, err := callLLM(ctx, client, messages)
+        if err != nil {
+            return "", err
+        }
+
+        messages = append(messages, resp)
+
+        // Сохраняем checkpoint после каждого шага
+        if err := saveCheckpoint(ctx, store, MemoryCheckpoint{
+            RunID:     runID,
+            Step:      step,
+            Messages:  messages,
+            CreatedAt: time.Now(),
+        }); err != nil {
+            log.Printf("Не удалось сохранить checkpoint: %v", err)
+        }
+
+        if resp.ToolCalls == nil {
+            return resp.Content, nil
+        }
+
+        // Выполняем инструменты...
+    }
+}
+```
+
+### Shared Memory между агентами
+
+В мульти-агентных системах агенты обмениваются информацией через общее хранилище памяти. Каждый агент читает и пишет в общий store, разграничивая данные по namespace:
+
+```go
+type SharedMemoryStore struct {
+    store CheckpointStore
+}
+
+// Запись с namespace агента
+func (s *SharedMemoryStore) Put(ctx context.Context, agentID, key string, value any) error {
+    fullKey := fmt.Sprintf("shared:%s:%s", agentID, key)
+    data, _ := json.Marshal(value)
+    return s.store.Set(ctx, fullKey, data, 0)
+}
+
+// Чтение данных другого агента
+func (s *SharedMemoryStore) Get(ctx context.Context, agentID, key string) (any, error) {
+    fullKey := fmt.Sprintf("shared:%s:%s", agentID, key)
+    data, err := s.store.Get(ctx, fullKey)
+    if err != nil {
+        return nil, err
+    }
+    var result any
+    return result, json.Unmarshal(data, &result)
+}
+
+// Получить все записи всех агентов (для supervisor)
+func (s *SharedMemoryStore) ListAll(ctx context.Context) (map[string]any, error) {
+    keys, _ := s.store.Keys(ctx, "shared:*")
+    result := make(map[string]any)
+    for _, key := range keys {
+        val, _ := s.store.Get(ctx, key)
+        var parsed any
+        json.Unmarshal(val, &parsed)
+        result[key] = parsed
+    }
+    return result, nil
+}
+```
+
+> **Связь:** Подробнее об управлении состоянием агента — в [Главе 11: State Management](../11-state-management/README.md). Checkpoint — это частный случай персистенции состояния.
+
 ## Типовые ошибки
 
 ### Ошибка 1: Нет TTL (Time To Live)

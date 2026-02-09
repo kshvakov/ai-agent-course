@@ -830,6 +830,145 @@ if !json.Valid([]byte(call.Function.Arguments)) {
 
 Ключевое правило: repair-шаг **не меняет намерение**, он чинит формат под схему.
 
+## Стратегия выбора модели для разных этапов
+
+### Зачем нужны разные модели?
+
+В примерах выше мы использовали одну модель (`GPT3Dot5Turbo`) для всех этапов: и для выбора инструмента, и для анализа результатов. В учебном примере это нормально. В продакшене — нет.
+
+Разные этапы работы агента требуют разных способностей:
+
+| Этап | Что делает модель | Нужная способность | Подходящая модель |
+|------|-------------------|-------------------|-------------------|
+| Tool Selection | Сопоставляет запрос с описаниями инструментов | Следование инструкциям, structured output | Быстрая и дешёвая (GPT-4o-mini, Claude Haiku) |
+| Argument Generation | Заполняет JSON Schema аргументов | JSON generation, следование схеме | Быстрая и дешёвая |
+| Result Analysis | Анализирует результат инструмента, формулирует ответ | Рассуждение, синтез информации | Мощная (GPT-4o, Claude Sonnet) |
+| Complex Planning | Решает, какие инструменты вызвать и в каком порядке | Планирование, multi-step reasoning | Мощная |
+
+**Суть:** Tool selection — это простая задача классификации. Анализ результатов — это задача рассуждения. Платить за GPT-4o на этапе "выбрать ping из трёх инструментов" — расточительство.
+
+### Как это работает — Магия vs Реальность
+
+**Магия (как обычно объясняют):**
+> "Используйте лучшую модель для всего. Она справится."
+
+**Реальность (как на самом деле):**
+
+Агент делает 5-15 вызовов LLM за одну задачу. Если каждый вызов стоит $0.01 (GPT-4o) вместо $0.0002 (GPT-4o-mini), разница — 50x за задачу. При 10 000 задач в день это $1 000 vs $20.
+
+Практика: используем дешёвую модель там, где задача простая, мощную — где нужно думать.
+
+### Реализация: ModelRouter
+
+```go
+// ModelSelector выбирает модель в зависимости от этапа работы агента.
+type ModelSelector struct {
+    ToolCallModel   string // Модель для выбора инструмента и генерации аргументов
+    AnalysisModel   string // Модель для анализа результатов и финального ответа
+    ComplexModel    string // Модель для сложных задач (планирование, multi-tool)
+}
+
+func NewModelSelector() *ModelSelector {
+    return &ModelSelector{
+        ToolCallModel: "gpt-4o-mini",      // Быстрая, дешёвая, хорошо следует инструкциям
+        AnalysisModel: "gpt-4o",            // Мощная, хорошо рассуждает
+        ComplexModel:  "gpt-4o",            // Для сложного планирования
+    }
+}
+
+// SelectModel определяет, какую модель использовать на текущей итерации.
+// needsToolCall: ожидаем ли мы вызов инструмента на этом шаге.
+// toolCount: сколько инструментов доступно (влияет на сложность выбора).
+func (ms *ModelSelector) SelectModel(needsToolCall bool, toolCount int) string {
+    if !needsToolCall {
+        // Этап анализа результатов — нужна мощная модель
+        return ms.AnalysisModel
+    }
+    if toolCount > 20 {
+        // Много инструментов — сложный выбор, нужна мощная модель
+        return ms.ComplexModel
+    }
+    // Обычный tool call — хватит дешёвой модели
+    return ms.ToolCallModel
+}
+```
+
+### Как определить этап?
+
+Runtime знает, на каком этапе находится агент. Правило простое:
+
+```go
+func isToolCallExpected(messages []openai.ChatCompletionMessage) bool {
+    if len(messages) == 0 {
+        return true // Первый вызов — скорее всего нужен tool call
+    }
+    lastMsg := messages[len(messages)-1]
+
+    // Если последнее сообщение — результат инструмента,
+    // модель будет анализировать результат.
+    // Но она МОЖЕТ вызвать ещё один инструмент.
+    if lastMsg.Role == openai.ChatMessageRoleTool {
+        return true // Может быть и tool call, и финальный ответ
+    }
+    return true
+}
+```
+
+**Важный нюанс:** На практике мы не всегда знаем заранее, вызовет ли модель инструмент или ответит текстом. Поэтому часто используют более простую стратегию — **переключение после N tool calls**:
+
+```go
+// Простая стратегия: первые N итераций — дешёвая модель,
+// финальная итерация (когда tool calls закончились) — мощная.
+func (ms *ModelSelector) SelectByIteration(iteration int, lastResponseHadToolCalls bool) string {
+    if lastResponseHadToolCalls {
+        // Ещё выполняем инструменты — дешёвая модель
+        return ms.ToolCallModel
+    }
+    // Инструменты закончились — переключаемся на мощную для финального ответа
+    return ms.AnalysisModel
+}
+```
+
+### Использование в Agent Loop
+
+```go
+selector := NewModelSelector()
+lastHadToolCalls := true // Первая итерация — ожидаем tool call
+
+for i := 0; i < maxIterations; i++ {
+    model := selector.SelectByIteration(i, lastHadToolCalls)
+
+    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+        Model:    model,  // Разная модель на разных этапах!
+        Messages: messages,
+        Tools:    tools,
+    })
+    if err != nil {
+        return fmt.Errorf("LLM call failed: %w", err)
+    }
+
+    msg := resp.Choices[0].Message
+    messages = append(messages, msg)
+    lastHadToolCalls = len(msg.ToolCalls) > 0
+
+    if !lastHadToolCalls {
+        fmt.Printf("[model=%s] Final: %s\n", model, msg.Content)
+        break
+    }
+
+    fmt.Printf("[model=%s] Tool calls: %d\n", model, len(msg.ToolCalls))
+    // ... выполнение инструментов ...
+}
+```
+
+### Когда НЕ нужны разные модели
+
+- **Прототип / MVP:** Одна модель проще. Оптимизируйте потом.
+- **Мало вызовов:** Если агент делает 1-2 вызова в день — экономия не оправдает сложность.
+- **Критичная согласованность:** Некоторые задачи требуют, чтобы одна модель "помнила" свои рассуждения между итерациями. Смена модели может нарушить цепочку рассуждений.
+
+Подробнее о стоимости и оптимизации см. [Главу 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md).
+
 ## Типовые ошибки
 
 ### Ошибка 1: Модель не генерирует tool_call

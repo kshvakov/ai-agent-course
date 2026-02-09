@@ -424,6 +424,342 @@ func main() {
 }
 ```
 
+## Multi-model в одном Agent Run
+
+В [Шаге 4](#шаг-4-маршрутизация-моделей-по-сложности) мы выбирали модель один раз на весь запрос: простая задача — дешёвая модель, сложная — дорогая. Но внутри одного agent run разные **стадии** требуют разного уровня интеллекта.
+
+Подумайте: чтобы выбрать инструмент из списка, модели не нужно глубокое понимание задачи. Это как выбор отвёртки из ящика — механическое действие. А вот чтобы проанализировать результат инструмента и сформулировать ответ — нужно думать.
+
+### Три стадии итерации
+
+Каждая итерация цикла агента (см. [Глава 04: Автономность и Циклы](../04-autonomy-and-loops/README.md)) состоит из трёх стадий:
+
+| Стадия | Что происходит | Нужна мощная модель? | Пример модели |
+|--------|---------------|---------------------|---------------|
+| 1. Выбор инструмента | LLM решает, какой tool вызвать | Нет — список tools фиксирован | GPT-4o-mini (~$0.15/1M input) |
+| 2. Анализ результата | LLM интерпретирует ответ инструмента | Да — нужно понимание контекста | GPT-4o (~$2.50/1M input) |
+| 3. Финальный ответ | LLM формулирует ответ пользователю | Да — качество ответа критично | GPT-4o (~$2.50/1M input) |
+
+### Экономика: считаем конкретно
+
+Допустим, агент выполняет задачу за 8 итераций. Каждый вызов LLM использует ~2000 токенов.
+
+**Одна модель на все стадии (GPT-4o):**
+- 8 итераций × 2 вызова (tool selection + analysis) = 16 вызовов
+- 16 × ~$0.01 = **~$0.16 за задачу**
+
+**Multi-model подход:**
+- 8 вызовов tool selection × ~$0.0002 (GPT-4o-mini) = $0.0016
+- 7 вызовов анализа результатов × ~$0.01 (GPT-4o) = $0.07
+- 1 финальный ответ × ~$0.01 (GPT-4o) = $0.01
+- Итого: **~$0.08 за задачу**
+
+Экономия ~50% без потери качества. На 10,000 запросов в месяц это разница между $1,600 и $800.
+
+### Реализация: ModelRouter
+
+```go
+// Stage определяет стадию итерации агента
+type Stage int
+
+const (
+    StageToolSelection Stage = iota // Выбор инструмента
+    StageResultAnalysis             // Анализ результата инструмента
+    StageFinalAnswer                // Генерация финального ответа
+)
+
+// ModelRouter выбирает модель в зависимости от стадии итерации.
+// Дешёвая модель справляется с выбором tool из фиксированного списка,
+// мощная модель нужна для анализа и генерации ответа.
+type ModelRouter struct {
+    CheapModel    string // Для механических решений (tool selection)
+    PowerfulModel string // Для анализа и генерации ответа
+}
+
+func NewModelRouter() *ModelRouter {
+    return &ModelRouter{
+        CheapModel:    "gpt-4o-mini",
+        PowerfulModel: "gpt-4o",
+    }
+}
+
+func (r *ModelRouter) SelectModel(stage Stage) string {
+    switch stage {
+    case StageToolSelection:
+        return r.CheapModel
+    case StageResultAnalysis, StageFinalAnswer:
+        return r.PowerfulModel
+    default:
+        return r.PowerfulModel
+    }
+}
+```
+
+Интеграция в agent loop:
+
+```go
+func runAgentMultiModel(ctx context.Context, client *openai.Client, messages []openai.ChatCompletionMessage, tools []openai.Tool) (string, error) {
+    router := NewModelRouter()
+
+    for i := 0; i < MaxIterations; i++ {
+        // Стадия 1: выбор инструмента — дешёвая модель
+        req := openai.ChatCompletionRequest{
+            Model:    router.SelectModel(StageToolSelection),
+            Messages: messages,
+            Tools:    tools,
+        }
+        resp, err := client.CreateChatCompletion(ctx, req)
+        if err != nil {
+            return "", err
+        }
+
+        msg := resp.Choices[0].Message
+        messages = append(messages, msg)
+
+        // Если tool calls нет — это финальный ответ,
+        // но он сгенерирован дешёвой моделью. Перегенерируем мощной.
+        if len(msg.ToolCalls) == 0 {
+            return regenerateWithPowerfulModel(ctx, client, router, messages)
+        }
+
+        // Выполняем инструменты
+        toolResults := executeTools(msg.ToolCalls)
+        messages = append(messages, toolResults...)
+
+        // Стадия 2: анализ результата — мощная модель
+        // Следующая итерация цикла решит: нужен ещё tool call или финальный ответ.
+        // Если нужен ещё tool call, мы снова переключимся на дешёвую модель.
+    }
+
+    return "", fmt.Errorf("max iterations exceeded")
+}
+
+// regenerateWithPowerfulModel перегенерирует финальный ответ мощной моделью.
+// Дешёвая модель хорошо выбирает tools, но финальный ответ
+// должен быть качественным.
+func regenerateWithPowerfulModel(ctx context.Context, client *openai.Client, router *ModelRouter, messages []openai.ChatCompletionMessage) (string, error) {
+    // Убираем последний ответ дешёвой модели
+    messages = messages[:len(messages)-1]
+
+    req := openai.ChatCompletionRequest{
+        Model:    router.SelectModel(StageFinalAnswer),
+        Messages: messages,
+        // Без tools — просим только текстовый ответ
+    }
+    resp, err := client.CreateChatCompletion(ctx, req)
+    if err != nil {
+        return "", err
+    }
+    return resp.Choices[0].Message.Content, nil
+}
+```
+
+> **Связь с другими главами:** Механизм Function Calling, который мы используем на стадии tool selection, описан в [Главе 03: Инструменты и Function Calling](../03-tools-and-function-calling/README.md). Сам цикл агента — в [Главе 04: Автономность и Циклы](../04-autonomy-and-loops/README.md).
+
+## Streaming для снижения Perceived Latency
+
+Latency бывает двух видов:
+- **Фактическая** — время от запроса до последнего токена ответа
+- **Воспринимаемая (perceived)** — время, которое пользователь *ощущает* как ожидание
+
+Streaming не ускоряет генерацию. Модель тратит столько же времени на весь ответ. Но пользователь видит первые слова через 200-500 мс вместо того, чтобы ждать 5-10 секунд до появления полного ответа. Это принципиально меняет UX.
+
+### Как работает streaming
+
+Без streaming: запрос → ожидание 5 секунд → весь ответ целиком.
+
+Со streaming: запрос → 200 мс → первый токен → токены появляются по одному → ответ готов.
+
+Технически это Server-Sent Events (SSE) — HTTP-соединение остаётся открытым, сервер отправляет данные по мере готовности.
+
+### Streaming в agent loop
+
+```go
+func streamAgentResponse(ctx context.Context, client *openai.Client, messages []openai.ChatCompletionMessage) error {
+    req := openai.ChatCompletionRequest{
+        Model:    "gpt-4o",
+        Messages: messages,
+        Stream:   true, // Включаем streaming
+    }
+
+    stream, err := client.CreateChatCompletionStream(ctx, req)
+    if err != nil {
+        return fmt.Errorf("stream error: %w", err)
+    }
+    defer stream.Close()
+
+    for {
+        chunk, err := stream.Recv()
+        if errors.Is(err, io.EOF) {
+            fmt.Println() // Перевод строки после ответа
+            return nil
+        }
+        if err != nil {
+            return fmt.Errorf("stream recv error: %w", err)
+        }
+
+        // Каждый chunk содержит один или несколько токенов
+        if len(chunk.Choices) > 0 {
+            token := chunk.Choices[0].Delta.Content
+            fmt.Print(token) // Выводим токен сразу, без буферизации
+        }
+    }
+}
+```
+
+### Streaming через SSE для веб-клиентов
+
+Если агент работает как HTTP-сервер, streaming передаётся клиенту через SSE:
+
+```go
+func handleStream(w http.ResponseWriter, r *http.Request) {
+    // Проверяем поддержку streaming
+    flusher, ok := w.(http.Flusher)
+    if !ok {
+        http.Error(w, "streaming not supported", http.StatusInternalServerError)
+        return
+    }
+
+    w.Header().Set("Content-Type", "text/event-stream")
+    w.Header().Set("Cache-Control", "no-cache")
+    w.Header().Set("Connection", "keep-alive")
+
+    ctx := r.Context()
+    stream, err := client.CreateChatCompletionStream(ctx, req)
+    if err != nil {
+        return
+    }
+    defer stream.Close()
+
+    for {
+        chunk, err := stream.Recv()
+        if errors.Is(err, io.EOF) {
+            fmt.Fprintf(w, "data: [DONE]\n\n")
+            flusher.Flush()
+            return
+        }
+        if err != nil {
+            return
+        }
+
+        if len(chunk.Choices) > 0 {
+            token := chunk.Choices[0].Delta.Content
+            // SSE формат: "data: ...\n\n"
+            fmt.Fprintf(w, "data: %s\n\n", token)
+            flusher.Flush() // Отправляем сразу, без буферизации
+        }
+    }
+}
+```
+
+### Когда streaming не помогает
+
+Streaming снижает perceived latency только для финального ответа пользователю. Промежуточные вызовы LLM (выбор инструмента, анализ результатов) не нужно стримить — пользователь их не видит. Для промежуточных вызовов важна фактическая latency. Её снижают выбором быстрой модели и оптимизацией контекста.
+
+## Параллельное выполнение Tool Calls
+
+LLM может вернуть несколько tool calls за одну итерацию (см. [Глава 03: Инструменты и Function Calling](../03-tools-and-function-calling/README.md)). Если инструменты независимы друг от друга, их можно выполнить параллельно.
+
+Параллельное выполнение **не экономит токены** — LLM всё равно сгенерировал все tool calls за один запрос. Но оно **сокращает wall-clock time** — время от начала до конца итерации.
+
+### Когда безопасно параллелить
+
+| Безопасно | Небезопасно |
+|-----------|-------------|
+| `check_disk` + `check_memory` — читают разные ресурсы | `create_file` → `write_to_file` — второй зависит от первого |
+| `get_logs("app-1")` + `get_logs("app-2")` — разные серверы | `stop_service` → `deploy` → `start_service` — строгий порядок |
+| `dns_lookup` + `ping` — независимые проверки | `read_config` → `apply_config` — сначала прочитать, потом применить |
+
+Правило: если результат одного инструмента нужен как вход для другого — выполнять последовательно. Если нет — параллельно.
+
+### Реализация: executeToolsParallel
+
+```go
+// ToolResult хранит результат выполнения одного инструмента
+type ToolResult struct {
+    ToolCallID string
+    Content    string
+    Err        error
+}
+
+// executeToolsParallel запускает все tool calls одновременно.
+// Каждый инструмент выполняется в отдельной горутине.
+func executeToolsParallel(ctx context.Context, toolCalls []openai.ToolCall) []openai.ChatCompletionMessage {
+    results := make([]ToolResult, len(toolCalls))
+
+    var wg sync.WaitGroup
+    for i, tc := range toolCalls {
+        wg.Add(1)
+        go func(idx int, call openai.ToolCall) {
+            defer wg.Done()
+
+            // Таймаут на каждый инструмент отдельно
+            toolCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+            defer cancel()
+
+            content, err := executeTool(toolCtx, call.Function.Name, call.Function.Arguments)
+            results[idx] = ToolResult{
+                ToolCallID: call.ID,
+                Content:    content,
+                Err:        err,
+            }
+        }(i, tc)
+    }
+    wg.Wait()
+
+    // Собираем результаты в формате messages
+    var messages []openai.ChatCompletionMessage
+    for _, r := range results {
+        content := r.Content
+        if r.Err != nil {
+            content = fmt.Sprintf("error: %v", r.Err)
+        }
+        messages = append(messages, openai.ChatCompletionMessage{
+            Role:       openai.ChatMessageRoleTool,
+            Content:    content,
+            ToolCallID: r.ToolCallID,
+        })
+    }
+    return messages
+}
+```
+
+Интеграция в agent loop — заменяем последовательное выполнение на параллельное:
+
+```go
+for i := 0; i < MaxIterations; i++ {
+    resp, err := client.CreateChatCompletion(ctx, req)
+    if err != nil {
+        return "", err
+    }
+
+    msg := resp.Choices[0].Message
+    messages = append(messages, msg)
+
+    if len(msg.ToolCalls) == 0 {
+        return msg.Content, nil
+    }
+
+    // Было: последовательное выполнение
+    // for _, tc := range msg.ToolCalls { ... }
+
+    // Стало: параллельное выполнение
+    toolMessages := executeToolsParallel(ctx, msg.ToolCalls)
+    messages = append(messages, toolMessages...)
+}
+```
+
+### Сколько экономим по времени
+
+Допустим, агент вызвал 3 инструмента за одну итерацию. Каждый инструмент выполняется ~2 секунды.
+
+- **Последовательно:** 2 + 2 + 2 = 6 секунд
+- **Параллельно:** max(2, 2, 2) = 2 секунды
+
+На 8 итерациях с 2-3 tool calls каждая — это разница между 48 секундами и 16 секундами. Пользователь ждёт в 3 раза меньше.
+
+> **Связь с Главой 04:** В [Главе 04: Автономность и Циклы](../04-autonomy-and-loops/README.md) tool calls выполняются последовательно. Параллельное выполнение — естественная оптимизация, когда агент стабильно работает и вы начинаете оптимизировать latency.
+
 ## Типовые ошибки
 
 ### Ошибка 1: Нет лимитов на токены

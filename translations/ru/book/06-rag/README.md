@@ -216,6 +216,366 @@ messages = append(messages, openai.ChatCompletionMessage{
 Чанк 3: "Шаг 3: Перезагрузить сервер..."
 ```
 
+## Продвинутые техники RAG
+
+Базовый RAG работает так: запрос пользователя → поиск → найденные документы → ответ. Но на практике этого недостаточно. Запрос может быть нечётким, поиск — неточным, а результаты — нерелевантными.
+
+Рассмотрим техники, которые решают эти проблемы.
+
+### Эволюция RAG
+
+```
+Basic RAG          Advanced RAG           Agentic RAG
+┌──────────┐       ┌──────────────┐       ┌─────────────────┐
+│ Query    │       │ Query        │       │ Agent решает:   │
+│   ↓      │       │   ↓          │       │ - Искать или нет│
+│ Search   │       │ Transform    │       │ - Где искать    │
+│   ↓      │       │   ↓          │       │ - Достаточно ли │
+│ Retrieve │       │ Route        │       │ - Искать ещё    │
+│   ↓      │       │   ↓          │       │   ↓             │
+│ Generate │       │ Hybrid Search│       │ Итеративный     │
+│          │       │   ↓          │       │ поиск в цикле   │
+│          │       │ Rerank       │       │                 │
+│          │       │   ↓          │       │                 │
+│          │       │ Generate     │       │                 │
+└──────────┘       └──────────────┘       └─────────────────┘
+```
+
+### Query Transformation (Трансформация запроса)
+
+**Проблема:** Пользователь пишет "сервер лежит". Поиск по этому запросу не найдёт документ "Процедура восстановления после отказа сервера".
+
+**Решение:** Перед поиском трансформируем запрос — переформулируем, расширяем или разбиваем на под-запросы.
+
+**Техника 1: Переформулировка (Query Rewriting)**
+
+```go
+// Инструмент для переформулировки запроса перед поиском
+func rewriteQuery(originalQuery string, client *openai.Client) (string, error) {
+    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+        Model: "gpt-4o-mini", // Дешёвая модель — задача простая
+        Messages: []openai.ChatCompletionMessage{
+            {
+                Role: openai.ChatMessageRoleSystem,
+                Content: `Rewrite the user query to be more specific for document search.
+Return ONLY the rewritten query, nothing else.
+Examples:
+- "сервер лежит" → "процедура восстановления сервера после отказа"
+- "медленно работает БД" → "диагностика производительности PostgreSQL высокая latency"`,
+            },
+            {Role: openai.ChatMessageRoleUser, Content: originalQuery},
+        },
+        Temperature: 0,
+    })
+    if err != nil {
+        return originalQuery, err // Fallback на оригинал
+    }
+    return resp.Choices[0].Message.Content, nil
+}
+```
+
+**Техника 2: Декомпозиция на под-запросы (Sub-Query Decomposition)**
+
+Сложный запрос разбивается на несколько простых. Результаты объединяются.
+
+```go
+// "Сравни настройки nginx на prod и staging" разбивается на:
+// 1. "настройки nginx production"
+// 2. "настройки nginx staging"
+subQueries := decomposeQuery(userQuery)
+var allResults []SearchResult
+for _, sq := range subQueries {
+    results := searchKnowledgeBase(sq)
+    allResults = append(allResults, results...)
+}
+```
+
+**Техника 3: HyDE (Hypothetical Document Embeddings)**
+
+Вместо поиска по запросу, просим модель сгенерировать **гипотетический ответ**. Затем ищем документы, похожие на этот ответ.
+
+```go
+// Шаг 1: Модель генерирует гипотетический документ
+hypothetical := generateHypotheticalAnswer(query)
+// query: "как настроить SSL"
+// hypothetical: "Для настройки SSL на nginx: 1. Получите сертификат... 2. Добавьте в конфиг..."
+
+// Шаг 2: Ищем документы, похожие на гипотетический ответ
+embedding := embedText(hypothetical)
+results := vectorDB.Search(embedding, topK=5)
+// Находит реальные документы о настройке SSL, даже если они написаны другими словами
+```
+
+**Зачем это нужно:** Embedding гипотетического документа ближе к embedding реального документа, чем embedding короткого запроса.
+
+### Routing (Маршрутизация запросов)
+
+**Проблема:** У вас несколько источников данных: вики, SQL-база, API мониторинга. Запрос "время отклика сервера за последний час" не найдётся в вики — нужно идти в базу метрик.
+
+**Решение:** Классифицируем запрос и направляем в нужный источник.
+
+```go
+type QueryRoute struct {
+    Source   string // "wiki", "sql", "metrics_api", "vector_db"
+    Query    string // Оригинальный или трансформированный запрос
+    Reason   string // Почему этот источник
+}
+
+func routeQuery(query string, client *openai.Client) (QueryRoute, error) {
+    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+        Model: "gpt-4o-mini",
+        Messages: []openai.ChatCompletionMessage{
+            {
+                Role: openai.ChatMessageRoleSystem,
+                Content: `Classify the query and route to the correct data source.
+Available sources:
+- "wiki": documentation, procedures, runbooks
+- "sql": structured data, tables, historical records
+- "metrics_api": real-time metrics, monitoring data
+- "vector_db": semantic search in knowledge base
+
+Return JSON: {"source": "...", "query": "...", "reason": "..."}`,
+            },
+            {Role: openai.ChatMessageRoleUser, Content: query},
+        },
+        Temperature: 0,
+    })
+    if err != nil {
+        return QueryRoute{Source: "vector_db", Query: query}, err
+    }
+
+    var route QueryRoute
+    json.Unmarshal([]byte(resp.Choices[0].Message.Content), &route)
+    return route, nil
+}
+
+// Использование:
+route, _ := routeQuery("время отклика сервера за последний час")
+// route.Source = "metrics_api"
+// route.Reason = "запрос о real-time метриках"
+```
+
+### Hybrid Search (Гибридный поиск)
+
+**Проблема:** Векторный поиск хорошо ищет по смыслу, но плохо по точным терминам. Keyword-поиск — наоборот. Запрос "ошибка ORA-12154" нужно искать и по ключевому слову "ORA-12154", и по смыслу "ошибка подключения к Oracle".
+
+**Решение:** Комбинируем оба подхода и объединяем результаты.
+
+```go
+type SearchResult struct {
+    ChunkID string
+    Text    string
+    Score   float64
+}
+
+func hybridSearch(query string, topK int) []SearchResult {
+    // 1. Keyword search (BM25)
+    keywordResults := bm25Search(query, topK)
+
+    // 2. Vector search (Semantic)
+    embedding := embedQuery(query)
+    vectorResults := vectorDB.Search(embedding, topK)
+
+    // 3. Reciprocal Rank Fusion (RRF) — объединение результатов
+    return reciprocalRankFusion(keywordResults, vectorResults, topK)
+}
+
+// RRF: комбинирует ранги из разных списков
+func reciprocalRankFusion(lists ...[]SearchResult) []SearchResult {
+    scores := make(map[string]float64) // chunkID → combined score
+    k := 60.0 // Константа RRF (стандартное значение)
+
+    for _, list := range lists {
+        for rank, result := range list {
+            scores[result.ChunkID] += 1.0 / (k + float64(rank+1))
+        }
+    }
+
+    // Сортируем по combined score (убывание)
+    // ... сортировка и возврат top-K ...
+}
+```
+
+**Когда что работает лучше:**
+
+| Тип запроса | Keyword | Vector | Hybrid |
+|-------------|---------|--------|--------|
+| "ORA-12154" | Отлично | Плохо | Отлично |
+| "не могу подключиться к базе" | Плохо | Отлично | Отлично |
+| "ORA-12154 не подключается" | Средне | Средне | Отлично |
+
+### Reranking (Переранжирование)
+
+**Проблема:** Поиск вернул 20 результатов. Не все одинаково релевантны. Передавать все 20 в контекст — расход токенов.
+
+**Решение:** После первичного поиска переранжируем результаты с помощью более точной (но медленной) модели.
+
+```go
+func rerankResults(query string, results []SearchResult, topK int) []SearchResult {
+    // Используем LLM для оценки релевантности каждого результата
+    type scored struct {
+        Result SearchResult
+        Score  float64
+    }
+    var scored []scored
+
+    for _, r := range results {
+        score := scoreRelevance(query, r.Text) // cross-encoder или LLM
+        scored = append(scored, scored{Result: r, Score: score})
+    }
+
+    // Сортируем по score (убывание)
+    sort.Slice(scored, func(i, j int) bool {
+        return scored[i].Score > scored[j].Score
+    })
+
+    // Возвращаем top-K
+    result := make([]SearchResult, 0, topK)
+    for i := 0; i < topK && i < len(scored); i++ {
+        result = append(result, scored[i].Result)
+    }
+    return result
+}
+```
+
+**Двухэтапный пайплайн:** Быстрый поиск (BM25/vector, top-100) → Точный reranking (cross-encoder, top-5).
+
+### Self-RAG (Самооценка качества)
+
+**Проблема:** Агент нашёл документы, но они могут быть нерелевантными, устаревшими или неполными. Базовый RAG этого не замечает.
+
+**Решение:** Модель сама оценивает качество найденных документов и решает: ответить, уточнить запрос или искать ещё.
+
+```go
+type RetrievalAssessment struct {
+    IsRelevant  bool   `json:"is_relevant"`  // Документы релевантны запросу?
+    IsSufficient bool  `json:"is_sufficient"` // Достаточно информации для ответа?
+    Action      string `json:"action"`        // "answer", "refine_query", "search_more"
+    RefinedQuery string `json:"refined_query,omitempty"` // Уточнённый запрос (если нужно)
+}
+
+func assessRetrieval(query string, docs []SearchResult, client *openai.Client) (RetrievalAssessment, error) {
+    docsText := formatDocs(docs)
+    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+        Model: "gpt-4o-mini",
+        Messages: []openai.ChatCompletionMessage{
+            {
+                Role: openai.ChatMessageRoleSystem,
+                Content: `Assess if the retrieved documents are relevant and sufficient to answer the query.
+Return JSON: {"is_relevant": bool, "is_sufficient": bool, "action": "answer"|"refine_query"|"search_more", "refined_query": "..."}`,
+            },
+            {
+                Role: openai.ChatMessageRoleUser,
+                Content: fmt.Sprintf("Query: %s\n\nRetrieved documents:\n%s", query, docsText),
+            },
+        },
+        Temperature: 0,
+    })
+    if err != nil {
+        return RetrievalAssessment{IsRelevant: true, IsSufficient: true, Action: "answer"}, err
+    }
+
+    var assessment RetrievalAssessment
+    json.Unmarshal([]byte(resp.Choices[0].Message.Content), &assessment)
+    return assessment, nil
+}
+```
+
+**Self-RAG в цикле:**
+
+```go
+func selfRAG(query string, maxAttempts int) ([]SearchResult, error) {
+    currentQuery := query
+
+    for attempt := 0; attempt < maxAttempts; attempt++ {
+        docs := hybridSearch(currentQuery, 10)
+        assessment, _ := assessRetrieval(currentQuery, docs)
+
+        switch assessment.Action {
+        case "answer":
+            return docs, nil // Документы достаточны — отвечаем
+        case "refine_query":
+            currentQuery = assessment.RefinedQuery // Уточняем запрос
+        case "search_more":
+            // Расширяем поиск (больше top-K или другой источник)
+            moreDocs := hybridSearch(currentQuery, 20)
+            docs = append(docs, moreDocs...)
+            return docs, nil
+        }
+    }
+    return nil, fmt.Errorf("could not find sufficient documents after %d attempts", maxAttempts)
+}
+```
+
+### Agentic RAG (RAG как инструмент агента)
+
+**Проблема:** Self-RAG оценивает качество поиска, но не может принимать сложные решения: какой источник использовать, нужно ли комбинировать информацию из нескольких документов, или решить задачу multi-hop (ответ требует цепочки поисков).
+
+**Решение:** RAG встраивается в Agent Loop. Агент сам решает, когда искать, где искать и достаточно ли информации.
+
+```go
+// Agentic RAG: RAG — это просто инструменты агента
+tools := []openai.Tool{
+    // Инструмент 1: Поиск в документации
+    {
+        Function: &openai.FunctionDefinition{
+            Name:        "search_docs",
+            Description: "Search documentation and runbooks. Use when you need procedures or technical details.",
+            Parameters:  searchParamsSchema,
+        },
+    },
+    // Инструмент 2: SQL-запрос к базе метрик
+    {
+        Function: &openai.FunctionDefinition{
+            Name:        "query_metrics",
+            Description: "Query metrics database. Use when you need historical data or statistics.",
+            Parameters:  sqlParamsSchema,
+        },
+    },
+    // Инструмент 3: Поиск похожих инцидентов
+    {
+        Function: &openai.FunctionDefinition{
+            Name:        "search_incidents",
+            Description: "Search past incidents for similar issues and their resolutions.",
+            Parameters:  searchParamsSchema,
+        },
+    },
+}
+
+// Агент сам решает:
+// Итерация 1: search_docs("nginx 502 error troubleshooting")
+// Итерация 2: query_metrics("SELECT avg(latency) FROM requests WHERE status=502 AND time > now()-1h")
+// Итерация 3: search_incidents("nginx 502 upstream timeout")
+// Итерация 4: Финальный ответ с объединением информации из всех источников
+```
+
+**Multi-hop RAG (цепочка поисков):**
+
+```
+Запрос: "Почему вчера упал сервис payments?"
+
+Шаг 1: search_incidents("payments service outage yesterday")
+       → "Инцидент INC-4521: payments упал из-за таймаута к БД"
+
+Шаг 2: search_docs("payments database connection configuration")
+       → "Payments использует PostgreSQL на db-prod-03, connection pool = 20"
+
+Шаг 3: query_metrics("SELECT connections FROM pg_stat WHERE time = yesterday")
+       → "Пик подключений: 150 (при лимите 100)"
+
+Шаг 4: Финальный ответ: "Payments упал из-за исчерпания connection pool.
+        Пик — 150 подключений при лимите 100. Рекомендация: увеличить pool до 200."
+```
+
+**Разница между подходами:**
+
+| Подход | Кто принимает решения | Где логика |
+|--------|----------------------|-----------|
+| Basic RAG | Жёсткий pipeline | Код (hardcoded) |
+| Advanced RAG | Pipeline с ветвлениями | Код + конфиг |
+| Self-RAG | Модель оценивает качество | Модель (assessment) |
+| Agentic RAG | Агент управляет всем | Agent Loop |
+
 ## RAG для пространства действий (Tool Retrieval)
 
 До сих пор мы говорили о RAG для **документов** (регламенты, инструкции). Но RAG нужен и для **пространства действий** — когда у агента потенциально бесконечное количество инструментов.

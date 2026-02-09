@@ -342,6 +342,178 @@ newMetrics := runEvals(ctx, client, tests)
 5. **Метрики:** Отслеживайте метрики во времени, чтобы видеть тренды
 6. **Robustness:** Включайте тесты на устойчивость к подсказкам (anchoring, biased few-shot) — они ловят регрессии после "косметических" изменений промпта
 
+## Компонентная оценка (Component-level Evaluation)
+
+Агент — это не монолит. Это цепочка компонентов: выбор инструмента, извлечение данных, генерация ответа. Оценивать только финальный результат — всё равно что тестировать автомобиль только по факту "доехал". Без проверки тормозов, двигателя и рулевого управления по отдельности.
+
+### Зачем оценивать компоненты отдельно?
+
+Финальный ответ может быть правильным случайно. Или неправильным из-за одного сломанного звена. Компонентная оценка показывает, **где именно** проблема.
+
+Три ключевых компонента для оценки:
+
+1. **Выбор инструмента** — агент вызвал правильный инструмент с правильными аргументами?
+2. **Качество извлечения (Retrieval)** — найдены релевантные документы? Нет мусора?
+3. **Качество ответа** — ответ точный, полный и основан на полученных данных?
+
+### Четырёхуровневая система: Task / Tool / Trajectory / Topic
+
+Одна метрика "pass/fail" не показывает, что именно сломалось. Для полной картины используйте четыре уровня оценки:
+
+| Уровень | Что проверяет | Пример |
+|---------|---------------|--------|
+| **Task** | Задача выполнена? | Ответ совпадает с ожидаемым |
+| **Tool** | Правильный инструмент? | Вызван `check_status`, а не `restart` |
+| **Trajectory** | Оптимальный путь? | Нет лишних шагов и циклов |
+| **Topic** | Качество в домене? | SQL-запрос валиден, логи разобраны |
+
+Подробная реализация четырёхуровневой системы с Quality Gates и интеграцией в CI/CD — в [Главе 23: Evals в CI/CD](../23-evals-in-cicd/README.md).
+
+**Пример компонентной оценки:**
+
+```go
+type ComponentEval struct {
+    Name  string
+    Input string
+
+    // Tool Level: какой инструмент ожидаем
+    ExpectedTool string
+    ExpectedArgs map[string]string
+
+    // Retrieval Level: какие документы должны быть найдены
+    ExpectedDocs []string
+
+    // Response Level: что должно быть в ответе
+    MustContain    []string
+    MustNotContain []string
+}
+
+func evaluateComponents(ctx context.Context, client *openai.Client, eval ComponentEval) {
+    answer, trajectory := runAgentWithTracing(ctx, client, eval.Input)
+
+    // 1. Оценка выбора инструмента
+    toolScore := evaluateToolSelection(trajectory, eval.ExpectedTool, eval.ExpectedArgs)
+    fmt.Printf("  Tool Selection: %.0f%%\n", toolScore*100)
+
+    // 2. Оценка качества извлечения
+    retrievedDocs := extractRetrievedDocs(trajectory)
+    retrievalScore := evaluateRetrieval(retrievedDocs, eval.ExpectedDocs)
+    fmt.Printf("  Retrieval Quality: %.0f%%\n", retrievalScore*100)
+
+    // 3. Оценка качества ответа
+    responseScore := evaluateResponse(answer, eval.MustContain, eval.MustNotContain)
+    fmt.Printf("  Response Quality: %.0f%%\n", responseScore*100)
+}
+```
+
+```go
+func evaluateToolSelection(traj AgentTrajectory, expectedTool string, expectedArgs map[string]string) float64 {
+    score := 0.0
+    for _, step := range traj.Steps {
+        if step.Type != "tool_call" {
+            continue
+        }
+        // Правильный инструмент?
+        if step.ToolName == expectedTool {
+            score += 0.5
+        }
+        // Правильные аргументы?
+        if matchArgs(step.ToolArgs, expectedArgs) {
+            score += 0.5
+        }
+        break // Проверяем первый вызов
+    }
+    return score
+}
+
+func evaluateRetrieval(retrieved, expected []string) float64 {
+    if len(expected) == 0 {
+        return 1.0
+    }
+    found := 0
+    for _, exp := range expected {
+        for _, ret := range retrieved {
+            if strings.Contains(ret, exp) {
+                found++
+                break
+            }
+        }
+    }
+    return float64(found) / float64(len(expected))
+}
+```
+
+### Метрики для Multi-Agent систем
+
+В [Multi-Agent системах](../07-multi-agent/README.md) недостаточно оценить Supervisor по финальному ответу. Каждый агент-специалист — отдельный компонент. Ему нужна своя оценка.
+
+**Ключевые метрики:**
+
+- **Per-agent pass rate** — процент успешных выполнений каждого агента отдельно
+- **Качество маршрутизации** — Supervisor направляет задачи правильному специалисту?
+- **Качество координации** — результаты специалистов собраны корректно?
+
+```go
+type MultiAgentMetrics struct {
+    // Метрики по каждому агенту
+    AgentPassRates map[string]float64 // "db_expert" -> 0.95, "network_expert" -> 0.88
+
+    // Метрики маршрутизации
+    RoutingAccuracy float64 // Задача попала к правильному специалисту
+
+    // Метрики координации
+    CoordinationScore float64 // Результаты собраны корректно
+}
+
+func evaluateMultiAgent(cases []MultiAgentEvalCase) MultiAgentMetrics {
+    agentResults := make(map[string][]bool) // агент -> результаты
+    routingCorrect := 0
+    coordCorrect := 0
+
+    for _, c := range cases {
+        // Запускаем Supervisor
+        answer, trajectory := runSupervisor(c.Input)
+
+        // Проверяем маршрутизацию: задача попала к нужному агенту?
+        delegatedTo := extractDelegatedAgent(trajectory)
+        if delegatedTo == c.ExpectedAgent {
+            routingCorrect++
+        }
+
+        // Проверяем результат каждого агента
+        for agent, result := range extractAgentResults(trajectory) {
+            passed := checkAgentResult(agent, result, c.ExpectedResults[agent])
+            agentResults[agent] = append(agentResults[agent], passed)
+        }
+
+        // Проверяем координацию: финальный ответ собран из частей?
+        if checkCoordination(answer, c.ExpectedAnswer) {
+            coordCorrect++
+        }
+    }
+
+    metrics := MultiAgentMetrics{
+        AgentPassRates:    calculatePassRates(agentResults),
+        RoutingAccuracy:   float64(routingCorrect) / float64(len(cases)),
+        CoordinationScore: float64(coordCorrect) / float64(len(cases)),
+    }
+    return metrics
+}
+```
+
+Если `RoutingAccuracy` низкая — проблема в Supervisor. Если `AgentPassRates` низкий у конкретного агента — проблема в его промпте или инструментах. Компонентная оценка показывает, что чинить.
+
+### Фреймворки для оценки: DeepEval и RAGAS
+
+Для оценки RAG-компонентов есть готовые фреймворки:
+
+- **RAGAS** — метрики Context Precision, Context Recall, Faithfulness, Answer Relevance
+- **DeepEval** — набор метрик для LLM-приложений: Hallucination, Toxicity, Answer Relevancy
+
+Оба фреймворка реализуют LLM-as-a-Judge подход. Они используют модель для оценки качества ответа, а не только string matching.
+
+Подробная реализация RAGAS-метрик и интеграция в CI/CD pipeline — в [Главе 23: Evals в CI/CD](../23-evals-in-cicd/README.md#шаг-5-ragas-метрики-для-rag).
+
 ## Типовые ошибки
 
 ### Ошибка 1: Нет evals для критических сценариев
@@ -429,6 +601,40 @@ tests := []EvalTest{
 
 **Практика:** Bias/robustness evals особенно важны после изменений промпта, которые кажутся "косметическими" (переформулировка инструкций, добавление примеров). Они ловят регрессии, которые не видны в функциональных тестах.
 
+### Ошибка 5: Оценка только финального ответа
+
+**Симптом:** Агент иногда даёт правильный ответ, но вызывает лишние или неправильные инструменты. Evals показывают 90% pass rate, но в проде агент тратит втрое больше токенов и времени.
+
+**Причина:** Evals проверяют только "ответ совпал с ожидаемым". Промежуточные шаги — выбор инструмента, качество retrieval, количество итераций — не оцениваются.
+
+**Решение:**
+```go
+// ПЛОХО: Проверяем только финальный ответ
+func evalAgent(input, expected string) bool {
+    answer := runAgent(input)
+    return strings.Contains(answer, expected)
+}
+
+// ХОРОШО: Оцениваем каждый компонент отдельно
+func evalAgent(input string, eval ComponentEval) EvalResult {
+    answer, trajectory := runAgentWithTracing(input)
+
+    return EvalResult{
+        // Task Level: ответ правильный?
+        TaskPass: strings.Contains(answer, eval.ExpectedAnswer),
+
+        // Tool Level: вызван правильный инструмент?
+        ToolPass: checkToolSelection(trajectory, eval.ExpectedTool),
+
+        // Trajectory Level: нет лишних шагов?
+        TrajectoryPass: len(trajectory.Steps) <= eval.MaxSteps,
+
+        // Retrieval Level: найдены нужные документы?
+        RetrievalPass: checkRetrieval(trajectory, eval.ExpectedDocs),
+    }
+}
+```
+
 ## Мини-упражнения
 
 ### Упражнение 1: Создайте набор evals
@@ -468,6 +674,7 @@ func compareMetrics(baseline, current EvalMetrics) bool {
 - [x] Набор тестов покрывает основные сценарии использования
 - [x] Включены safety evals для критических действий
 - [x] Включены bias/robustness evals (тесты на устойчивость к подсказкам)
+- [x] Компоненты оцениваются отдельно (tool selection, retrieval, response)
 - [x] Метрики отслеживаются (Pass Rate, Latency, Token Usage)
 - [x] Evals запускаются автоматически при изменениях
 - [x] Есть baseline метрики для сравнения
@@ -476,6 +683,7 @@ func compareMetrics(baseline, current EvalMetrics) bool {
 **Не сдано:**
 - [ ] Нет evals для критических сценариев
 - [ ] Нет bias/robustness evals (агент поддаётся подсказкам, но это не обнаруживается)
+- [ ] Оценивается только финальный ответ (нет компонентной оценки)
 - [ ] Evals запускаются вручную (не автоматически)
 - [ ] Нет baseline метрик для сравнения
 - [ ] Регрессии не фиксируются
@@ -484,6 +692,8 @@ func compareMetrics(baseline, current EvalMetrics) bool {
 
 - **Инструменты:** Как evals проверяют выбор инструментов, см. [Главу 03: Инструменты](../03-tools-and-function-calling/README.md)
 - **Безопасность:** Как evals проверяют безопасность, см. [Главу 05: Безопасность](../05-safety-and-hitl/README.md)
+- **Multi-Agent:** Метрики для Multi-Agent систем, см. [Главу 07: Multi-Agent Systems](../07-multi-agent/README.md)
+- **Evals в CI/CD:** Четырёхуровневая система оценки, Quality Gates, RAGAS — [Глава 23: Evals в CI/CD](../23-evals-in-cicd/README.md)
 
 ## Что дальше?
 
