@@ -939,6 +939,46 @@ func detectStuck(messages []openai.ChatCompletionMessage, windowSize int) bool {
 }
 ```
 
+### SHA256 Loop Detection (From a Production Agent)
+
+The `detectStuck` function above compares only the name and arguments. In practice, a more robust approach is used: **hashing the triple (name + input + output)**. This catches situations where a tool returns the same result:
+
+```go
+type loopDetector struct {
+    window    int // 10 — sliding window size
+    threshold int // 5 — trigger threshold
+    history   []string
+}
+
+func (d *loopDetector) Record(toolName, input, output string) error {
+    sig := sha256sum(toolName + "|" + input + "|" + output)
+    d.history = append(d.history, sig)
+
+    // Sliding window
+    if len(d.history) > d.window {
+        d.history = d.history[len(d.history)-d.window:]
+    }
+
+    // Count repeats of each signature
+    counts := make(map[string]int)
+    for _, s := range d.history {
+        counts[s]++
+        if counts[s] >= d.threshold {
+            return fmt.Errorf("tool call loop detected: %s called %d times with same result",
+                toolName, counts[s])
+        }
+    }
+    return nil
+}
+
+func sha256sum(s string) string {
+    h := sha256.Sum256([]byte(s))
+    return hex.EncodeToString(h[:8]) // first 8 bytes are enough
+}
+```
+
+The key difference from `detectStuck`: the tool call **result** is taken into account. If the `read` tool is called with the same file and returns the same content 5 times — that's a loop. But if the result is different each time (e.g., checking a service status) — that's normal behavior.
+
 ### Strategy 4: Token Budget
 
 Stop if too many tokens have been spent:
@@ -962,6 +1002,121 @@ if totalTokens > maxTokenBudget {
 ```
 
 For more on token budgets, see [Chapter 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md).
+
+## Streaming Repetition Detection
+
+SHA256 catches loops at the tool call level. But the model can also degrade at the **text** level: generating the same phrase or pattern indefinitely. This happens with high temperature or when the model gets "stuck" on a repeating token.
+
+Solution: a repetition detector in the streaming callback that cancels generation on the fly:
+
+```go
+type repetitionDetector struct {
+    buf       []byte
+    bufSize   int // 256
+    triggered bool
+}
+
+func (d *repetitionDetector) Feed(delta string) bool {
+    d.buf = append(d.buf, delta...)
+    if len(d.buf) < d.bufSize {
+        return false
+    }
+    // Check: is a pattern of length 1..20 repeating?
+    window := d.buf[len(d.buf)-d.bufSize:]
+    for patLen := 1; patLen <= 20; patLen++ {
+        pattern := window[:patLen]
+        covers := true
+        for i := patLen; i < len(window); i += patLen {
+            end := i + patLen
+            if end > len(window) {
+                end = len(window)
+            }
+            if !bytes.Equal(window[i:end], pattern[:end-i]) {
+                covers = false
+                break
+            }
+        }
+        if covers {
+            d.triggered = true
+            return true // pattern covers the entire buffer — degradation
+        }
+    }
+    return false
+}
+```
+
+Integration with the agent loop: if `Feed` returns `true`, call `streamCancel()` and treat the response as empty (transient retry).
+
+## Tool Call Recovery
+
+The model sometimes "forgets" the Function Calling format and outputs a tool call as text. Instead of a structured `tool_calls` in the response — JSON directly in `content`:
+
+```
+I need to check the disk. Calling check_disk:
+{"name": "check_disk", "arguments": {"host": "web-03"}}
+```
+
+Solution: parse the text and recover tool calls:
+
+```go
+func recoverToolCalls(content string, knownTools []string) []ToolCall {
+    // Search for JSON objects in the text
+    for _, match := range findJSONObjects(content) {
+        var tc struct {
+            Name      string          `json:"name"`
+            Arguments json.RawMessage `json:"arguments"`
+        }
+        if err := json.Unmarshal([]byte(match), &tc); err != nil {
+            continue
+        }
+        // Verify the tool name exists
+        if contains(knownTools, tc.Name) {
+            return []ToolCall{{
+                Function: FunctionCall{Name: tc.Name, Arguments: string(tc.Arguments)},
+            }}
+        }
+    }
+    return nil
+}
+```
+
+After recovery, update the history: replace the last assistant message with a version containing tool calls. Without this, the model will continue outputting JSON as text.
+
+## Error Recovery State Machine
+
+In practice, errors come in different types. Each type requires its own recovery strategy:
+
+| Error type | Strategy | Limit |
+|------------|----------|-------|
+| API error (rate limit, timeout) | Retry with exponential backoff | 3 attempts |
+| Context overflow | Condense (LLM summarization) | 1 per Run |
+| Empty response | Retry (transient) | 2 attempts |
+
+```go
+type recoveryState struct {
+    apiRetries       int // max 3
+    condenseCount    int // max 1
+    transientRetries int // max 2
+}
+
+func (r *recoveryState) Handle(err error) Action {
+    if isContextOverflow(err) && r.condenseCount == 0 {
+        r.condenseCount++
+        return ActionCondense
+    }
+    if isRetriable(err) && r.apiRetries < 3 {
+        r.apiRetries++
+        return ActionRetry
+    }
+    if isEmptyResponse(err) && r.transientRetries < 2 {
+        r.transientRetries++
+        return ActionRetry
+    }
+    return ActionFail
+}
+```
+
+Anti-pattern: putting all strategies in a single `if-else` inside the agent loop. This makes recovery untestable. Extract recovery into a separate component with clear states and limits.
 
 ## Common Errors
 
@@ -1040,6 +1195,28 @@ if lastHadToolCalls {
 ```
 
 For more details, see [Chapter 03: Model Selection Strategy](../03-tools-and-function-calling/README.md#model-selection-strategy-for-different-stages).
+
+### Error 5: No Tool-Level Loop Detection
+
+**Symptom:** Agent calls `read("config.yaml")` 10 times in a row. Text-level repetition detection doesn't trigger because the model's responses between tool calls are different.
+
+**Cause:** Loop detection works only at the text level, not at the tool call level.
+
+**Solution:**
+```go
+// BAD: text level only
+if isRepeatingText(resp.Content) {
+    break // doesn't catch tool call loops
+}
+
+// GOOD: SHA256 signatures of tool calls
+for _, tc := range resp.ToolCalls {
+    result := executeTool(tc)
+    if err := loopDetector.Record(tc.Name, tc.Arguments, result); err != nil {
+        break // loop detected
+    }
+}
+```
 
 ## Mini-Exercises
 

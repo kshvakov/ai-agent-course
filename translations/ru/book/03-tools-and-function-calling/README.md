@@ -830,6 +830,58 @@ if !json.Valid([]byte(call.Function.Arguments)) {
 
 Ключевое правило: repair-шаг **не меняет намерение**, он чинит формат под схему.
 
+## Tool Descriptions в .md файлах
+
+В production-агентах описания инструментов хранятся **в отдельных .md файлах**, а не в Go-коде:
+
+```
+internal/agent/tool/
+├── read/
+│   ├── read.go          // реализация
+│   └── read.md          // описание для LLM
+├── edit/
+│   ├── edit.go
+│   └── edit.md
+└── exec/
+    ├── exec.go
+    └── exec.md
+```
+
+Описание загружается через `go:embed`:
+
+```go
+import _ "embed"
+
+//go:embed read.md
+var description string
+
+type ReadTool struct{}
+
+func (t *ReadTool) Name() string        { return "read" }
+func (t *ReadTool) Description() string { return description }
+```
+
+Преимущества:
+- **Markdown легче редактировать** — не нужно менять Go-код для улучшения описания
+- **Ревью описаний отдельно от кода** — product-менеджер может улучшить описание без знания Go
+- **Single Source of Truth** — `Tool.Description()` единственный источник описания
+
+### Антипаттерн: двойное описание
+
+Распространённая ошибка: описание инструмента дублируется в system prompt **и** в tool definitions API. Модель получает противоречивые указания:
+
+```
+// В system.md (system prompt):
+"ALWAYS use ask tool to ask questions. Never write questions as plain text."
+
+// В ask.Description() (tool definition):
+"Use ONLY when you need the user to pick from options. For free-text, just ask in your message."
+```
+
+Модель получает **взаимоисключающие** инструкции. Для Raw-провайдеров (Qwen, DeepSeek) описание может оказаться **трижды**: system prompt + tool definition + `<tools>` injection.
+
+**Правило:** System prompt содержит **правила поведения и workflow**, но **не описания инструментов**. Описания — только через Tool API.
+
 ## Стратегия выбора модели для разных этапов
 
 ### Зачем нужны разные модели?
@@ -1044,6 +1096,23 @@ Description: "Ping a host"
 Description: "Ping a host to check network connectivity. Use this when user asks about network reachability or connectivity."
 ```
 
+### Ошибка 5: Дублирование описания инструмента
+
+**Симптом:** Модель ведёт себя непредсказуемо — иногда использует инструмент, иногда пишет вопрос текстом. Разные провайдеры дают разное поведение.
+
+**Причина:** Описание инструмента продублировано в system prompt и в tool definition. Описания противоречат друг другу.
+
+**Решение:**
+```go
+// ПЛОХО: описание в двух местах
+systemPrompt := "Use read tool to read files. Always read before editing."
+readTool := Tool{Description: "Read a file from the filesystem. Returns file content."}
+
+// ХОРОШО: описание только в tool definition
+systemPrompt := "Before editing, always read the file first." // правило, не описание
+readTool := Tool{Description: "Read a file. Returns content with line numbers."}
+```
+
 ## Мини-упражнения
 
 ### Упражнение 1: Создайте инструмент
@@ -1103,6 +1172,7 @@ func validateToolCall(call openai.ToolCall) error {
 - [ ] JSON в аргументах сломан (нет валидации)
 - [ ] Модель вызывает несуществующий инструмент (нет валидации имени)
 - [ ] `Description` слишком общее (модель не может выбрать правильный инструмент)
+- [ ] Описание инструмента дублируется в system prompt и tool definition
 
 ## Связь с другими главами
 

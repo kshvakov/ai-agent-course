@@ -831,6 +831,94 @@ sequenceDiagram
 - История (`messages[]`) собирается Runtime'ом и передается в каждый запрос
 - Результаты инструментов добавляются в историю перед следующим запросом
 
+### Config-based Agent Injection
+
+На практике один тип `Agent` обслуживает разные режимы через Config:
+
+```go
+type Config struct {
+    MaxIter    int
+    PromptFunc func(state LoopState) string  // динамический system prompt
+    ToolFilter func(iter int) []Tool          // фильтр инструментов по итерации
+    Hooks      Hooks                          // AfterResponse, BeforeToolExec, AfterToolExec
+    Condenser  Condenser                      // recovery при context overflow
+    OnDelta    func(delta string)             // стриминг
+    OnToolCall func(name, args string)        // уведомление о tool call
+}
+
+type LoopState struct {
+    Iter         int
+    IsFirstTurn  bool
+    CalledTools  []string
+}
+```
+
+Один и тот же `Agent` работает как:
+- **Main agent** — полный Config (PromptFunc с routing, Hooks для skill selection, Condenser для overflow)
+- **Subagent** — минимальный Config (статический prompt, без Hooks, без Condenser)
+- **Triage agent** — только PromptFunc и ToolFilter, без callbacks
+- **ChatOnly** — Tools = nil, простой диалог
+
+Вместо наследования или if-ветвлений — **инъекция поведения через Config**. Это позволяет unit-тестировать каждый компонент отдельно.
+
+**Nop-паттерн для Working Memory:**
+
+```go
+func Nop() *WorkingMemory {
+    return &WorkingMemory{nop: true}
+}
+
+func (wm *WorkingMemory) SetTask(task string) {
+    if wm.nop { return }
+    wm.Task = truncateWords(task, 50)
+}
+```
+
+Субагенты не нуждаются в Working Memory, но проверять `wm != nil` на каждом вызове — ненадёжно. Nop() возвращает безопасный объект, где все методы ничего не делают.
+
+### Событийная модель (Event System)
+
+Агент генерирует события по ходу работы. UI, логирование и метрики подписываются на них независимо:
+
+```go
+type EventType string
+
+const (
+    EventDelta        EventType = "delta"          // фрагмент текста
+    EventToolCall     EventType = "tool_call"      // вызов инструмента
+    EventToolResult   EventType = "tool_result"    // результат инструмента
+    EventDone         EventType = "done"           // завершение
+    EventPlanUpdate   EventType = "plan_update"    // обновление плана
+    EventSubagentEvent EventType = "subagent"      // событие от субагента
+)
+
+type Broker[T any] struct {
+    subscribers []chan T
+    mu          sync.RWMutex
+}
+
+func (b *Broker[T]) Subscribe() <-chan T {
+    ch := make(chan T, 64)
+    b.mu.Lock()
+    b.subscribers = append(b.subscribers, ch)
+    b.mu.Unlock()
+    return ch
+}
+
+func (b *Broker[T]) Publish(event T) {
+    b.mu.RLock()
+    defer b.mu.RUnlock()
+    for _, ch := range b.subscribers {
+        select {
+        case ch <- event:
+        default: // не блокируем, если подписчик медленный
+        }
+    }
+}
+```
+
+Fan-out паттерн: одно событие доставляется всем подписчикам. UI показывает стриминг, логгер пишет в файл, метрики считают tool calls — и все работают параллельно.
+
 ## Skills (Навыки)
 
 Агент с фиксированным System Prompt ограничен. Навыки (Skills) позволяют динамически менять поведение агента в зависимости от задачи.
@@ -1396,6 +1484,53 @@ messages = append(messages, openai.ChatCompletionMessage{
 })
 ```
 
+### Ошибка 4: Монолитный Run()
+
+**Симптом:** Невозможно unit-тестировать компоненты агента. Единственный способ проверить routing — запустить весь Run() с mock provider.
+
+**Причина:** Функция `Run()` совмещает 6 ответственностей: сборка промпта, routing, error recovery, tool execution, plan tracking, event publishing. На практике это легко разрастается до 240 строк с вложенными if-ветвлениями.
+
+**Решение:** Разделите ответственности через инъекцию:
+```go
+// ПЛОХО: всё в одной функции
+func (a *Agent) Run(ctx context.Context, msg string) (string, error) {
+    // 240 строк: routing + prompt + tools + recovery + events + plan
+}
+
+// ХОРОШО: инъекция через Config
+type Config struct {
+    PromptFunc func(state LoopState) string
+    ToolFilter func(iter int) []Tool
+    Hooks      Hooks
+    Condenser  Condenser
+}
+```
+
+### Ошибка 5: Subagent hardcode в executeTools
+
+**Симптом:** При добавлении нового типа специального tool приходится менять общую функцию выполнения инструментов.
+
+**Причина:** Внутри `executeTools()` есть проверка `if tc.Name == "subagent"` с особой логикой (plan step tracking, progress forwarding). Каждый "особый" tool добавляет ещё один `if`.
+
+**Решение:** Используйте Hooks:
+```go
+// ПЛОХО: hardcode в общей функции
+func executeTools(calls []ToolCall) {
+    for _, tc := range calls {
+        if tc.Name == "subagent" {
+            // 20 строк специальной логики
+        }
+        result := registry.Execute(tc)
+    }
+}
+
+// ХОРОШО: Hooks
+type Hooks struct {
+    BeforeToolExec func(name string, args string)
+    AfterToolExec  func(name string, args string, result string)
+}
+```
+
 ## Мини-упражнения
 
 ### Упражнение 1: Подсчет токенов в истории
@@ -1450,6 +1585,8 @@ func compressContext(messages []openai.ChatCompletionMessage, maxTokens int) []o
 - [ ] Агент зацикливается (нет лимита итераций)
 - [ ] Результаты инструментов не добавляются в историю
 - [ ] Нет мониторинга использования токенов
+- [ ] Монолитный Run() без разделения ответственностей
+- [ ] Hardcode для специальных tool в общем executeTools
 
 ## Связь с другими главами
 

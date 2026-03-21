@@ -217,6 +217,40 @@ func getTask(id string) (*Task, bool) {
 }
 ```
 
+### Working Memory как часть состояния
+
+Состояние агента — это не только `AgentState`. На практике есть ещё **Working Memory**: текущая задача, план, прочитанные файлы, последние действия. Эти данные живут в оперативной памяти и теряются между сессиями.
+
+**Проблема:** Агент перечитывает файлы, теряет план, начинает задачу с нуля после перезапуска.
+
+**Решение:** Working Memory передаётся как параметр в `Run()` и переживает между REPL-циклами:
+
+```go
+// Working Memory переживает между Run-ами
+wm := workmem.New()
+
+for {
+    userInput := readInput()
+    result, err := agent.Run(ctx, userInput, wm) // WM передаётся явно
+    if err != nil {
+        break
+    }
+    fmt.Println(result)
+}
+```
+
+Для персистенции между сессиями — Export/Import:
+
+```go
+// При завершении сессии
+snapshot := wm.Export()
+saveToFile("session.json", snapshot)
+
+// При восстановлении
+snapshot := loadFromFile("session.json")
+wm.Restore(snapshot)
+```
+
 ### Шаг 6: Возобновление выполнения
 
 Продолжайте выполнение задачи после сбоя:
@@ -950,6 +984,31 @@ task.State = TaskRunning
 saveTask(task) // Сохраняем в БД/файл
 ```
 
+### Ошибка 5: Потеря Working Memory между сессиями
+
+**Симптом:** Агент перечитывает файлы, которые уже читал в прошлой сессии. План задачи потерян. Прогресс не сохранён.
+
+**Причина:** Working Memory (текущая задача, план, файлы, действия) живёт только в оперативной памяти. При перезапуске — теряется.
+
+**Решение:**
+```go
+// ПЛОХО: Working Memory создаётся заново на каждую сессию
+func handleSession(ctx context.Context) {
+    wm := workmem.New() // всё потеряно
+    agent.Run(ctx, msg, wm)
+}
+
+// ХОРОШО: Export/Import между сессиями
+func handleSession(ctx context.Context, sessionID string) {
+    wm := workmem.New()
+    if snap, err := loadSnapshot(sessionID); err == nil {
+        wm.Restore(snap) // восстановили план, файлы, задачу
+    }
+    defer saveSnapshot(sessionID, wm.Export())
+    agent.Run(ctx, msg, wm)
+}
+```
+
 ## Мини-упражнения
 
 ### Упражнение 1: Реализуйте retry с backoff
@@ -997,6 +1056,7 @@ func executeTaskIfNotDone(taskID string) error {
 - [ ] Нет retry при ошибках
 - [ ] Нет дедлайнов
 - [ ] Состояние не сохраняется
+- [ ] Потеря Working Memory между сессиями
 
 ## Связь с другими главами
 

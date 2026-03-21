@@ -215,6 +215,38 @@ msg2 := resp2.Choices[0].Message
 // Теперь Runtime может выполнить действие
 ```
 
+### Auto-approve для read-only операций
+
+На практике не каждый tool call требует подтверждения. Read-only операции безопасны:
+
+```go
+func requiresConfirmation(tool Tool, args string) bool {
+    if tool.IsReadOnly() {
+        return false // read, list, search — всегда auto-approve
+    }
+    if isDangerousCommand(tool.Name(), args) {
+        return true // rm -rf, DROP TABLE — всегда подтверждение
+    }
+    return tool.RequiresConfirm() // edit, write, exec — по настройке
+}
+```
+
+Для MCP-инструментов (внешние серверы) `IsReadOnly` определяется по эвристике — по префиксу имени:
+
+```go
+func isMCPToolReadOnly(name string) bool {
+    readPrefixes := []string{"get_", "find_", "list_", "search_", "read_", "fetch_"}
+    for _, prefix := range readPrefixes {
+        if strings.HasPrefix(name, prefix) {
+            return true
+        }
+    }
+    return false
+}
+```
+
+Для `exec` tool — отдельный список опасных команд: `rm`, `dd`, `mkfs`, `DROP`, `DELETE`, `shutdown`. Если команда содержит опасный паттерн — подтверждение обязательно, даже если `RequiresConfirm() == false`.
+
 ### HITL как инструменты (ask_user / confirm_action)
 
 Текстовый вопрос "Вы уверены?" работает для CLI и прототипов. В проде удобнее сделать HITL **машиночитаемым**: отдельные инструменты для уточнений и подтверждений.
@@ -335,6 +367,34 @@ for {
 10. Внешний цикл ждет следующего ввода
 
 **Важно:** Внутренний цикл может выполнить несколько инструментов подряд (автономно), но как только модель генерирует текст — управление возвращается пользователю.
+
+## Iron Laws (Железные правила)
+
+В production-агентах существуют **безусловные правила**, которые нельзя нарушать. Они инжектируются в system prompt с наивысшим приоритетом:
+
+| # | Правило | Контрмера при нарушении |
+|---|---------|------------------------|
+| 1 | **Verify after every change** | После каждого edit — `go build ./...` или `go test` |
+| 2 | **Evidence before assertion** | Не "работает", а вывод команды, подтверждающий |
+| 3 | **Reproduce before fix** | Сначала воспроизвести баг, потом чинить |
+| 4 | **Complete the step before moving on** | Не перескакивать к следующему шагу |
+| 5 | **Don't re-read what you know** | Не перечитывать файл, уже находящийся в контексте |
+
+Iron Laws встраиваются в system prompt как секция с тегом `always` — они присутствуют на **каждой** итерации, без исключений.
+
+### Red Flags Table
+
+Модели рационализируют пропуск верификации. Каждая рационализация — red flag с конкретной контрмерой:
+
+| Мысль модели | Контрмера |
+|--------------|-----------|
+| "This obviously works" | Run the build/test command |
+| "Small change, no need to verify" | Small changes break things more often |
+| "Tests aren't needed for this" | Run existing tests at minimum |
+| "I'm sure this file exists" | Use list or search to confirm |
+| "I already know the answer" | Check the actual state, not assumptions |
+
+Red Flags Table инжектируется в prompt вместе с Iron Laws. Когда модель генерирует текст, matching по этим паттернам предотвращает ошибки **до** их совершения.
 
 ## Примеры критических действий
 
@@ -475,12 +535,16 @@ func requiresClarification(toolName string, args json.RawMessage) (bool, []strin
 - [x] Есть защита от Prompt Injection
 - [x] System Prompt явно указывает ограничения
 - [x] Runtime проверяет риск перед выполнением действий
+- [x] Знаете Iron Laws и Red Flags для агентов
+- [x] Понимаете auto-approve для read-only
 
 **Не сдано:**
 - [ ] Критические действия выполняются без подтверждения
 - [ ] Агент угадывает недостающие параметры
 - [ ] Нет защиты от Prompt Injection
 - [ ] System Prompt не задает ограничения
+- [ ] Нет Iron Laws — агент пропускает верификацию
+- [ ] Подтверждение для каждого tool call (включая read-only)
 
 ## Связь с другими главами
 

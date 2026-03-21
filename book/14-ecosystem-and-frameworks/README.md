@@ -299,6 +299,39 @@ A2A (Agent-to-Agent) is a protocol from Google for inter-agent communication. Ea
 
 A2A solves the interoperability problem: agents from different teams and frameworks interact through a single protocol. For more details, see [Chapter 18: Tool Protocols and Tool Servers](../18-tool-protocols-and-servers/README.md).
 
+## Case Study: Atlas vs Crush
+
+Two real Go agents, both built on **their own custom frameworks** (Crush on Fantasy by Charmbracelet, Atlas on its internal `pkg/agent`), not on third-party LangGraph/CrewAI. The comparison shows which decisions are critical in production:
+
+| Aspect | Crush (Charmbracelet) | Atlas |
+|--------|----------------------|-------|
+| **Working Memory** | None | TaskContext + LivePlan + Budget |
+| **Plan** | Todos (UI checklist, lost on summarize) | LivePlan in Go struct (survives condense) |
+| **Context** | Binary summarization (all or summary) | 4-level progressive compression |
+| **Loop detection** | SHA256 signatures (agent-level) | Repetition/pattern/entropy (provider-level) |
+| **Tool descriptions** | .md files, not duplicated | Duplicated in system prompt + definitions |
+| **Testing** | VCR (recorded responses) | None |
+| **Persistence** | SQLite | JSON files |
+| **Sub-agents** | 1 type (coder) | 6 typed roles |
+| **Budget** | Post-step (StopWhen) | Proactive (before API call) |
+| **LSP** | gopls, typescript-ls | None |
+
+### Key Lessons
+
+1. **Working Memory is critical.** Without it, the agent loses its plan and the context of files read between REPL cycles.
+
+2. **Plan = program state, not messages.** Storing the plan in a Go struct lets it survive condensation. Storing it in messages means losing the plan on summarization.
+
+3. **Gradual degradation > hard cut.** 4-level progressive compression (trim → compact → condense → eviction) is better than binary "all or nothing" summarization.
+
+4. **VCR tests for agents.** Recording LLM responses and replaying them in tests is the only reliable way to test the agent loop. Without this — only manual testing.
+
+5. **SHA256 loop detection — cheap and reliable.** Hashing `(tool + input + output)` catches loops without LLM calls.
+
+### Strategy
+
+Both agents are built on their own custom frameworks, tailored to the project. This confirms the course's approach: understanding the internals lets you create your own framework with the right abstractions — rather than adapting to someone else's. Each pattern above (Working Memory, LivePlan, progressive compression, SHA256 loop detection, VCR testing) arose from specific project needs. Third-party frameworks don't provide these abstractions out of the box.
+
 ### Why This Course Teaches from Scratch
 
 This course builds an agent from scratch for several reasons:

@@ -831,6 +831,95 @@ sequenceDiagram
 - History (`messages[]`) is collected by Runtime and passed in each request
 - Tool results are added to history before next request
 
+### Config-based Agent Injection
+
+In practice, a single `Agent` type serves different modes through Config:
+
+```go
+type Config struct {
+    MaxIter    int
+    PromptFunc func(state LoopState) string  // dynamic system prompt
+    ToolFilter func(iter int) []Tool          // tool filter per iteration
+    Hooks      Hooks                          // AfterResponse, BeforeToolExec, AfterToolExec
+    Condenser  Condenser                      // recovery on context overflow
+    OnDelta    func(delta string)             // streaming
+    OnToolCall func(name, args string)        // tool call notification
+}
+
+type LoopState struct {
+    Iter         int
+    IsFirstTurn  bool
+    CalledTools  []string
+}
+```
+
+The same `Agent` works as:
+
+- **Main agent** — full Config (PromptFunc with routing, Hooks for skill selection, Condenser for overflow)
+- **Subagent** — minimal Config (static prompt, no Hooks, no Condenser)
+- **Triage agent** — only PromptFunc and ToolFilter, no callbacks
+- **ChatOnly** — Tools = nil, simple dialogue
+
+Instead of inheritance or if-branching — **behavior injection through Config**. This allows unit-testing each component separately.
+
+**Nop Pattern for Working Memory:**
+
+```go
+func Nop() *WorkingMemory {
+    return &WorkingMemory{nop: true}
+}
+
+func (wm *WorkingMemory) SetTask(task string) {
+    if wm.nop { return }
+    wm.Task = truncateWords(task, 50)
+}
+```
+
+Subagents don't need Working Memory, but checking `wm != nil` on every call is unreliable. `Nop()` returns a safe object where all methods are no-ops.
+
+### Event System
+
+The agent generates events as it works. UI, logging, and metrics subscribe to them independently:
+
+```go
+type EventType string
+
+const (
+    EventDelta         EventType = "delta"       // text fragment
+    EventToolCall      EventType = "tool_call"   // tool call
+    EventToolResult    EventType = "tool_result"  // tool result
+    EventDone          EventType = "done"         // completion
+    EventPlanUpdate    EventType = "plan_update"  // plan update
+    EventSubagentEvent EventType = "subagent"     // subagent event
+)
+
+type Broker[T any] struct {
+    subscribers []chan T
+    mu          sync.RWMutex
+}
+
+func (b *Broker[T]) Subscribe() <-chan T {
+    ch := make(chan T, 64)
+    b.mu.Lock()
+    b.subscribers = append(b.subscribers, ch)
+    b.mu.Unlock()
+    return ch
+}
+
+func (b *Broker[T]) Publish(event T) {
+    b.mu.RLock()
+    defer b.mu.RUnlock()
+    for _, ch := range b.subscribers {
+        select {
+        case ch <- event:
+        default: // don't block if subscriber is slow
+        }
+    }
+}
+```
+
+Fan-out pattern: a single event is delivered to all subscribers. UI shows streaming, logger writes to file, metrics count tool calls — all working in parallel.
+
 ## Skills
 
 An agent with a fixed System Prompt is limited. Skills let you dynamically change agent behavior depending on the task.
@@ -1396,6 +1485,53 @@ messages = append(messages, openai.ChatCompletionMessage{
 })
 ```
 
+### Error 4: Monolithic Run()
+
+**Symptom:** Cannot unit-test agent components. The only way to verify routing is to run the entire `Run()` with a mock provider.
+
+**Cause:** The `Run()` function combines 6 responsibilities: prompt assembly, routing, error recovery, tool execution, plan tracking, event publishing. In practice, this easily grows to 240 lines with nested if-branches.
+
+**Solution:** Separate responsibilities through injection:
+```go
+// BAD: everything in one function
+func (a *Agent) Run(ctx context.Context, msg string) (string, error) {
+    // 240 lines: routing + prompt + tools + recovery + events + plan
+}
+
+// GOOD: injection through Config
+type Config struct {
+    PromptFunc func(state LoopState) string
+    ToolFilter func(iter int) []Tool
+    Hooks      Hooks
+    Condenser  Condenser
+}
+```
+
+### Error 5: Subagent Hardcode in executeTools
+
+**Symptom:** Adding a new type of special tool requires modifying the shared tool execution function.
+
+**Cause:** Inside `executeTools()` there's a check `if tc.Name == "subagent"` with special logic (plan step tracking, progress forwarding). Each "special" tool adds another `if`.
+
+**Solution:** Use Hooks:
+```go
+// BAD: hardcode in shared function
+func executeTools(calls []ToolCall) {
+    for _, tc := range calls {
+        if tc.Name == "subagent" {
+            // 20 lines of special logic
+        }
+        result := registry.Execute(tc)
+    }
+}
+
+// GOOD: Hooks
+type Hooks struct {
+    BeforeToolExec func(name string, args string)
+    AfterToolExec  func(name string, args string, result string)
+}
+```
+
 ## Mini-Exercises
 
 ### Exercise 1: Count Tokens in History
@@ -1450,6 +1586,8 @@ func compressContext(messages []openai.ChatCompletionMessage, maxTokens int) []o
 - [ ] Agent loops (no iteration limit)
 - [ ] Tool results not added to history
 - [ ] No token usage monitoring
+- [ ] Monolithic Run() with no separation of concerns
+- [ ] Hardcoded special tools in shared executeTools
 
 ## Connection with Other Chapters
 

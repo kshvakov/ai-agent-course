@@ -219,6 +219,40 @@ func getTask(id string) (*Task, bool) {
 }
 ```
 
+### Working Memory as Part of State
+
+Agent state is more than just `AgentState`. In practice there is also **Working Memory**: the current task, the plan, files read so far, recent actions. This data lives in RAM and is lost between sessions.
+
+**Problem:** The agent re-reads files, loses the plan, and starts from scratch after a restart.
+
+**Solution:** Working Memory is passed as a parameter to `Run()` and survives between REPL cycles:
+
+```go
+// Working Memory survives between Run calls
+wm := workmem.New()
+
+for {
+    userInput := readInput()
+    result, err := agent.Run(ctx, userInput, wm) // WM is passed explicitly
+    if err != nil {
+        break
+    }
+    fmt.Println(result)
+}
+```
+
+For persistence between sessions — Export/Import:
+
+```go
+// On session end
+snapshot := wm.Export()
+saveToFile("session.json", snapshot)
+
+// On restore
+snapshot := loadFromFile("session.json")
+wm.Restore(snapshot)
+```
+
 ### Step 6: Resume Execution
 
 Continue task execution after failure:
@@ -950,6 +984,31 @@ var taskState = "running" // Only in memory
 // GOOD
 task.State = TaskRunning
 saveTask(task) // Save to DB/file
+```
+
+### Error 5: Losing Working Memory Between Sessions
+
+**Symptom:** The agent re-reads files it already read in the previous session. The task plan is lost. Progress is not saved.
+
+**Cause:** Working Memory (current task, plan, files, actions) lives only in RAM. On restart it is lost.
+
+**Solution:**
+```go
+// BAD: Working Memory is recreated every session
+func handleSession(ctx context.Context) {
+    wm := workmem.New() // everything is lost
+    agent.Run(ctx, msg, wm)
+}
+
+// GOOD: Export/Import between sessions
+func handleSession(ctx context.Context, sessionID string) {
+    wm := workmem.New()
+    if snap, err := loadSnapshot(sessionID); err == nil {
+        wm.Restore(snap) // restored plan, files, task
+    }
+    defer saveSnapshot(sessionID, wm.Export())
+    agent.Run(ctx, msg, wm)
+}
 ```
 
 ## Mini-Exercises

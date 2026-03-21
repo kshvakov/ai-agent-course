@@ -939,6 +939,46 @@ func detectStuck(messages []openai.ChatCompletionMessage, windowSize int) bool {
 }
 ```
 
+### SHA256 Loop Detection (из реального агента)
+
+Функция `detectStuck` выше сравнивает только имя и аргументы. На практике используется более надёжный подход: **хеш от тройки (имя + вход + выход)**. Это ловит ситуации, когда tool возвращает одинаковый результат:
+
+```go
+type loopDetector struct {
+    window    int // 10 — размер скользящего окна
+    threshold int // 5 — порог срабатывания
+    history   []string
+}
+
+func (d *loopDetector) Record(toolName, input, output string) error {
+    sig := sha256sum(toolName + "|" + input + "|" + output)
+    d.history = append(d.history, sig)
+
+    // Скользящее окно
+    if len(d.history) > d.window {
+        d.history = d.history[len(d.history)-d.window:]
+    }
+
+    // Считаем повторы каждой сигнатуры
+    counts := make(map[string]int)
+    for _, s := range d.history {
+        counts[s]++
+        if counts[s] >= d.threshold {
+            return fmt.Errorf("tool call loop detected: %s called %d times with same result",
+                toolName, counts[s])
+        }
+    }
+    return nil
+}
+
+func sha256sum(s string) string {
+    h := sha256.Sum256([]byte(s))
+    return hex.EncodeToString(h[:8]) // первые 8 байт достаточно
+}
+```
+
+Ключевое отличие от `detectStuck`: учитывается **результат** tool call. Если tool `read` вызывается с тем же файлом и возвращает тот же контент 5 раз — это цикл. Но если результат каждый раз разный (например, проверка статуса сервиса) — это нормальное поведение.
+
 ### Стратегия 4: Бюджет токенов
 
 Останавливаемся, если потрачено слишком много токенов:
@@ -962,6 +1002,121 @@ if totalTokens > maxTokenBudget {
 ```
 
 Подробнее о бюджетах токенов см. [Главу 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md).
+
+## Streaming Repetition Detection
+
+SHA256 ловит циклы на уровне tool calls. Но модель может деградировать и на уровне **текста**: генерировать одну и ту же фразу или паттерн бесконечно. Это происходит при высокой temperature или когда модель "застревает" на повторяющемся токене.
+
+Решение: детектор повторений в стриминговом callback, который отменяет генерацию на лету:
+
+```go
+type repetitionDetector struct {
+    buf       []byte
+    bufSize   int // 256
+    triggered bool
+}
+
+func (d *repetitionDetector) Feed(delta string) bool {
+    d.buf = append(d.buf, delta...)
+    if len(d.buf) < d.bufSize {
+        return false
+    }
+    // Проверяем: повторяется ли паттерн длиной 1..20?
+    window := d.buf[len(d.buf)-d.bufSize:]
+    for patLen := 1; patLen <= 20; patLen++ {
+        pattern := window[:patLen]
+        covers := true
+        for i := patLen; i < len(window); i += patLen {
+            end := i + patLen
+            if end > len(window) {
+                end = len(window)
+            }
+            if !bytes.Equal(window[i:end], pattern[:end-i]) {
+                covers = false
+                break
+            }
+        }
+        if covers {
+            d.triggered = true
+            return true // паттерн покрывает весь буфер — деградация
+        }
+    }
+    return false
+}
+```
+
+Интеграция с циклом агента: если `Feed` возвращает `true`, вызываем `streamCancel()` и обрабатываем ответ как пустой (transient retry).
+
+## Tool Call Recovery
+
+Модель иногда "забывает" формат Function Calling и выводит tool call как текст. Вместо структурированного `tool_calls` в ответе — JSON прямо в `content`:
+
+```
+Мне нужно проверить диск. Вызову check_disk:
+{"name": "check_disk", "arguments": {"host": "web-03"}}
+```
+
+Решение: парсинг текста и восстановление tool calls:
+
+```go
+func recoverToolCalls(content string, knownTools []string) []ToolCall {
+    // Ищем JSON-объекты в тексте
+    for _, match := range findJSONObjects(content) {
+        var tc struct {
+            Name      string          `json:"name"`
+            Arguments json.RawMessage `json:"arguments"`
+        }
+        if err := json.Unmarshal([]byte(match), &tc); err != nil {
+            continue
+        }
+        // Проверяем, что имя tool существует
+        if contains(knownTools, tc.Name) {
+            return []ToolCall{{
+                Function: FunctionCall{Name: tc.Name, Arguments: string(tc.Arguments)},
+            }}
+        }
+    }
+    return nil
+}
+```
+
+После recovery обновляем историю: заменяем последнее assistant-сообщение на версию с tool calls. Без этого модель продолжит выводить JSON текстом.
+
+## Error Recovery State Machine
+
+На практике ошибки бывают разных типов. Каждый тип требует своей стратегии восстановления:
+
+| Тип ошибки | Стратегия | Лимит |
+|------------|-----------|-------|
+| API error (rate limit, timeout) | Retry с exponential backoff | 3 попытки |
+| Context overflow | Condense (LLM-суммаризация) | 1 раз за Run |
+| Пустой ответ | Retry (transient) | 2 попытки |
+
+```go
+type recoveryState struct {
+    apiRetries       int // max 3
+    condenseCount    int // max 1
+    transientRetries int // max 2
+}
+
+func (r *recoveryState) Handle(err error) Action {
+    if isContextOverflow(err) && r.condenseCount == 0 {
+        r.condenseCount++
+        return ActionCondense
+    }
+    if isRetriable(err) && r.apiRetries < 3 {
+        r.apiRetries++
+        return ActionRetry
+    }
+    if isEmptyResponse(err) && r.transientRetries < 2 {
+        r.transientRetries++
+        return ActionRetry
+    }
+    return ActionFail
+}
+```
+
+Антипаттерн: все стратегии в одном `if-else` внутри цикла агента. Это делает recovery нетестируемым. Выделяйте recovery в отдельный компонент с чёткими состояниями и лимитами.
 
 ## Типовые ошибки
 
@@ -1041,6 +1196,28 @@ if lastHadToolCalls {
 
 Подробнее см. [Главу 03: Стратегия выбора модели](../03-tools-and-function-calling/README.md#стратегия-выбора-модели-для-разных-этапов).
 
+### Ошибка 5: Нет tool-level loop detection
+
+**Симптом:** Агент вызывает `read("config.yaml")` 10 раз подряд. Текстовый repetition detection не срабатывает, потому что ответы модели между tool calls — разные.
+
+**Причина:** Детекция зацикливания работает только на уровне текста, не на уровне tool calls.
+
+**Решение:**
+```go
+// ПЛОХО: только текстовый уровень
+if isRepeatingText(resp.Content) {
+    break // не ловит циклы tool calls
+}
+
+// ХОРОШО: SHA256 сигнатуры tool calls
+for _, tc := range resp.ToolCalls {
+    result := executeTool(tc)
+    if err := loopDetector.Record(tc.Name, tc.Arguments, result); err != nil {
+        break // цикл обнаружен
+    }
+}
+```
+
 ## Мини-упражнения
 
 ### Упражнение 1: Добавьте детекцию зацикливания
@@ -1085,6 +1262,7 @@ fmt.Printf("[Iteration %d] Tool result: %s\n", i, result)
 - [ ] Результаты инструментов не видны агенту (не добавляются в историю)
 - [ ] Агент зацикливается (нет защиты)
 - [ ] Агент не останавливается, когда задача решена
+- [ ] Нет tool-level loop detection (только текстовый уровень)
 
 ## Связь с другими главами
 

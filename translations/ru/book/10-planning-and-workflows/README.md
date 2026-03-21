@@ -245,6 +245,114 @@ type PlanState struct {
 }
 ```
 
+## LivePlan: план как program state
+
+В типичной реализации план хранится в messages — как текст, сгенерированный моделью. Проблема: при конденсации (сжатии контекста) план теряется вместе с другими старыми сообщениями.
+
+На практике план живёт **в Go-структуре**, а не в messages:
+
+```go
+type LivePlan struct {
+    Goal  string
+    Steps []PlanStep
+    Notes string
+}
+
+type PlanStep struct {
+    ID          int
+    Description string
+    Status      StepStatus // pending, in_progress, completed, cancelled
+    Result      string
+}
+
+type StepStatus string
+
+const (
+    StepPending    StepStatus = "pending"
+    StepInProgress StepStatus = "in_progress"
+    StepCompleted  StepStatus = "completed"
+    StepCancelled  StepStatus = "cancelled"
+)
+```
+
+LivePlan инжектируется в system prompt на каждой итерации:
+
+```go
+func (p *LivePlan) Render() string {
+    var sb strings.Builder
+    sb.WriteString("[PLAN]\n")
+    sb.WriteString("Goal: " + p.Goal + "\n")
+    for _, step := range p.Steps {
+        sb.WriteString(fmt.Sprintf("%d. [%s] %s", step.ID, step.Status, step.Description))
+        if step.Result != "" {
+            sb.WriteString(" → " + step.Result)
+        }
+        sb.WriteString("\n")
+    }
+    return sb.String()
+}
+```
+
+Модель обновляет план через tool call `update_plan`. Статус шага меняется автоматически при запуске субагента:
+- Перед выполнением → `in_progress`
+- После успеха → `completed`
+- После ошибки → `pending` (откат)
+
+Правило: **только один шаг in_progress одновременно**. Когда все шаги `completed` или `cancelled` — план автоматически очищается, освобождая место в system prompt.
+
+> **Сравнение с Crush (Charmbracelet):** Crush хранит план в `todos` — UI-чеклисте, который живёт в messages. При суммаризации он теряется. Atlas хранит план в Go-структуре, которая переживает condensation.
+
+## Task Routing: выбор стратегии планирования
+
+Не каждая задача требует плана. Простой вопрос "Какая версия Go?" не нуждается в декомпозиции. Task Routing определяет стратегию до начала работы:
+
+### 3-уровневый routing
+
+```go
+func routeTask(msg string, llmRouter Router) RoutingResult {
+    // Уровень 1: Pre-filter (без LLM)
+    if isSimpleRequest(msg) {
+        return RoutingResult{Strategy: "direct"}
+    }
+
+    // Уровень 2: LLM-классификация
+    result, err := llmRouter.Classify(msg)
+    if err == nil {
+        return result
+    }
+
+    // Уровень 3: Keyword fallback
+    return keywordFallback(msg)
+}
+
+func isSimpleRequest(msg string) bool {
+    words := strings.Fields(msg)
+    return len(words) <= 15 &&
+           len(msg) < 150 &&
+           containsFilePath(msg) &&
+           !containsBroadWords(msg) // "все файлы", "весь проект", "рефакторинг"
+}
+```
+
+| Результат routing | Что делает агент |
+|-------------------|------------------|
+| `direct` | Выполняет задачу сразу, без планирования |
+| `plan` | Сначала вызывает `plan` tool, потом выполняет |
+| `plan_and_subagent` | Создаёт план, запускает субагенты на каждый шаг |
+
+## Два режима планирования
+
+| Режим | Кто управляет | Когда использовать |
+|-------|---------------|-------------------|
+| **Гибкий (guided loop)** | LLM следует плану в system prompt | Средние задачи, нужна адаптивность |
+| **Жёсткий (orchestrator)** | Go-код итерирует по шагам | Большие задачи, нужна надёжность |
+
+**Гибкий режим:** план инжектируется в `[PLAN]` секцию system prompt. LLM сам решает, какой шаг выполнять, и обновляет статусы через `update_plan`.
+
+**Жёсткий режим:** Go-код берёт следующий `pending` шаг, формирует задачу, запускает субагента, получает результат, обновляет статус. LLM не контролирует порядок — его контролирует runtime.
+
+Task Routing выбирает режим: `plan` → гибкий, `plan_and_subagent` → жёсткий.
+
 ## Типовые ошибки
 
 ### Ошибка 1: Нет отслеживания зависимостей
@@ -302,6 +410,29 @@ for _, step := range readySteps {
     }(step)
 }
 wg.Wait()
+```
+
+### Ошибка 5: План как свободный текст
+
+**Симптом:** Модель перескакивает шаги, начинает Step 3 не завершив Step 2. Нет объективного критерия "шаг выполнен".
+
+**Причина:** План генерируется как свободный текст без машиночитаемой структуры. Нет отслеживания статусов шагов.
+
+**Решение:** Используйте структурированный план с явными статусами:
+```go
+// ПЛОХО: план как текст в messages
+plan := "1. Проверить логи\n2. Найти ошибку\n3. Исправить\n4. Протестировать"
+
+// ХОРОШО: LivePlan с отслеживанием
+plan := &LivePlan{
+    Goal: "Исправить ошибку авторизации",
+    Steps: []PlanStep{
+        {ID: 1, Description: "Проверить логи nginx", Status: StepCompleted, Result: "401 на /api/auth"},
+        {ID: 2, Description: "Найти причину в коде", Status: StepInProgress},
+        {ID: 3, Description: "Исправить middleware", Status: StepPending},
+        {ID: 4, Description: "Протестировать", Status: StepPending},
+    },
+}
 ```
 
 ## Паттерн: Controller + Processor (оркестратор + нормализатор)
@@ -406,12 +537,15 @@ func executePlanWithRetries(ctx context.Context, plan *Plan, executor StepExecut
 - [x] Можете выполнять планы с учётом зависимостей
 - [x] Обрабатываете сбои с повторами
 - [x] Сохраняете состояние плана для возобновления
+- [x] Понимаете разницу между планом в messages и LivePlan
+- [x] Знаете когда нужен routing для выбора стратегии
 
 **Не сдано:**
 - [ ] Выполнение шагов без проверки зависимостей
 - [ ] Нет сохранения состояния
 - [ ] Бесконечные повторы без лимитов
 - [ ] Последовательное выполнение, когда возможно параллельное
+- [ ] План как свободный текст без отслеживания статусов
 
 ## Связь с другими главами
 

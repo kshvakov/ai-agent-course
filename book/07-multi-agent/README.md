@@ -401,6 +401,61 @@ func runSubagent(task string, tools []openai.Tool) string {
 }
 ```
 
+### Typed Subagent Roles
+
+In practice, subagents are not universal — each has its own role with a specific set of tools and constraints:
+
+| Role | Tools | MaxIter | CanPlan | Purpose |
+|------|-------|---------|---------|---------|
+| **explorer** | read, list, search, recall | 15 | no | Codebase exploration |
+| **coder** | read, list, search, edit, write, exec | 30 | yes | Implementing changes |
+| **architect** | read, list, search, recall | 20 | yes | Architectural analysis |
+| **reviewer** | read, list, search, exec | 15 | no | Code review |
+| **worker** | read, list, search | 15 | no | Specific task |
+| **thinker** | read, list, search, plan, subagent | 20 | yes | Analytics with delegation |
+
+```go
+type SubagentRole struct {
+    Name      string
+    Tools     []string
+    MaxIter   int
+    CanPlan   bool
+    CanSpawn  bool   // whether the subagent can create child subagents
+    System    string // specialized system prompt
+}
+
+var roles = map[string]SubagentRole{
+    "explorer": {Tools: []string{"read", "list", "search", "recall"}, MaxIter: 15, CanPlan: false},
+    "coder":    {Tools: []string{"read", "list", "search", "edit", "write", "exec"}, MaxIter: 30, CanPlan: true},
+    "reviewer": {Tools: []string{"read", "list", "search", "exec"}, MaxIter: 15, CanPlan: false},
+}
+```
+
+### Depth Control
+
+Subagents can create child subagents, but the depth is limited:
+
+```go
+const maxDepth = 3
+
+func spawnSubagent(ctx context.Context, role string, task string) (string, error) {
+    depth := getDepth(ctx)
+    if depth >= maxDepth {
+        return "", fmt.Errorf("max subagent depth %d reached", maxDepth)
+    }
+    ctx = withDepth(ctx, depth+1)
+
+    r := roles[role]
+    if depth == maxDepth-1 {
+        r.CanSpawn = false // at the penultimate level, disallow creating children
+    }
+
+    return runSubagent(ctx, r, task)
+}
+```
+
+Depth is passed via `context.Value` — no global state needed.
+
 ### Pattern: Custom DAG Workflows
 
 For tasks with complex dependencies — DAG (Directed Acyclic Graph). Agents execute in dependency order; independent ones run in parallel.
@@ -520,6 +575,59 @@ func (p *WorkerPool) Submit(agentType string, task string) {
 | DAG Workflow | Tasks with complex dependencies | High |
 | A2A | Distributed agents on different servers | High |
 
+### Rule of 10 Files
+
+A heuristic from production experience: **if a task requires reading more than 10 files, decompose it into subagents**.
+
+A single agent with 10+ files in context loses focus. Instead, use a map-reduce pattern:
+
+1. **List** — collect the list of files
+2. **Group** — group by modules/directories
+3. **Map** — spawn a subagent for each group
+4. **Reduce** — combine results
+
+```go
+func analyzeProject(ctx context.Context, path string) (string, error) {
+    files := listFiles(path)
+    if len(files) <= 10 {
+        return analyzeDirect(ctx, files) // a single agent can handle it
+    }
+
+    groups := groupByDirectory(files)
+    var results []string
+    for _, group := range groups {
+        result, err := spawnSubagent(ctx, "explorer",
+            fmt.Sprintf("Analyze files in %s: %v", group.Dir, group.Files))
+        if err != nil {
+            continue
+        }
+        results = append(results, result)
+    }
+
+    return spawnSubagent(ctx, "architect",
+        "Combine analysis results:\n" + strings.Join(results, "\n---\n"))
+}
+```
+
+### Subagent Context Isolation
+
+A subagent is a **pure function**: `task → result`. It has no access to the parent's conversation. This is a deliberate constraint:
+
+- The parent **must provide** everything the subagent needs: exact file paths, search criteria, expected result format
+- The subagent **does not go through routing** — it doesn't need task classification, it already has a specific assignment
+- The subagent **does not have** the parent's Working Memory — a Nop object is used instead
+
+```go
+// BAD: vague task
+result := spawnSubagent(ctx, "coder", "Fix the auth bug")
+
+// GOOD: specific task with context
+result := spawnSubagent(ctx, "coder",
+    "Fix JWT validation in internal/auth/middleware.go:45. "+
+    "The token expiry check uses time.Now() instead of time.Now().UTC(). "+
+    "After fix, run: go test ./internal/auth/...")
+```
+
 ## Common Errors
 
 ### Error 1: No Context Isolation
@@ -582,6 +690,26 @@ supervisorMessages = append(supervisorMessages, openai.ChatCompletionMessage{
     ToolCallID: supervisorMsg.ToolCalls[0].ID,
 })
 ```
+
+### Error 4: Subagent Stuck in a Loop
+
+**Symptom:** Subagent runs for a long time, consumes tokens, but returns no result. Logs show repeating tool calls.
+
+**Cause:** Vague task. The subagent doesn't know when the task is done and keeps exploring.
+
+**Solution:**
+```go
+// BAD: vague task
+spawnSubagent(ctx, "explorer", "Study the project and explain how it's structured")
+
+// GOOD: specific task with completion criteria
+spawnSubagent(ctx, "explorer",
+    "Find all files with gRPC services in internal/. "+
+    "For each: file name, service name, list of methods. "+
+    "Return result in format: service_name: [method1, method2]")
+```
+
+In a production agent, when spawning subagents for project analysis, one of them got stuck in a loop of repeatedly reading the same files. The fix: restart with clearer instructions and add `MaxIter` for the specific role.
 
 ## Mini-Exercises
 

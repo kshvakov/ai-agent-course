@@ -969,6 +969,59 @@ for i := 0; i < maxIterations; i++ {
 
 For more on cost and optimization, see [Chapter 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md).
 
+## Tool Descriptions in .md Files
+
+In production agents, tool descriptions are stored **in separate .md files**, not in Go code:
+
+```
+internal/agent/tool/
+├── read/
+│   ├── read.go          // implementation
+│   └── read.md          // description for the LLM
+├── edit/
+│   ├── edit.go
+│   └── edit.md
+└── exec/
+    ├── exec.go
+    └── exec.md
+```
+
+The description is loaded via `go:embed`:
+
+```go
+import _ "embed"
+
+//go:embed read.md
+var description string
+
+type ReadTool struct{}
+
+func (t *ReadTool) Name() string        { return "read" }
+func (t *ReadTool) Description() string { return description }
+```
+
+Advantages:
+
+- **Markdown is easier to edit** — no need to change Go code to improve a description
+- **Descriptions are reviewed separately from code** — a product manager can improve the description without knowing Go
+- **Single Source of Truth** — `Tool.Description()` is the only source of the description
+
+### Anti-pattern: Duplicate Descriptions
+
+A common mistake: the tool description is duplicated in the system prompt **and** in the tool definitions API. The model receives contradictory instructions:
+
+```
+// In system.md (system prompt):
+"ALWAYS use ask tool to ask questions. Never write questions as plain text."
+
+// In ask.Description() (tool definition):
+"Use ONLY when you need the user to pick from options. For free-text, just ask in your message."
+```
+
+The model receives **mutually exclusive** instructions. For Raw providers (Qwen, DeepSeek) the description may appear **three times**: system prompt + tool definition + `<tools>` injection.
+
+**Rule:** The system prompt contains **behavioral rules and workflow**, but **not tool descriptions**. Descriptions belong only in the Tool API.
+
 ## Common Errors
 
 ### Error 1: Model Doesn't Generate tool_call
@@ -1042,6 +1095,23 @@ Description: "Ping a host"
 
 // GOOD
 Description: "Ping a host to check network connectivity. Use this when user asks about network reachability or connectivity."
+```
+
+### Error 5: Duplicate Tool Description
+
+**Symptom:** The model behaves unpredictably — sometimes it uses the tool, sometimes it writes the question as plain text. Different providers produce different behavior.
+
+**Cause:** The tool description is duplicated in the system prompt and in the tool definition. The descriptions contradict each other.
+
+**Solution:**
+```go
+// BAD: description in two places
+systemPrompt := "Use read tool to read files. Always read before editing."
+readTool := Tool{Description: "Read a file from the filesystem. Returns file content."}
+
+// GOOD: description only in the tool definition
+systemPrompt := "Before editing, always read the file first." // behavioral rule, not a description
+readTool := Tool{Description: "Read a file. Returns content with line numbers."}
 ```
 
 ## Mini-Exercises

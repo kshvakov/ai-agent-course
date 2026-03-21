@@ -252,6 +252,230 @@ func (s *SharedMemoryStore) ListAll(ctx context.Context) (map[string]any, error)
 
 > **Connection:** For more on agent state management, see [Chapter 11: State Management](../11-state-management/README.md). Checkpoint is a special case of state persistence.
 
+## Block Memory
+
+A simple map-based `SimpleMemory` works for learning purposes. In a production agent, memory is more complex. The key idea: **block architecture**.
+
+A Block is a unit of interaction. A user request, a chain of tool calls, the final response — all of that is one block. A block stores both original messages and their compact version.
+
+### Block Lifecycle
+
+```mermaid
+flowchart LR
+    A[Prepare] --> B[Append]
+    B --> C[BuildContext]
+    C --> D[Close]
+    D --> E["Compact + Summary"]
+```
+
+1. **Prepare** — create a new block, bind it to the store
+2. **Append** — add messages (user, assistant, tool results)
+3. **BuildContext** — assemble history from current and past blocks
+4. **Close** — finalize: create compact version, count tokens, generate summary
+
+### Compact: 91% Tool Chain Compression
+
+When a block is closed, tool call chains are collapsed into a compact form:
+
+```go
+type Block struct {
+    ID       int
+    Query    string
+    Messages []Message // original
+    Compact  []Message // compressed version
+    Summary  string
+    Tokens   int
+}
+
+func (b *Block) Close() {
+    b.Query = extractQuery(b.Messages)      // first 120 chars of user message
+    b.Compact = compactMessages(b.Messages)
+    b.Tokens = estimateTokens(b.Compact)    // chars / 3
+    b.Summary = buildSummary(b.Query, b.Messages, b.Compact)
+}
+```
+
+The `compactMessages` function collapses `assistant(tool_calls) → tool_result` chains into a single message with `<prior_tool_use>` tags:
+
+```go
+func compactMessages(msgs []Message) []Message {
+    var result []Message
+    var toolBuf strings.Builder
+
+    for _, msg := range msgs {
+        if msg.HasToolCalls() {
+            for _, tc := range msg.ToolCalls {
+                args := truncate(tc.Arguments, 80)
+                res := truncate(findToolResult(msgs, tc.ID), 200)
+                line := fmt.Sprintf("%s %s -- %s", tc.Name, args, res)
+                if !isDuplicate(toolBuf.String(), line) {
+                    toolBuf.WriteString(line + "\n")
+                }
+            }
+            continue
+        }
+        if msg.Role == "tool" {
+            continue // already processed above
+        }
+        if toolBuf.Len() > 0 {
+            result = append(result, Message{
+                Role:    "user", // not assistant — the model must not imitate its own content
+                Content: "<prior_tool_use>\n" + toolBuf.String() + "</prior_tool_use>",
+            })
+            toolBuf.Reset()
+        }
+        result = append(result, msg)
+    }
+    return result
+}
+```
+
+Compact messages are assigned the `user` role, not `assistant`. This prevents the model from perceiving compressed content as its own previous words and starting to imitate them.
+
+### BuildContext: Block Budgeting
+
+When assembling context, we take compact versions of past blocks (from newest to oldest) until the budget runs out:
+
+```go
+func (m *Memory) BuildContext(currentBlock *Block, contextSize int) []Message {
+    budget := contextSize - currentBlock.Tokens - 4096 // reserve
+
+    var history []Message
+    // from newest blocks to oldest
+    for i := len(m.blocks) - 1; i >= 0 && budget > 0; i-- {
+        block := m.blocks[i]
+        if block.Tokens > budget {
+            break
+        }
+        history = append(block.Compact, history...)
+        budget -= block.Tokens
+    }
+
+    return append(history, currentBlock.Messages...)
+}
+```
+
+## Block Catalog and Recall
+
+The model does not see past block contents directly. Instead, a **catalog** — a list of blocks with brief descriptions — is rendered in the system prompt:
+
+```
+[CONTEXT BLOCKS]
+Blocks from prior interactions (use recall tool to get full details):
+#0: check disk usage — exec x3, read x1 → "Disk /data at 92%, cleaned logs" (~5K tokens)
+#1: deploy service — edit x2, exec x4 → "Deployed v2.3.1 to staging" (~8K tokens)
+#2: fix nginx config — read x2, edit x1 → "Updated proxy_pass for /api" (~3K tokens)
+```
+
+When the model needs details, it calls the `recall` tool:
+
+```go
+type RecallTool struct {
+    memory *Memory
+}
+
+func (t *RecallTool) Execute(ctx context.Context, args RecallArgs) (string, error) {
+    msgs := t.memory.BlockMessages(args.BlockID)
+    if msgs == nil {
+        return "Block not found", nil
+    }
+    return formatMessages(msgs), nil // full original messages
+}
+```
+
+Recall returns **original** block messages, not the compact version. This is critical: compact loses details, and deep analysis requires full information.
+
+## Working Memory
+
+Working Memory is a dynamic section of the system prompt that holds the context of the current task. Unlike block memory (past interactions), Working Memory represents "what the agent knows right now."
+
+### Working Memory Components
+
+| Component | Purpose |
+|-----------|---------|
+| **TaskContext** | Current task (first 50 words), read/modified files, recent actions |
+| **LivePlan** | Goal, steps with statuses (pending/in_progress/completed/cancelled) |
+| **Budget** | Warnings about context window filling up |
+| **ContextBlocks** | Catalog of past blocks for recall |
+
+### Rendering in System Prompt
+
+```go
+type WorkingMemory struct {
+    Task          string
+    FilesRead     *Ring[string]  // ring buffer, MRU semantics
+    FilesModified *Ring[string]
+    LastActions   *Ring[string]
+    Plan          *LivePlan
+    Budget        *BudgetTracker
+    Blocks        []BlockSummary
+    maxChars      int            // ~6000 chars
+}
+
+func (wm *WorkingMemory) Render() string {
+    var sb strings.Builder
+
+    sb.WriteString("[TASK CONTEXT]\n")
+    sb.WriteString("Task: " + wm.Task + "\n")
+    sb.WriteString("Files read: " + wm.FilesRead.Join(", ") + "\n")
+    sb.WriteString("Files modified: " + wm.FilesModified.Join(", ") + "\n")
+    sb.WriteString("Recent: " + wm.LastActions.Join(", ") + "\n")
+
+    if wm.Plan != nil {
+        sb.WriteString("\n" + wm.Plan.Render() + "\n")
+    }
+    if wm.Budget.ShouldWarn() {
+        sb.WriteString("\n[BUDGET]\n" + wm.Budget.Warning() + "\n")
+    }
+    if len(wm.Blocks) > 0 {
+        sb.WriteString("\n[CONTEXT BLOCKS]\n")
+        for _, b := range wm.Blocks {
+            sb.WriteString(fmt.Sprintf("#%d: %s (~%dK tokens)\n", b.ID, b.Summary, b.Tokens/1000))
+        }
+    }
+
+    // Trim when over budget
+    if sb.Len() > wm.maxChars {
+        wm.LastActions.Trim(3)
+        wm.FilesRead.Trim(5)
+    }
+
+    return sb.String()
+}
+```
+
+### The Problem: Working Memory Is Not Persistent
+
+Working Memory lives in RAM. Between sessions it is lost: the agent forgets the plan, re-reads files, and starts from scratch.
+
+Solution: pass Working Memory as a parameter to `Run()` so it survives across REPL cycles. For persistence between sessions, implement Export/Import:
+
+```go
+func (wm *WorkingMemory) Export() WorkingMemorySnapshot {
+    return WorkingMemorySnapshot{
+        Task:          wm.Task,
+        FilesRead:     wm.FilesRead.Items(),
+        FilesModified: wm.FilesModified.Items(),
+        Plan:          wm.Plan.Export(),
+    }
+}
+
+func (wm *WorkingMemory) Restore(snap WorkingMemorySnapshot) {
+    wm.Task = snap.Task
+    for _, f := range snap.FilesRead {
+        wm.FilesRead.Push(f)
+    }
+    // ...
+}
+```
+
+> **4 levels of memory in a production agent:**
+>
+> 1. **Working Memory** — task, plan, budget, files (in system prompt)
+> 2. **Block Memory** — completed interactions (original + compact)
+> 3. **Recall** — model-driven retrieval of full block data
+> 4. **Condense** — emergency LLM compression on overflow (see [Context Engineering](../13-context-engineering/README.md))
+
 ## Common Errors
 
 ### Error 1: No TTL (Time To Live)
@@ -277,6 +501,33 @@ func (s *SharedMemoryStore) ListAll(ctx context.Context) (map[string]any, error)
 **Cause:** Simple keyword matching instead of semantic search.
 
 **Solution:** Use embeddings for semantic similarity search.
+
+### Error 4: Compact Destroys Originals
+
+**Symptom:** After compaction, it is impossible to recover tool call details. Recall returns the compressed version.
+
+**Cause:** Original messages were deleted when creating the compact version.
+
+**Solution:**
+
+```go
+// BAD: overwriting the original
+block.Messages = compactMessages(block.Messages)
+
+// GOOD: store both versions
+block.Compact = compactMessages(block.Messages)
+// block.Messages remains unchanged
+```
+
+The **Never destroy originals** principle: condensation is a view, not a mutation. Originals are needed for recall over the full history.
+
+### Error 5: Programmatic Compaction Mid-Loop
+
+**Symptom:** Agent loses context in the middle of a task, restarts or repeats actions.
+
+**Cause:** Compaction is triggered inside the agent loop while the task is still running.
+
+**Solution:** Compact only on `Block.Close()`, when the interaction is complete. Inside the loop, use LLM condensation (condense), which creates a meaningful summary instead of mechanical compression.
 
 ## Mini-Exercises
 
@@ -313,6 +564,34 @@ func (m *Memory) RetrieveSemantic(query string, limit int) ([]MemoryItem, error)
 - Finds relevant items even without exact keyword match
 - Returns most similar items first
 
+### Exercise 3: Implement Block Memory with Compact
+
+Implement block memory with tool chain compaction:
+
+```go
+type BlockMemory struct {
+    blocks  []*Block
+    current *Block
+}
+
+func (m *BlockMemory) NewBlock() *Block {
+    // Create a new block
+}
+
+func (m *BlockMemory) CloseBlock() {
+    // Close current block: compact + summary
+}
+
+func (m *BlockMemory) BuildContext(contextSize int) []Message {
+    // Assemble history from compact versions of past blocks + current block
+}
+```
+
+**Expected result:**
+- Compact compresses a chain of 10 tool calls into 1-2 messages
+- BuildContext fits within the token budget
+- Original messages are preserved for recall
+
 ## Completion Criteria / Checklist
 
 **Completed:**
@@ -320,11 +599,16 @@ func (m *Memory) RetrieveSemantic(query string, limit int) ([]MemoryItem, error)
 - [x] Can store and retrieve information
 - [x] Implement TTL and cleanup
 - [x] Integrate memory with agent
+- [x] Understand block memory architecture and compaction
+- [x] Can implement block catalog and recall
+- [x] Understand Working Memory and its components
 
 **Not completed:**
 - [ ] No TTL, memory grows infinitely
 - [ ] Storing everything without filtering
 - [ ] Only simple keyword search
+- [ ] Compact destroys original messages
+- [ ] Compaction triggered mid-loop instead of on block close
 
 ## Connection with Other Chapters
 

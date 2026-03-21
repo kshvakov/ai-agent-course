@@ -401,6 +401,61 @@ func runSubagent(task string, tools []openai.Tool) string {
 }
 ```
 
+### Типизированные роли субагентов
+
+На практике субагенты не универсальны — у каждого своя роль с конкретным набором инструментов и ограничениями:
+
+| Роль | Инструменты | MaxIter | CanPlan | Назначение |
+|------|-------------|---------|---------|------------|
+| **explorer** | read, list, search, recall | 15 | нет | Исследование кодовой базы |
+| **coder** | read, list, search, edit, write, exec | 30 | да | Реализация изменений |
+| **architect** | read, list, search, recall | 20 | да | Архитектурный анализ |
+| **reviewer** | read, list, search, exec | 15 | нет | Код-ревью |
+| **worker** | read, list, search | 15 | нет | Конкретная задача |
+| **thinker** | read, list, search, plan, subagent | 20 | да | Аналитика с делегированием |
+
+```go
+type SubagentRole struct {
+    Name      string
+    Tools     []string
+    MaxIter   int
+    CanPlan   bool
+    CanSpawn  bool // может ли создавать под-субагенты
+    System    string // специализированный system prompt
+}
+
+var roles = map[string]SubagentRole{
+    "explorer": {Tools: []string{"read", "list", "search", "recall"}, MaxIter: 15, CanPlan: false},
+    "coder":    {Tools: []string{"read", "list", "search", "edit", "write", "exec"}, MaxIter: 30, CanPlan: true},
+    "reviewer": {Tools: []string{"read", "list", "search", "exec"}, MaxIter: 15, CanPlan: false},
+}
+```
+
+### Depth Control
+
+Субагенты могут создавать дочерние субагенты, но глубина ограничена:
+
+```go
+const maxDepth = 3
+
+func spawnSubagent(ctx context.Context, role string, task string) (string, error) {
+    depth := getDepth(ctx)
+    if depth >= maxDepth {
+        return "", fmt.Errorf("max subagent depth %d reached", maxDepth)
+    }
+    ctx = withDepth(ctx, depth+1)
+
+    r := roles[role]
+    if depth == maxDepth-1 {
+        r.CanSpawn = false // на предпоследнем уровне запрещаем создание дочерних
+    }
+
+    return runSubagent(ctx, r, task)
+}
+```
+
+Глубина передаётся через `context.Value` — без глобального состояния.
+
 ### Паттерн: Custom DAG Workflows
 
 Для задач со сложными зависимостями — DAG (направленный ациклический граф). Агенты выполняются в порядке зависимостей, независимые — параллельно.
@@ -432,6 +487,59 @@ workflow := Workflow{
 ```
 
 Подробнее о workflow-паттернах см. [Главу 10: Planning и Workflows](../10-planning-and-workflows/README.md).
+
+### Правило 10 файлов
+
+Эвристика из реальной практики: **если задача требует чтения более 10 файлов, декомпозируйте на субагенты**.
+
+Один агент с 10+ файлами в контексте теряет фокус. Вместо этого — паттерн map-reduce:
+
+1. **List** — собрать список файлов
+2. **Group** — сгруппировать по модулям/каталогам
+3. **Map** — запустить субагент на каждую группу
+4. **Reduce** — собрать результаты
+
+```go
+func analyzeProject(ctx context.Context, path string) (string, error) {
+    files := listFiles(path)
+    if len(files) <= 10 {
+        return analyzeDirect(ctx, files) // один агент справится
+    }
+
+    groups := groupByDirectory(files)
+    var results []string
+    for _, group := range groups {
+        result, err := spawnSubagent(ctx, "explorer",
+            fmt.Sprintf("Analyze files in %s: %v", group.Dir, group.Files))
+        if err != nil {
+            continue
+        }
+        results = append(results, result)
+    }
+
+    return spawnSubagent(ctx, "architect",
+        "Combine analysis results:\n" + strings.Join(results, "\n---\n"))
+}
+```
+
+### Изоляция контекста субагентов
+
+Субагент — **чистая функция**: `task → result`. У него нет доступа к conversation родителя. Это осознанное ограничение:
+
+- Родитель **обязан передать** всё необходимое: точные пути файлов, критерии поиска, ожидаемый формат результата
+- Субагент **не проходит routing** — ему не нужна классификация задачи, он уже получил конкретное задание
+- Субагент **не имеет Working Memory** родителя — используется Nop-объект
+
+```go
+// ПЛОХО: неконкретная задача
+result := spawnSubagent(ctx, "coder", "Fix the auth bug")
+
+// ХОРОШО: конкретная задача с контекстом
+result := spawnSubagent(ctx, "coder",
+    "Fix JWT validation in internal/auth/middleware.go:45. "+
+    "The token expiry check uses time.Now() instead of time.Now().UTC(). "+
+    "After fix, run: go test ./internal/auth/...")
+```
 
 ### A2A (Agent-to-Agent) протокол
 
@@ -583,6 +691,26 @@ supervisorMessages = append(supervisorMessages, openai.ChatCompletionMessage{
 })
 ```
 
+### Ошибка 4: Субагент зависает в цикле
+
+**Симптом:** Субагент работает долго, потребляет токены, но не возвращает результат. В логах — повторяющиеся tool calls.
+
+**Причина:** Неконкретная задача. Субагент не знает, когда задача решена, и продолжает исследование.
+
+**Решение:**
+```go
+// ПЛОХО: расплывчатая задача
+spawnSubagent(ctx, "explorer", "Изучи проект и расскажи, как он устроен")
+
+// ХОРОШО: конкретная задача с критерием завершения
+spawnSubagent(ctx, "explorer",
+    "Найди все файлы с gRPC-сервисами в internal/. "+
+    "Для каждого: имя файла, имя сервиса, список методов. "+
+    "Верни результат в формате: service_name: [method1, method2]")
+```
+
+Реальный случай из Atlas: при запуске субагентов для анализа проекта один из них завис в цикле повторного чтения файлов. Решение: перезапуск с более чёткими инструкциями и добавление `MaxIter` для конкретной роли.
+
 ## Мини-упражнения
 
 ### Упражнение 1: Реализуйте изоляцию контекста
@@ -623,12 +751,16 @@ supervisorTools := []openai.Tool{
 - [x] Результаты Workers возвращаются Supervisor-у
 - [x] Supervisor собирает результаты и формулирует финальный ответ
 - [x] Описания инструментов для вызова Workers четкие
+- [x] Понимаете типизированные роли субагентов
+- [x] Знаете правило 10 файлов
 
 **Не сдано:**
 - [ ] Worker видит всю историю Supervisor-а (нет изоляции)
 - [ ] Supervisor не знает, кого вызвать (плохие описания)
 - [ ] Worker не возвращает результат Supervisor-у
 - [ ] Supervisor не собирает результаты от Workers
+- [ ] Субагенты без ограничения глубины
+- [ ] Неконкретные задачи для субагентов
 
 ## Прод-заметки
 

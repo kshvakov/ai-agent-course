@@ -215,6 +215,38 @@ msg2 := resp2.Choices[0].Message
 // Now Runtime can execute the action
 ```
 
+### Auto-Approve for Read-Only Operations
+
+In practice, not every tool call requires confirmation. Read-only operations are safe:
+
+```go
+func requiresConfirmation(tool Tool, args string) bool {
+    if tool.IsReadOnly() {
+        return false // read, list, search — always auto-approve
+    }
+    if isDangerousCommand(tool.Name(), args) {
+        return true // rm -rf, DROP TABLE — always require confirmation
+    }
+    return tool.RequiresConfirm() // edit, write, exec — configurable
+}
+```
+
+For MCP tools (external servers), `IsReadOnly` is determined by heuristic — by name prefix:
+
+```go
+func isMCPToolReadOnly(name string) bool {
+    readPrefixes := []string{"get_", "find_", "list_", "search_", "read_", "fetch_"}
+    for _, prefix := range readPrefixes {
+        if strings.HasPrefix(name, prefix) {
+            return true
+        }
+    }
+    return false
+}
+```
+
+For the `exec` tool — a separate list of dangerous commands: `rm`, `dd`, `mkfs`, `DROP`, `DELETE`, `shutdown`. If a command contains a dangerous pattern — confirmation is required, even if `RequiresConfirm() == false`.
+
 ### HITL as tools (ask_user / confirm_action)
 
 A text-based "Are you sure?" flow is fine for a CLI and early prototypes. In production, it's often better to make HITL **machine-readable** by introducing dedicated tools:
@@ -333,6 +365,34 @@ for {
 10. Outer loop waits for next input
 
 **Important:** Inner loop can execute multiple tools in a row (autonomously), but as soon as model generates text — control returns to user.
+
+## Iron Laws
+
+In production agents, there are **unconditional rules** that must never be violated. They are injected into the system prompt with the highest priority:
+
+| # | Rule | Countermeasure on Violation |
+|---|------|---------------------------|
+| 1 | **Verify after every change** | After every edit — `go build ./...` or `go test` |
+| 2 | **Evidence before assertion** | Not "it works", but command output confirming it |
+| 3 | **Reproduce before fix** | Reproduce the bug first, then fix |
+| 4 | **Complete the step before moving on** | Don't skip ahead to the next step |
+| 5 | **Don't re-read what you know** | Don't re-read a file already in context |
+
+Iron Laws are embedded in the system prompt as a section with an `always` tag — they are present on **every** iteration, without exception.
+
+### Red Flags Table
+
+Models rationalize skipping verification. Each rationalization is a red flag with a specific countermeasure:
+
+| Model Thought | Countermeasure |
+|--------------|---------------|
+| "This obviously works" | Run the build/test command |
+| "Small change, no need to verify" | Small changes break things more often |
+| "Tests aren't needed for this" | Run existing tests at minimum |
+| "I'm sure this file exists" | Use list or search to confirm |
+| "I already know the answer" | Check the actual state, not assumptions |
+
+The Red Flags Table is injected into the prompt alongside Iron Laws. When the model generates text, matching against these patterns prevents errors **before** they happen.
 
 ## Critical Action Examples
 

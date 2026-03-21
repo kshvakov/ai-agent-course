@@ -449,6 +449,66 @@ func formatMessages(messages []openai.ChatCompletionMessage) string {
 | `semantic` | High (~5-10x) | Medium | Long discussions, need the gist |
 | `keyvalue` | Very high (~10-20x) | High (facts only) | Long-term storage, cross-session |
 
+## Progressive Compression (4 Levels)
+
+In practice, context compression is not a single technique but a **cascade of four levels**. Each next level activates only when the previous one is insufficient:
+
+```mermaid
+flowchart TD
+    A["Level 1: Trim"] -->|"WM > 6000 chars"| B["Level 2: Compact"]
+    B -->|"Block.Close()"| C["Level 3: Condense"]
+    C -->|"ContextOverflowError"| D["Level 4: Block Eviction"]
+    D -->|"BuildContext: budget"| E["Final context"]
+```
+
+| Level | When it triggers | What it does | Information loss |
+|-------|------------------|--------------|------------------|
+| **Trim** | Working Memory > 6000 chars | Trims completed steps, old files, actions | Minimal |
+| **Compact** | Block.Close() | Collapses tool chains into `<prior_tool_use>` (91% compression) | Low |
+| **Condense** | ContextOverflowError from provider | LLM creates a structured summary | Medium |
+| **Block Eviction** | BuildContext: budget insufficient | Old blocks are excluded from context | High (but accessible via recall) |
+
+The principle: **gradual degradation instead of hard cut**. Binary summarization ("all or nothing") loses too much. Progressive compression degrades gracefully.
+
+## Condensation Prompt
+
+Condense is an emergency measure. It fires at most **once per Run**, when the provider returns a `ContextOverflowError`. Re-condensing already compressed context produces poor results.
+
+### How Condense Works
+
+1. **Split**: the history is divided into head (old messages) and tail (last 2 steps)
+2. **Compress head**: LLM summarizes the old part
+3. **Assemble**: summary (as a user message) + tail
+4. **Replace**: `mem.Reset(condensedMsgs)`
+
+### The Condensation Prompt
+
+The key metaphor: **"Write as if briefing a teammate taking over mid-task."** The prompt requires 8 mandatory sections:
+
+```
+Write a structured summary as if briefing a teammate taking over mid-task.
+
+Required sections:
+1. Goal — what the user wants
+2. Key Findings — important discoveries
+3. Resources Examined — files read, commands run
+4. Decisions Made — choices and their rationale
+5. Work Completed — what's done
+6. Pending Items — what's left
+7. Current State — where we stopped
+8. Next Steps — what to do next
+
+Be SPECIFIC:
+- "Add JWT middleware to internal/auth/middleware.go:45" — GOOD
+- "implement authentication" — BAD
+- "Found memory leak in worker pool goroutine at pkg/pool/pool.go:120" — GOOD
+- "found a bug" — BAD
+
+Max words: {maxWords}
+```
+
+The summary is saved as a **user message** (not assistant). The model treats it as an instruction ("here's the context, continue"), not as its own previous response.
+
 ## Incremental Summarization
 
 ### The Problem
@@ -564,6 +624,46 @@ func (b TokenBudget) FactsBudget() int   { return int(float64(b.Total) * b.Facts
 func (b TokenBudget) SummaryBudget() int { return int(float64(b.Total) * b.SummaryRatio) }
 func (b TokenBudget) WorkingBudget() int { return int(float64(b.Total) * b.WorkingRatio) }
 ```
+
+### Dynamic Budget Thresholds
+
+Static budget allocation is a first step. In a production agent, the budget is tracked **dynamically** with two thresholds:
+
+| Threshold | Action | What gets injected into the system prompt |
+|-----------|--------|-------------------------------------------|
+| **~75%** | Warning | "Start finishing your current line of work" |
+| **~85%** | Wrap-up | "Stop starting new tool calls. Summarize progress and stop." |
+
+```go
+type BudgetTracker struct {
+    contextSize      int
+    wrapAt           float64 // 0.85
+    wrapRequested    bool
+    lastPromptTokens int
+}
+
+func (b *BudgetTracker) Update(promptTokens int) {
+    b.lastPromptTokens = promptTokens
+    ratio := float64(promptTokens) / float64(b.contextSize)
+    if ratio >= b.wrapAt {
+        b.wrapRequested = true
+    }
+}
+
+func (b *BudgetTracker) Warning() string {
+    ratio := float64(b.lastPromptTokens) / float64(b.contextSize)
+    if ratio >= b.wrapAt {
+        return "Context window is nearly full. Stop starting new tool calls. " +
+               "Summarize your progress and present results."
+    }
+    if ratio >= 0.75 {
+        return "Context window is filling up. Start finishing your current line of work."
+    }
+    return ""
+}
+```
+
+The budget **does not forcefully interrupt the loop**. Instead, a warning is injected into the system prompt and the model decides to wrap up on its own. This provides graceful degradation: the model has time to save results and hand off context.
 
 ### Message Scoring
 
@@ -698,6 +798,61 @@ For a model with 128K context and `maxOutputTokens = 4096`:
 | **Total input** | 100% | **~123,900** |
 | Model response | — | 4,096 |
 
+## Dynamic System Prompt
+
+The system prompt consumes tokens on **every iteration** of the agent loop. If it is static and long, it becomes a constant tax on your budget. The solution: adapt the system prompt to the current state.
+
+### Saving Tokens on Subsequent Iterations
+
+On the first iteration the agent needs detailed instructions: how to work with files, how to plan, how to decompose a task. On subsequent iterations these sections can be removed:
+
+```go
+type PromptSection struct {
+    Name     string
+    Content  string
+    Tags     []string // "always", "first_turn", "has_plan", "workflow:debug"
+    Priority int      // 0 = mandatory, 99 = optional
+    Required bool
+}
+
+func buildSystemPrompt(sections []PromptSection, iter int, budget int) string {
+    activeTags := []string{"always"}
+    if iter == 0 {
+        activeTags = append(activeTags, "first_turn")
+    }
+
+    var active []PromptSection
+    for _, s := range sections {
+        if s.matchesTags(activeTags) {
+            active = append(active, s)
+        }
+    }
+
+    // If it doesn't fit — drop optional sections by priority
+    sort.Slice(active, func(i, j int) bool {
+        return active[i].Priority < active[j].Priority
+    })
+
+    var result strings.Builder
+    used := 0
+    for _, s := range active {
+        tokens := estimateTokens(s.Content)
+        if !s.Required && used+tokens > budget {
+            continue
+        }
+        result.WriteString(s.Content + "\n\n")
+        used += tokens
+    }
+    return result.String()
+}
+```
+
+On iterations > 0, sections tagged `first_turn` (how-to-work, decomposition, file workflows) are disabled. Savings: ~1500 tokens per iteration.
+
+### The 20-25% Rule
+
+The system prompt should not exceed ~20-25% of the context window. For a 128K model that is ~25-32K tokens. If the system prompt grows (Skills, Working Memory, Routing Hints), optional sections are dropped by priority — from highest to lowest.
+
 ## Common Errors
 
 ### Error 1: No Summarization
@@ -750,6 +905,39 @@ if !includePreferences {
 
 **Practice:** For analytical tasks (incidents, diagnostics), exclude preferences and hypotheses from context. Include them only for personalized responses (e.g., recommendations based on user preferences).
 
+### Error 5: Re-Condensing Already Compressed Context
+
+**Symptom:** After a second condensation the agent loses critical context — forgets the task goal, confuses files, repeats actions.
+
+**Cause:** Condense is called repeatedly on already compressed context. Each iteration loses details exponentially.
+
+**Solution:** Limit condense to **once per Run**. On repeated overflow — wrap up and save progress:
+
+```go
+// BAD: unlimited condensation
+for {
+    resp, err := llm.Chat(ctx, messages)
+    if isContextOverflow(err) {
+        messages = condense(ctx, messages) // gets worse every time
+        continue
+    }
+}
+
+// GOOD: at most once
+condenseCount := 0
+for {
+    resp, err := llm.Chat(ctx, messages)
+    if isContextOverflow(err) && condenseCount == 0 {
+        messages = condense(ctx, messages)
+        condenseCount++
+        continue
+    }
+    if isContextOverflow(err) {
+        return wrapUpAndSaveProgress() // don't re-condense
+    }
+}
+```
+
 ## Mini-Exercises
 
 ### Exercise 1: Implement Summarization
@@ -774,11 +962,14 @@ func summarizeConversation(messages []openai.ChatCompletionMessage) (string, err
 - [x] Can summarize conversations
 - [x] Extract and store facts
 - [x] Manage context within token limits
+- [x] Know the 4 levels of progressive compression
+- [x] Understand how the condensation prompt works
 
 **Not completed:**
 - [ ] No summarization, context grows infinitely
 - [ ] Too aggressive summarization, facts lost
 - [ ] No fact selection, token waste
+- [ ] Re-condensing already compressed context
 
 ## Connection with Other Chapters
 
