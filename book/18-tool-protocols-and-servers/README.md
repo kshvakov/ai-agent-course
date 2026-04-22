@@ -18,6 +18,8 @@ This chapter covers tool server patterns: stdio, HTTP, gRPC, schema versioning, 
 
 **Solution:** Tool servers: each tool runs as a separate process/service. The agent talks to tools through a standard protocol (stdio, HTTP, or gRPC). Tools can be updated and scaled independently, and isolated for security.
 
+> **Junior employee model.** authn/authz at the tool-server level is "the office pass". Just because the agent knows the URL of a service doesn't grant the right to use it: you need a token, a limited set of operations, an audit trail. One tool-server = one department: its own clearance, its own logs, its own area of responsibility. MCP/A2A don't override these rules — they standardize how to apply them. See [Preface → Mental Model](../00-preface/README.md#mental-model-an-agent-is-a-new-employee) and [Ch. 17: Security and Governance](../17-security-and-governance/README.md).
+
 ## Theory in Simple Terms
 
 ### Tool Server Architecture

@@ -325,6 +325,8 @@ Remaining space: 300 tokens
 
 > **Note:** This is an approximate estimate. Exact token counting depends on the model and library used (e.g., `tiktoken` for OpenAI models).
 
+> **Important for an agent (rule from Ch. 13).** In the agent's runtime, the **primary source for token counts is `usage.PromptTokens` / `usage.TotalTokens` from the provider response**, not your own counter. The provider already knows its tokenizer and applied it. Your own counter (`tiktoken`, `char/3`, `char/4`) is used only for a **pre-send estimate** — for example, to decide whether it's time to compress history. Building an agent's budget on your own estimates alone is a recipe for diverging from reality by 10–30%, which especially hurts at large window sizes. See [Chapter 13: Context Engineering](../13-context-engineering/README.md) for details.
+
 If history overflows, the agent "forgets" the beginning of the conversation. In practice, it happens for one of two reasons: either your runtime trims/summarizes old messages to fit the limit (the model never sees them), or the API rejects the request with a context-length error if you don't handle overflow.
 
 **The Model is Stateless:** It doesn't remember your previous request if you don't pass it again in `messages`.
@@ -557,6 +559,8 @@ If you don't know something, say "I don't know" or use a tool.`
 ## Mini-Exercises
 
 ### Exercise 1: Token Counting
+
+> **Context.** This function is a **pre-send estimate**, used to decide whether it's time to compress history **before** sending the request. After the request, use `resp.Usage.PromptTokens` from the provider as the authoritative source. See the note in the "Context Window" section above and [Chapter 13](../13-context-engineering/README.md).
 
 Write a function that approximately counts the number of tokens in text:
 

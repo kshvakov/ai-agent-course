@@ -12,6 +12,7 @@
 
 **Решение:** Обнаружение и маскирование PII перед логированием и отправкой в LLM, защита секретов, redaction логов, TTL для хранения.
 
+> **Junior employee model.** Data privacy для агента — это **те же data-policies, что для нового сотрудника**. Он подписывает NDA, не пересылает клиентские email-ы наружу, не складывает скриншоты с PII в публичный канал, удаляет персональные данные после отчётного периода (retention). Агент так же: не пишет PII в спаны/логи как есть (см. [Гл. 19](../19-observability-and-tracing/README.md), правило про redacted-атрибуты), не передаёт лишнее в LLM-провайдера, удаляет данные по TTL. Принципиально нового тут ничего нет — это адаптация знакомых GDPR-практик к коду. Подробная рамка — [Предисловие → Ментальная модель](../00-preface/README.md#ментальная-модель-агент--это-новый-сотрудник) и [Гл. 17: Security и Governance](../17-security-and-governance/README.md).
 
 ## Теория простыми словами
 
@@ -257,8 +258,9 @@ func (m *RedactionMiddleware) Handle(ctx context.Context, r slog.Record) error {
 
 ## Связь с другими главами
 
-- **[Глава 17: Security и Governance](../17-security-and-governance/README.md)** — Защита данных
-- **[Глава 19: Observability и Tracing](../19-observability-and-tracing/README.md)** — Безопасное логирование
+- **[Предисловие → Ментальная модель](../00-preface/README.md#ментальная-модель-агент--это-новый-сотрудник)** — Базовая рамка: data-policies для агента — это адаптация data-policies для людей.
+- **[Глава 17: Security и Governance](../17-security-and-governance/README.md)** — Threat modeling, RBAC и onboarding-дисциплина для агента; data privacy — частный случай этой рамки.
+- **[Глава 19: Observability и Tracing](../19-observability-and-tracing/README.md)** — Безопасное логирование: правило «PII не попадает в спан в открытом виде», redacted-атрибуты + защищённое хранилище по корреляционному ID.
 
 ## Что дальше?
 

@@ -2,495 +2,261 @@
 
 ## Why This Chapter?
 
-Context windows are limited. As conversations grow, you need to decide what stays in context and what gets summarized or dropped. Poor context management wastes tokens, loses important details, and confuses the agent.
+The context window is finite. On a long Run, the agent will eventually hit the limit. This chapter is about how to live with that.
 
-This chapter covers practical context management techniques: layers, summarization, fact selection, and adaptive context building.
+The main idea in one line: **simple memory — ran out, compress**. Everything else is a stable system prompt, careful prompts for tools, and honest token numbers.
+
+If you're coming from textbooks where "context engineering" means layers with fixed ratios, message-importance scoring, a `BudgetTracker` with warnings injected into the system prompt and three compression strategies to choose from — exhale. None of that is needed in a real agent. Below I explain why.
 
 ### Real-World Case Study
 
-**Situation:** Long-running conversation with agent. After 50 turns, context is 50K tokens. New request needs recent information, but it's buried in history.
+**Situation:** The agent is already on iteration 25. In the last response the provider reported `usage.prompt_tokens = 102_400` (model is 128K). The next tool result will add another couple of thousand tokens. After that — overflow.
 
 **Problem:**
-- Include full history: Exceeds context limit, expensive
-- Include only recent: Loses important context from early
-- No strategy: Agent gets confused or misses critical information
+- Do nothing — the next request will fail.
+- Drop "less important" messages — you'll tear apart `tool_call ↔ tool_result` pairs, and the provider will return a validation error.
+- Rebuild the context "by layered ratios" — you'll bust the prompt cache, and every following request will become 5-10x more expensive.
 
-**Solution:** Context engineering uses layers (working memory, summaries, facts), selective retrieval, and summarization of old turns while preserving key facts.
+**Solution:** once per Run, compress the old part of history through an LLM, leave the last N messages untouched, keep going. That's **condense**. One trigger threshold, one limit, no head-in-the-sand moves.
+
+## The Main Idea (from experience)
+
+With experience you realize: a real production agent consists of four simple things.
+
+1. **A simple loop.** `while True: resp = llm.Chat(messages); if there are tool_calls — execute and put the results into messages; otherwise — return the response`. See [Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md).
+2. **Simple memory.** One linear `[]Message` array. Grows strictly from old to new. Nothing is reordered, nothing is deleted from the middle. See [Chapter 12: Memory](../12-agent-memory/README.md).
+3. **Compression on overflow.** One trigger condition, one action (see below).
+4. **Prompt engineering for tools.** A good `description`, explicit parameter requirements, clear error messages. This pays off far more than any "clever context assembly".
+
+Anything more complex usually cures the wrong disease. If you feel the urge to add "prioritization", "layers with ratios" or a "dynamic system prompt" — that's almost always a signal that the task has a bad architecture (it should be split into sub-Runs or knowledge should be moved into external retrieval), not that the formula is missing weights.
 
 ## Theory in Simple Terms
 
-### Context Layers
+### What context is made of
 
-**Working memory (recent turns):**
-- The last N conversation turns
-- Always included
-- Most relevant for the current task
+The context for a single request is the `messages[]` you send to the provider. It holds four layers — but **as a mental model**, not as four separate `system` messages in the code.
 
-**Summary layer:**
-- Summarized old conversations
-- Preserves key facts
-- Reduces token usage
+| Layer | What goes in | Where it lives physically |
+|-------|--------------|----------------------------|
+| **System** | Role, style, skills, rules (stable within a Run) | `messages[0]`, type `system` |
+| **History** | All user/assistant/tool messages | `messages[1..N-1]`, in order of appearance |
+| **Facts from long-term memory** | Relevant facts selected at the start of the Run | In the **first user message** of the Run, not in system |
+| **Live state** | Task progress, files read, plan | In tool results, in Notes, in the last user message of the frame |
 
-**Facts layer:**
-- Extracted important facts from [long-term memory](../12-agent-memory/README.md)
-- User preferences, decisions, constraints
-- Persistent between conversations
-- **Note:** Storing and retrieving facts is described in [Memory](../12-agent-memory/README.md), here only their use in context is described
+The main rule: **the prefix is stable, changes go to the tail**. Then the provider's prompt cache works and most requests cost pennies. If the prefix mutates — the cache breaks, and every request is billed at the full rate.
 
-> **Important: Context as an Anchor (Anchoring Bias).**
-> If **user preferences** ("user thinks X", "we need answer Y") or **unverified hypotheses** enter the facts layer, they become a strong anchor for the model. The model may shift answers toward these preferences, even if actual data points elsewhere.
->
-> **Problem:** Preferences and hypotheses included in context as facts can distort objective analysis.
->
-> **Solution:** Separate entry types: **Fact** (verified data), **Preference** (user preferences), **Hypothesis** (hypotheses). Include preferences and hypotheses in context only when appropriate (personalization), and exclude them for analytical tasks requiring objectivity.
+### Anchoring bias: careful with facts
 
-**Task state:**
-- Current task progress
-- What's done, what's pending
-- Allows resumption
+If **user preferences** ("the user thinks the problem is in the DB") or **hypotheses** sneak into "facts", the model treats them as the truth and bends its answer toward them — even when the data says otherwise.
 
-### Context Operations
+The fix is simple: call things by their names in the text itself. Not "fact", but "user hypothesis" or "assumption, needs verification". No clever filter on `Type == "hypothesis"` in the code — the model understands English prefixes perfectly well.
 
-1. **Select** — Choose what to include
-2. **Summarize** — Compress old information
-3. **Extract** — Extract key facts
-4. **Layer** — Organize by importance/freshness
+```text
+[fact] Server web-01 is not responding to ping since 14:32 UTC.
+[user hypothesis] The user suspects the problem is in the DB (not confirmed).
+[constraint] Do not touch the prod cluster until 18:00 UTC.
+```
+
+### Context operations
+
+In real life there are only two:
+
+1. **Append** — added a new message to the end of `messages[]`.
+2. **Condense** — once per Run, replaced the older part of history with a summary.
+
+That's it. No Select / Extract / Layer / Reorder.
 
 ## How It Works (Step by Step)
 
-### Step 1: Context Manager Interface
+### Step 1: Linear memory
 
 ```go
-type ContextManager interface {
-    AddMessage(msg openai.ChatCompletionMessage) error
-    GetContext(maxTokens int) ([]openai.ChatCompletionMessage, error)
-    Summarize() error
-    ExtractFacts() ([]Fact, error)
+type Memory struct {
+    messages []llm.Message
 }
 
-type Fact struct {
-    Key        string
-    Value      string
-    Source     string // Which conversation
-    Importance int    // 1-10
-    Type       string // "fact", "preference", "hypothesis", "constraint"
+func (m *Memory) Append(msg llm.Message) {
+    m.messages = append(m.messages, msg)
+}
+
+func (m *Memory) Snapshot() []llm.Message {
+    out := make([]llm.Message, len(m.messages))
+    copy(out, m.messages)
+    return out
+}
+
+func (m *Memory) Reset(msgs []llm.Message) {
+    m.messages = msgs
 }
 ```
 
-### Step 2: Layered Context
+That's it. `Reset` is only needed for `condense` — history is never rewritten anywhere else.
+
+### Step 2: One threshold, one action
 
 ```go
-type LayeredContext struct {
-    workingMemory []openai.ChatCompletionMessage // Recent turns
-    summary       string                          // Summarized history
-    facts         []Fact                          // Extracted facts
-    maxWorking    int                             // Max turns in working memory
+type Run struct {
+    mem           *Memory
+    contextWindow int     // model limit, e.g. 128_000
+    condenseAt    float64 // 0.80 — threshold for triggering condense
+    condenseDone  bool    // limit: condense at most once per Run
+    lastTokens    int     // usage.PromptTokens from the last provider response
 }
 
-func (c *LayeredContext) GetContext(maxTokens int) ([]openai.ChatCompletionMessage, error) {
-    var messages []openai.ChatCompletionMessage
-    
-    // Add system prompt with facts
-    if len(c.facts) > 0 {
-        factsContext := "Important facts:\n"
-        for _, fact := range c.facts {
-            factsContext += fmt.Sprintf("- %s: %s\n", fact.Key, fact.Value)
+// Called before each next Chat request.
+func (r *Run) BeforeNextRequest(ctx context.Context) error {
+    used := float64(r.lastTokens) / float64(r.contextWindow)
+    if used >= r.condenseAt && !r.condenseDone {
+        if err := r.condense(ctx); err != nil {
+            return err
         }
-        messages = append(messages, openai.ChatCompletionMessage{
-            Role:    "system",
-            Content: factsContext,
-        })
+        r.condenseDone = true
     }
-    
-    // Add summary if exists
-    if c.summary != "" {
-        messages = append(messages, openai.ChatCompletionMessage{
-            Role:    "system",
-            Content: "Previous conversation summary: " + c.summary,
-        })
-    }
-    
-    // Add working memory (recent turns)
-    messages = append(messages, c.workingMemory...)
-    
-    // Truncate if exceeds maxTokens
-    return truncateToTokenLimit(messages, maxTokens), nil
-}
-```
-
-### Step 3: Summarization
-
-```go
-func (c *LayeredContext) Summarize(ctx context.Context, client *openai.Client) error {
-    if len(c.workingMemory) <= c.maxWorking {
-        return nil // Not needed yet
-    }
-    
-    // Get old messages for summarization
-    oldMessages := c.workingMemory[:len(c.workingMemory)-c.maxWorking]
-    
-    // Create summarization prompt
-    prompt := "Summarize this conversation, preserving key facts and decisions:\n\n"
-    for _, msg := range oldMessages {
-        prompt += fmt.Sprintf("%s: %s\n", msg.Role, msg.Content)
-    }
-    
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: "gpt-4o-mini",
-        Messages: []openai.ChatCompletionMessage{
-            {Role: "system", Content: "You are a summarization agent. Extract key facts and decisions."},
-            {Role: "user", Content: prompt},
-        },
-        Temperature: 0,
-    })
-    if err != nil {
-        return err
-    }
-    
-    c.summary = resp.Choices[0].Message.Content
-    
-    // Keep only recent messages in working memory
-    c.workingMemory = c.workingMemory[len(c.workingMemory)-c.maxWorking:]
-    
     return nil
 }
 ```
 
-### Step 4: Using Facts from Memory
+### Step 3: Reacting to overflow from the provider
 
-**IMPORTANT:** Fact extraction and storage happens in [Memory](../12-agent-memory/README.md). Here we only use already extracted facts when assembling context.
+Sometimes the estimate based on `lastTokens` is too late: the next tool result turns out heavier than expected and the provider returns a `ContextOverflowError`. We do the same thing, just reactively.
 
 ```go
-func (c *LayeredContext) GetContext(maxTokens int, memory Memory, includePreferences bool) ([]openai.ChatCompletionMessage, error) {
-    var messages []openai.ChatCompletionMessage
-    
-    // Get facts from memory (don't extract here!)
-    facts, _ := memory.Retrieve("user_preferences", 10)
-    
-    // Filter facts by type depending on task
-    var filteredFacts []Fact
-    for _, fact := range facts {
-        if fact.Type == "fact" || fact.Type == "constraint" {
-            // Always include verified facts and constraints
-            filteredFacts = append(filteredFacts, fact)
-        } else if includePreferences && (fact.Type == "preference" || fact.Type == "hypothesis") {
-            // Include preferences and hypotheses only when appropriate (personalization)
-            filteredFacts = append(filteredFacts, fact)
-        }
-        // Otherwise exclude preferences/hypotheses for objective analysis
+resp, err := client.Chat(ctx, r.mem.Snapshot())
+if isContextOverflow(err) {
+    if r.condenseDone {
+        return r.wrapUp(ctx) // condense already happened — graceful save
     }
-    
-    // Add system prompt with facts
-    if len(filteredFacts) > 0 {
-        factsContext := "Important facts:\n"
-        for _, fact := range filteredFacts {
-            // Mark type for clarity
-            prefix := ""
-            if fact.Type == "preference" {
-                prefix = "[User preference] "
-            } else if fact.Type == "hypothesis" {
-                prefix = "[Hypothesis] "
-            }
-            factsContext += fmt.Sprintf("- %s%s: %v\n", prefix, fact.Key, fact.Value)
-        }
-        messages = append(messages, openai.ChatCompletionMessage{
-            Role:    "system",
-            Content: factsContext,
-        })
+    if err := r.condense(ctx); err != nil {
+        return err
     }
-    
-    // Add summary if exists
-    if c.summary != "" {
-        messages = append(messages, openai.ChatCompletionMessage{
-            Role:    "system",
-            Content: "Previous conversation summary: " + c.summary,
-        })
-    }
-    
-    // Add working memory (recent turns)
-    messages = append(messages, c.workingMemory...)
-    
-    // Truncate if exceeds maxTokens
-    return truncateToTokenLimit(messages, maxTokens), nil
+    r.condenseDone = true
+    resp, err = client.Chat(ctx, r.mem.Snapshot()) // retry
 }
 ```
 
-## Token Counting and truncateToTokenLimit
+There are only two triggers: **threshold** (proactive) and **overflow** (reactive). One action: `condense`. One limit: `once per Run`. On a repeated overflow — `wrapUp` (see below), not another condense.
 
-In previous examples we called `truncateToTokenLimit` but never implemented it. Let's cover token counting and context truncation.
-
-### Why Count Tokens?
-
-Every model has a hard context window limit. Exceed it — you get an error. Undershoot — you waste money on empty space. Precise token counting lets you use context as efficiently as possible.
-
-### Simple Counting: Words vs Tokens
-
-Precise counting requires the model's tokenizer (e.g., `tiktoken` for OpenAI). For quick estimates, an approximation works: 1 token ≈ 0.75 words for English text, closer to 0.5 words for Russian (Cyrillic encodes less efficiently).
+### Step 4: Condense — what's inside
 
 ```go
-// TokenCounter — token counting interface.
-// Swap implementations: approximate for tests, precise for production.
-type TokenCounter interface {
-    Count(text string) int
-}
+func (r *Run) condense(ctx context.Context) error {
+    msgs := r.mem.Snapshot()
+    if len(msgs) < 6 {
+        return nil // nothing to compress
+    }
 
-// WordBasedCounter — approximate word-based counting.
-// Good for quick estimates without external dependencies.
-type WordBasedCounter struct {
-    TokensPerWord float64 // English ≈ 1.33, Russian ≈ 2.0
-}
+    head := msgs[1 : len(msgs)-4] // everything except system and the last 4
+    tail := msgs[len(msgs)-4:]
+    system := msgs[0]
 
-func (c *WordBasedCounter) Count(text string) int {
-    words := len(strings.Fields(text))
-    return int(float64(words) * c.TokensPerWord)
-}
-
-// TiktokenCounter — precise counting via tiktoken.
-// Use in production for accurate budgeting.
-type TiktokenCounter struct {
-    encoding *tiktoken.Encoding
-}
-
-func NewTiktokenCounter(model string) (*TiktokenCounter, error) {
-    enc, err := tiktoken.EncodingForModel(model)
+    summary, err := r.summarizeWithLLM(ctx, head)
     if err != nil {
-        return nil, fmt.Errorf("encoding for model %s: %w", model, err)
-    }
-    return &TiktokenCounter{encoding: enc}, nil
-}
-
-func (c *TiktokenCounter) Count(text string) int {
-    return len(c.encoding.Encode(text, nil, nil))
-}
-```
-
-### Model Limits
-
-Context limits depend on the model. Keep them in configuration, not in code:
-
-```go
-// ModelLimits stores limits for a specific model.
-var ModelLimits = map[string]int{
-    "gpt-4o":      128_000,
-    "gpt-4o-mini": 128_000,
-    "gpt-4-turbo": 128_000,
-    "gpt-3.5-turbo": 16_385,
-    "claude-3-5-sonnet": 200_000,
-}
-
-// SafeLimit returns the limit with room for the model's response.
-// Leaves space for generation (maxOutputTokens).
-func SafeLimit(model string, maxOutputTokens int) int {
-    limit, ok := ModelLimits[model]
-    if !ok {
-        return 4096 // Safe default
-    }
-    return limit - maxOutputTokens
-}
-```
-
-### Implementing truncateToTokenLimit
-
-Truncate context from the end, but always keep system messages and the user's last request:
-
-```go
-func truncateToTokenLimit(
-    messages []openai.ChatCompletionMessage,
-    maxTokens int,
-    counter TokenCounter,
-) []openai.ChatCompletionMessage {
-    total := countMessages(messages, counter)
-    if total <= maxTokens {
-        return messages
+        return err
     }
 
-    // Split: system messages, middle, last user message
-    var system []openai.ChatCompletionMessage
-    var middle []openai.ChatCompletionMessage
-    var last openai.ChatCompletionMessage
-
-    for i, msg := range messages {
-        if msg.Role == "system" {
-            system = append(system, msg)
-        } else if i == len(messages)-1 {
-            last = msg
-        } else {
-            middle = append(middle, msg)
-        }
-    }
-
-    // Count fixed parts (system + last request)
-    reserved := countMessages(system, counter) + counter.Count(last.Content) + 4 // +4 for metadata
-
-    // Trim middle from the start (remove oldest messages)
-    budget := maxTokens - reserved
-    var kept []openai.ChatCompletionMessage
-    runningTotal := 0
-
-    for i := len(middle) - 1; i >= 0; i-- {
-        msgTokens := counter.Count(middle[i].Content) + 4
-        if runningTotal+msgTokens > budget {
-            break
-        }
-        runningTotal += msgTokens
-        kept = append([]openai.ChatCompletionMessage{middle[i]}, kept...)
-    }
-
-    result := append(system, kept...)
-    result = append(result, last)
-    return result
-}
-
-func countMessages(messages []openai.ChatCompletionMessage, counter TokenCounter) int {
-    total := 0
-    for _, msg := range messages {
-        total += counter.Count(msg.Content) + 4 // +4 tokens for role and delimiters
-    }
-    return total
-}
-```
-
-**Why +4?** Each message in the API is encoded with metadata: role, start and end delimiters. For OpenAI this is roughly 4 tokens per message.
-
-## Advanced Compression Strategies
-
-Basic LLM summarization is just one way to compress context. Let's look at more precise approaches.
-
-### Semantic Compression
-
-The idea: keep the meaning, drop the filler. Instead of retelling the entire conversation — extract only what affects future decisions.
-
-### Key-Value Extraction
-
-The idea: turn a long narrative into structured key-value pairs. More compact than a summary, easier for the model to use.
-
-### Implementation
-
-```go
-// CompressionStrategy defines the compression method.
-type CompressionStrategy string
-
-const (
-    StrategySummarize CompressionStrategy = "summarize" // Standard summarization
-    StrategySemantic  CompressionStrategy = "semantic"   // Semantic compression
-    StrategyKeyValue  CompressionStrategy = "keyvalue"   // Key-Value extraction
-)
-
-// compressContext compresses messages using the chosen strategy.
-func compressContext(
-    ctx context.Context,
-    client *openai.Client,
-    messages []openai.ChatCompletionMessage,
-    strategy CompressionStrategy,
-) (string, error) {
-    conversation := formatMessages(messages)
-
-    prompts := map[CompressionStrategy]string{
-        StrategySummarize: "Summarize this conversation. Preserve key facts and decisions:\n\n" + conversation,
-
-        StrategySemantic: `Compress this conversation to the minimum.
-Rules:
-- Keep ONLY facts, decisions, and open questions
-- Remove greetings, thanks, repetitions
-- Remove reasoning if a final decision exists
-- Format: one statement per line
-
-Conversation:
-` + conversation,
-
-        StrategyKeyValue: `Extract key facts from the conversation in "key: value" format.
-Key categories:
-- decision: a decision made
-- constraint: a constraint or requirement
-- action: an action taken
-- open: an unresolved question
-
-Example:
-decision:database: Using PostgreSQL
-constraint:budget: No more than $100/month
-
-Conversation:
-` + conversation,
-    }
-
-    prompt, ok := prompts[strategy]
-    if !ok {
-        return "", fmt.Errorf("unknown strategy: %s", strategy)
-    }
-
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: "gpt-4o-mini",
-        Messages: []openai.ChatCompletionMessage{
-            {Role: "system", Content: "You compress context. Be as brief as possible."},
-            {Role: "user", Content: prompt},
-        },
-        Temperature: 0,
+    next := make([]llm.Message, 0, 2+len(tail))
+    next = append(next, system)
+    next = append(next, llm.Message{
+        Role:    "user",
+        Content: "Context of previous work:\n\n" + summary,
     })
-    if err != nil {
-        return "", err
-    }
-    return resp.Choices[0].Message.Content, nil
-}
-
-func formatMessages(messages []openai.ChatCompletionMessage) string {
-    var b strings.Builder
-    for _, msg := range messages {
-        fmt.Fprintf(&b, "[%s]: %s\n", msg.Role, msg.Content)
-    }
-    return b.String()
+    next = append(next, tail...)
+    r.mem.Reset(next)
+    return nil
 }
 ```
 
-### Choosing the Right Strategy
+Three key points:
 
-| Strategy | Compression Ratio | Information Loss | When to Use |
-|---|---|---|---|
-| `summarize` | Medium (~3x) | Low | Need context to continue dialog |
-| `semantic` | High (~5-10x) | Medium | Long discussions, need the gist |
-| `keyvalue` | Very high (~10-20x) | High (facts only) | Long-term storage, cross-session |
+1. **Full replacement of history**, not "trimming the middle". Cleaner and more predictable.
+2. **The summary goes in as `user`**, not as `assistant`. Then the model treats it as "here's the context, keep going", not as its own reply that can be contradicted.
+3. **The tail (the last 3-5 messages) is untouched.** This is insurance against something important being lost in the summary when the model needs it right now.
 
-## Progressive Compression (4 Levels)
+### Step 5: Wrap-up on repeated overflow
 
-In practice, context compression is not a single technique but a **cascade of four levels**. Each next level activates only when the previous one is insufficient:
+If condense has already happened — don't compress again (re-compressing catastrophically loses details). Instead: save progress, hand the user a partial result, exit the Run.
 
-```mermaid
-flowchart TD
-    A["Level 1: Trim"] -->|"WM > 6000 chars"| B["Level 2: Compact"]
-    B -->|"Block.Close()"| C["Level 3: Condense"]
-    C -->|"ContextOverflowError"| D["Level 4: Block Eviction"]
-    D -->|"BuildContext: budget"| E["Final context"]
+```go
+func (r *Run) wrapUp(ctx context.Context) error {
+    snapshot := r.mem.Snapshot()
+    if err := r.checkpoint.Save(snapshot); err != nil {
+        return err
+    }
+    return ErrRunWrappedUp // the top level catches this and shows it to the user
+}
 ```
 
-| Level | When it triggers | What it does | Information loss |
-|-------|------------------|--------------|------------------|
-| **Trim** | Working Memory > 6000 chars | Trims completed steps, old files, actions | Minimal |
-| **Compact** | Block.Close() | Collapses tool chains into `<prior_tool_use>` (91% compression) | Low |
-| **Condense** | ContextOverflowError from provider | LLM creates a structured summary | Medium |
-| **Block Eviction** | BuildContext: budget insufficient | Old blocks are excluded from context | High (but accessible via recall) |
+A checkpoint is needed so the user can press "Continue" and resume with a different model / different context. See [Chapter 11: State Management](../11-state-management/README.md).
 
-The principle: **gradual degradation instead of hard cut**. Binary summarization ("all or nothing") loses too much. Progressive compression degrades gracefully.
+## Counting Tokens Correctly
+
+A hierarchy of sources — from best to worst:
+
+1. **`usage.PromptTokens` from the provider response.** The exact number you were billed on. Take it from the last model response and use it to decide "is it time to condense". This is the **primary source** — don't invent your own counter if you have this one.
+2. **The model's tokenizer** (e.g. `tiktoken` for OpenAI, `anthropic.count_tokens` for Anthropic). Needed in one case: you want to estimate the weight of a not-yet-sent message to decide "send it or compress first".
+3. **Word/character approximation** — last resort. Fine for a rough estimate when (1) and (2) aren't available.
+
+For more on why char-based estimation is dangerous, see [Chapter 12, Error 7](../12-agent-memory/README.md#error-7-estimating-tokens-via-char3).
+
+```go
+// The most common pattern: save the token count after every Chat response.
+resp, err := client.Chat(ctx, msgs)
+if err == nil {
+    r.lastTokens = resp.Usage.PromptTokens
+}
+```
+
+No `WordBasedCounter` with `TokensPerWord = 2.0` for Russian. No `len(content)/3`. The provider already counted — use what's there.
+
+## Model Limits
+
+**Don't hardcode a model dictionary in code.** The model zoo changes faster than code is updated, and a stale dictionary will give the wrong answer for a fresh model.
+
+Minimal structure and place to store it:
+
+```go
+type Model struct {
+    ID            string
+    ContextWindow int // maximum input + output
+    MaxOutput     int // usually less than ContextWindow
+}
+
+func SafeBudget(m Model, reserveOutput int) int {
+    if reserveOutput == 0 {
+        reserveOutput = m.MaxOutput
+    }
+    return m.ContextWindow - reserveOutput
+}
+```
+
+Where to get `Model` from:
+- from your LLM SDK's model catalog (preferred);
+- from the service config (if the SDK doesn't provide a catalog);
+- from environment variables for private deployments.
+
+The main thing — **in one place**, don't smear `_ = 128000` across 15 files.
+
+## When to Use truncate
+
+`truncate` (drop extra messages from the middle, keep head+tail) is a separate tool from `condense`. It's appropriate in three cases:
+
+- **Single-shot requests** without a multi-step loop (the agent loop has nothing to do with it).
+- **Providers without prompt cache** — nothing to save on, just have to fit under the limit.
+- **Emergency fallback**, when `condense` has already spent its 1/Run quota and the context is still overflowing — easier to trim than to fail (but easier still — do `wrapUp` and save progress).
+
+In an agent loop with prompt cache, `truncate` is **not needed** — it busts the cache on every iteration because the middle changes. If you really want it — write it carefully, preserving `tool_call ↔ tool_result` pairs intact (a torn pair is a `400 Bad Request` from the provider).
 
 ## Condensation Prompt
 
-Condense is an emergency measure. It fires at most **once per Run**, when the provider returns a `ContextOverflowError`. Re-condensing already compressed context produces poor results.
+The quality of `condense` is 80% determined by the prompt. A bare "summarize" gives a useless retelling. A good prompt works on the principle of **"handing off a task to a teammate who is about to pick it up"**.
 
-### How Condense Works
-
-1. **Split**: the history is divided into head (old messages) and tail (last 2 steps)
-2. **Compress head**: LLM summarizes the old part
-3. **Assemble**: summary (as a user message) + tail
-4. **Replace**: `mem.Reset(condensedMsgs)`
-
-### The Condensation Prompt
-
-The key metaphor: **"Write as if briefing a teammate taking over mid-task."** The prompt requires 8 mandatory sections:
-
-```
-Write a structured summary as if briefing a teammate taking over mid-task.
+```text
+You are summarizing a multi-turn agent run for a teammate
+who will continue the work. Be specific and operational.
 
 Required sections:
 1. Goal — what the user wants
-2. Key Findings — important discoveries
+2. Key Findings — important discoveries (with file:line if relevant)
 3. Resources Examined — files read, commands run
 4. Decisions Made — choices and their rationale
 5. Work Completed — what's done
@@ -501,486 +267,245 @@ Required sections:
 Be SPECIFIC:
 - "Add JWT middleware to internal/auth/middleware.go:45" — GOOD
 - "implement authentication" — BAD
-- "Found memory leak in worker pool goroutine at pkg/pool/pool.go:120" — GOOD
+- "Found memory leak in worker pool at pkg/pool/pool.go:120" — GOOD
 - "found a bug" — BAD
 
-Max words: {maxWords}
+Hard limit: {maxWords} words.
 ```
 
-The summary is saved as a **user message** (not assistant). The model treats it as an instruction ("here's the context, continue"), not as its own previous response.
-
-## Incremental Summarization
-
-### The Problem
-
-Summarizing the entire history every time is expensive. If a conversation has 100 messages and you summarize every 10, by the 10th iteration you're reprocessing everything from scratch. That's O(n²) in tokens.
-
-### Solution: Update the Existing Summary
-
-Instead of summarizing the full history, take the previous summary and augment it with new messages. That's O(n) in tokens.
-
-```go
-// incrementalSummarize updates the existing summary with new messages.
-// Instead of re-summarizing the full history — augments the current summary.
-func incrementalSummarize(
-    ctx context.Context,
-    client *openai.Client,
-    currentSummary string,
-    newMessages []openai.ChatCompletionMessage,
-) (string, error) {
-    if len(newMessages) == 0 {
-        return currentSummary, nil
-    }
-
-    newConversation := formatMessages(newMessages)
-
-    var prompt string
-    if currentSummary == "" {
-        // First summarization
-        prompt = "Summarize this conversation. Preserve key facts, decisions, and open questions:\n\n" + newConversation
-    } else {
-        // Update existing summary
-        prompt = fmt.Sprintf(`Update the conversation summary with new messages.
-
-Current summary:
-%s
-
-New messages:
-%s
-
-Rules:
-- Include ALL important information from the current summary
-- Add new facts and decisions from new messages
-- If new messages contradict the summary — use the new information
-- Remove outdated items if they were resolved in new messages
-- Keep the format compact`, currentSummary, newConversation)
-    }
-
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: "gpt-4o-mini",
-        Messages: []openai.ChatCompletionMessage{
-            {Role: "system", Content: "You update conversation summaries. Be precise and concise."},
-            {Role: "user", Content: prompt},
-        },
-        Temperature: 0,
-    })
-    if err != nil {
-        return currentSummary, err // On error, keep the old summary
-    }
-    return resp.Choices[0].Message.Content, nil
-}
-```
-
-### Using in LayeredContext
-
-```go
-func (c *LayeredContext) SummarizeIncremental(ctx context.Context, client *openai.Client) error {
-    if len(c.workingMemory) <= c.maxWorking {
-        return nil
-    }
-
-    // Take only messages that overflow working memory
-    overflow := c.workingMemory[:len(c.workingMemory)-c.maxWorking]
-
-    // Update summary incrementally (don't re-summarize everything)
-    updated, err := incrementalSummarize(ctx, client, c.summary, overflow)
-    if err != nil {
-        return err
-    }
-
-    c.summary = updated
-    c.workingMemory = c.workingMemory[len(c.workingMemory)-c.maxWorking:]
-    return nil
-}
-```
-
-**Cost comparison:**
-
-| Approach | Tokens at 100th message | Growth |
-|---|---|---|
-| Full summarization | ~50K (entire history) | O(n²) |
-| Incremental | ~2K (summary + 10 new) | O(n) |
-
-## Context Prioritization
-
-When the token budget is tight, you need to decide: which data matters more. Not everything is equally valuable — recent messages matter more than old ones, errors matter more than successful results.
-
-### Budget by Layer
-
-Divide available tokens across context layers. A fixed ratio guarantees no single layer consumes the entire budget:
-
-```go
-// TokenBudget distributes available tokens across context layers.
-type TokenBudget struct {
-    Total          int     // Total budget (model maxTokens - maxOutputTokens)
-    SystemRatio    float64 // Share for system prompt (0.10-0.15)
-    FactsRatio     float64 // Share for facts (0.10-0.15)
-    SummaryRatio   float64 // Share for summary (0.15-0.20)
-    WorkingRatio   float64 // Share for working memory (0.50-0.65)
-}
-
-func (b TokenBudget) SystemBudget() int  { return int(float64(b.Total) * b.SystemRatio) }
-func (b TokenBudget) FactsBudget() int   { return int(float64(b.Total) * b.FactsRatio) }
-func (b TokenBudget) SummaryBudget() int { return int(float64(b.Total) * b.SummaryRatio) }
-func (b TokenBudget) WorkingBudget() int { return int(float64(b.Total) * b.WorkingRatio) }
-```
-
-### Dynamic Budget Thresholds
-
-Static budget allocation is a first step. In a production agent, the budget is tracked **dynamically** with two thresholds:
-
-| Threshold | Action | What gets injected into the system prompt |
-|-----------|--------|-------------------------------------------|
-| **~75%** | Warning | "Start finishing your current line of work" |
-| **~85%** | Wrap-up | "Stop starting new tool calls. Summarize progress and stop." |
-
-```go
-type BudgetTracker struct {
-    contextSize      int
-    wrapAt           float64 // 0.85
-    wrapRequested    bool
-    lastPromptTokens int
-}
-
-func (b *BudgetTracker) Update(promptTokens int) {
-    b.lastPromptTokens = promptTokens
-    ratio := float64(promptTokens) / float64(b.contextSize)
-    if ratio >= b.wrapAt {
-        b.wrapRequested = true
-    }
-}
-
-func (b *BudgetTracker) Warning() string {
-    ratio := float64(b.lastPromptTokens) / float64(b.contextSize)
-    if ratio >= b.wrapAt {
-        return "Context window is nearly full. Stop starting new tool calls. " +
-               "Summarize your progress and present results."
-    }
-    if ratio >= 0.75 {
-        return "Context window is filling up. Start finishing your current line of work."
-    }
-    return ""
-}
-```
-
-The budget **does not forcefully interrupt the loop**. Instead, a warning is injected into the system prompt and the model decides to wrap up on its own. This provides graceful degradation: the model has time to save results and hand off context.
-
-### Message Scoring
-
-Not all messages are equally useful. Score importance and select within the budget:
-
-```go
-// ScoredMessage — a message with an importance score.
-type ScoredMessage struct {
-    Message    openai.ChatCompletionMessage
-    Score      float64
-    TokenCount int
-}
-
-// scoreMessage scores message importance.
-// High score = message should be kept.
-func scoreMessage(msg openai.ChatCompletionMessage, position, total int) float64 {
-    score := 0.0
-
-    // 1. Recency: recent messages are more important (0.0–0.4)
-    recency := float64(position) / float64(total)
-    score += recency * 0.4
-
-    // 2. Role: assistant messages with tool_calls are more important than plain text
-    if msg.Role == "tool" {
-        score += 0.2 // Tool call results are important
-    }
-
-    // 3. Content: errors and important decisions
-    content := strings.ToLower(msg.Content)
-    if strings.Contains(content, "error") {
-        score += 0.3 // Errors are more important than regular messages
-    }
-    if strings.Contains(content, "decision") || strings.Contains(content, "chose") {
-        score += 0.2 // Decisions are worth remembering
-    }
-
-    return score
-}
-
-// prioritizeContext assembles context respecting budget and priorities.
-func prioritizeContext(
-    messages []openai.ChatCompletionMessage,
-    facts []Fact,
-    summary string,
-    budget TokenBudget,
-    counter TokenCounter,
-) []openai.ChatCompletionMessage {
-    var result []openai.ChatCompletionMessage
-
-    // 1. Facts — within budget
-    if len(facts) > 0 {
-        factsText := buildFactsText(facts, budget.FactsBudget(), counter)
-        result = append(result, openai.ChatCompletionMessage{
-            Role:    "system",
-            Content: factsText,
-        })
-    }
-
-    // 2. Summary — truncate if it doesn't fit
-    if summary != "" {
-        if counter.Count(summary) > budget.SummaryBudget() {
-            // Summary too long — truncate by sentence
-            summary = truncateText(summary, budget.SummaryBudget(), counter)
-        }
-        result = append(result, openai.ChatCompletionMessage{
-            Role:    "system",
-            Content: "Previous conversation summary:\n" + summary,
-        })
-    }
-
-    // 3. Working memory — select by score
-    scored := make([]ScoredMessage, len(messages))
-    for i, msg := range messages {
-        scored[i] = ScoredMessage{
-            Message:    msg,
-            Score:      scoreMessage(msg, i, len(messages)),
-            TokenCount: counter.Count(msg.Content) + 4,
-        }
-    }
-
-    // Always include the last user message
-    workingBudget := budget.WorkingBudget()
-    if len(scored) > 0 {
-        last := scored[len(scored)-1]
-        workingBudget -= last.TokenCount
-    }
-
-    // Remaining messages — by descending score, while they fit
-    sort.Slice(scored[:len(scored)-1], func(i, j int) bool {
-        return scored[i].Score > scored[j].Score
-    })
-
-    var selected []ScoredMessage
-    used := 0
-    for _, sm := range scored[:len(scored)-1] {
-        if used+sm.TokenCount > workingBudget {
-            continue
-        }
-        selected = append(selected, sm)
-        used += sm.TokenCount
-    }
-
-    // Restore chronological order
-    sort.Slice(selected, func(i, j int) bool {
-        return indexOfMessage(messages, selected[i].Message) <
-            indexOfMessage(messages, selected[j].Message)
-    })
-
-    for _, sm := range selected {
-        result = append(result, sm.Message)
-    }
-
-    // Last message — always at the end
-    if len(messages) > 0 {
-        result = append(result, messages[len(messages)-1])
-    }
-
-    return result
-}
-```
-
-### Budget Example
-
-For a model with 128K context and `maxOutputTokens = 4096`:
-
-| Layer | Share | Tokens |
-|---|---|---|
-| System prompt | 10% | ~12,400 |
-| Facts | 10% | ~12,400 |
-| Summary | 20% | ~24,800 |
-| Working memory | 60% | ~74,300 |
-| **Total input** | 100% | **~123,900** |
-| Model response | — | 4,096 |
-
-## Dynamic System Prompt
-
-The system prompt consumes tokens on **every iteration** of the agent loop. If it is static and long, it becomes a constant tax on your budget. The solution: adapt the system prompt to the current state.
-
-### Saving Tokens on Subsequent Iterations
-
-On the first iteration the agent needs detailed instructions: how to work with files, how to plan, how to decompose a task. On subsequent iterations these sections can be removed:
-
-```go
-type PromptSection struct {
-    Name     string
-    Content  string
-    Tags     []string // "always", "first_turn", "has_plan", "workflow:debug"
-    Priority int      // 0 = mandatory, 99 = optional
-    Required bool
-}
-
-func buildSystemPrompt(sections []PromptSection, iter int, budget int) string {
-    activeTags := []string{"always"}
-    if iter == 0 {
-        activeTags = append(activeTags, "first_turn")
-    }
-
-    var active []PromptSection
-    for _, s := range sections {
-        if s.matchesTags(activeTags) {
-            active = append(active, s)
-        }
-    }
-
-    // If it doesn't fit — drop optional sections by priority
-    sort.Slice(active, func(i, j int) bool {
-        return active[i].Priority < active[j].Priority
-    })
-
-    var result strings.Builder
-    used := 0
-    for _, s := range active {
-        tokens := estimateTokens(s.Content)
-        if !s.Required && used+tokens > budget {
-            continue
-        }
-        result.WriteString(s.Content + "\n\n")
-        used += tokens
-    }
-    return result.String()
-}
-```
-
-On iterations > 0, sections tagged `first_turn` (how-to-work, decomposition, file workflows) are disabled. Savings: ~1500 tokens per iteration.
-
-### The 20-25% Rule
-
-The system prompt should not exceed ~20-25% of the context window. For a 128K model that is ~25-32K tokens. If the system prompt grows (Skills, Working Memory, Routing Hints), optional sections are dropped by priority — from highest to lowest.
+What matters:
+- **Clear sections.** Otherwise the model writes an essay, and it's impossible to pull "what's left to do" out of the summary.
+- **Demand specifics with examples.** Without them you get water like "authentication has been implemented".
+- **A hard word limit.** If you don't specify one, the summary will bloat to nearly the size of the original.
+
+## System Prompt: stability beats savings
+
+The system prompt consumes tokens on **every iteration** of the loop. It's tempting to "optimize": show the long instructions on the first iteration and drop some on the rest. On paper — savings. In practice — almost always more expensive.
+
+### Why an "adaptive system prompt" loses
+
+Modern providers cache the request **prefix**. A cached token is much cheaper than a regular one:
+
+| Provider | Cache hit discount |
+|----------|--------------------|
+| OpenAI | ~50% off input price |
+| Anthropic | ~90% off input price |
+| Z.AI / GLM | up to ~80% (model-dependent) |
+
+If the system prompt changes between iterations — the cache is busted **on everything after the change point**, and you pay full price not only for the changed sections but for the entire message history too.
+
+Simple arithmetic for a typical Run (system 25K, history by iteration 5 ~30K, 8 iterations total):
+
+| Strategy | Input cost per Run | Cache hit ratio |
+|----------|--------------------|-----------------|
+| Stable system | ~$0.04 (Anthropic) | ~85% |
+| "Adaptive": removed 1500 tokens on iterations 2-8 | ~$0.18 (Anthropic) | ~5% |
+
+Saving 1500 input tokens turns into losing cache hits on 25-30K of prefix tokens on each of the next 7 iterations. **4-5x more expensive.**
+
+### What to do instead
+
+**1. The system prompt is stable within a Run.** All dynamic data — in tool results, in Notes, or in the first user message of the frame. Details — [Chapter 12: Live state without mutating the system prompt](../12-agent-memory/README.md#live-state-without-mutating-the-system-prompt).
+
+**2. Fix stable inclusions once.** Date, working directory, mode (`debug` / `prod`) — write them into the system prompt at Run start and never touch them again.
+
+**3. Want a "warning" on overflow — put it in user, not system.** If you really want to hint to the model "start wrapping up", add a short sentence to the **last user message** of the next frame, don't mutate the system. The cache is unharmed.
+
+**4. Conditional "knowledge" — better via a tool than via a conditional prompt.** If you want to add an SOP at the analysis stage and hide it at the action stage, wrap the SOP as a `tool` (`get_sop("incident_diagnosis")`) and let the model call it itself. The tool result is added to the tail — cache is not affected.
+
+### The 20-25% rule
+
+The system prompt shouldn't exceed ~20-25% of the context window. For 128K — ~25-32K tokens. If it's growing — trim the **base version** at Run start, not "between iterations". Never put live state in it — that's [Error 6 from Chapter 12](../12-agent-memory/README.md#error-6-live-state-in-the-system-prompt).
 
 ## Common Errors
 
-### Error 1: No Summarization
+### Error 1: Dynamic system prompt
 
-**Symptom:** Context grows infinitely, reaching token limits.
+**Symptom:** Run cost is 4-5x higher than expected; cache hit ratio in provider logs is around 5%.
 
-**Cause:** Old conversations are never summarized.
-
-**Solution:** Implement periodic summarization when working memory exceeds threshold.
-
-### Error 2: Too Aggressive Summarization
-
-**Symptom:** Important details lost in summary, agent makes mistakes.
-
-**Cause:** Summary too compressed, facts not extracted.
-
-**Solution:** Extract facts before summarization, save them separately.
-
-### Error 3: No Fact Selection
-
-**Symptom:** Including irrelevant facts wastes tokens.
-
-**Cause:** Including all facts regardless of relevance.
-
-**Solution:** Score facts by importance, include only highly scored facts.
-
-### Error 4: Preferences Included as Facts
-
-**Symptom:** Model shifts answer toward user preferences, even if actual data points elsewhere.
-
-**Cause:** User preferences or hypotheses included in context as facts without distinguishing types.
+**Cause:** The system prompt is rebuilt on every iteration (inserting `current_time`, the current plan, files read, per-iteration dynamic sections).
 
 **Solution:**
-```go
-// GOOD: Distinguish types
-fact := Fact{
-    Key:   "user_thinks_db_problem",
-    Value: "User assumes problem is in DB",
-    Type:  "hypothesis", // Not "fact"!
-}
 
-// When assembling context for analytical task:
-if !includePreferences {
-    // Exclude hypotheses and preferences
-    if fact.Type == "fact" || fact.Type == "constraint" {
-        includeInContext(fact)
-    }
-}
+```go
+// BAD: cache miss on every iteration
+sys := fmt.Sprintf(`You are an agent. Current time: %s. Files read: %v. Iteration: %d`,
+    time.Now(), filesRead, iteration)
+
+// GOOD: stable prefix
+sys := `You are an agent. Use tools to read files when needed.`
+// And current_time / filesRead / iteration will be shown to the agent by the next user message or tool result.
 ```
 
-**Practice:** For analytical tasks (incidents, diagnostics), exclude preferences and hypotheses from context. Include them only for personalized responses (e.g., recommendations based on user preferences).
+### Error 2: Live state in the system prompt
 
-### Error 5: Re-Condensing Already Compressed Context
+**Symptom:** Same 4-5x cost overrun + on every new tool call the cache hit drops to zero.
 
-**Symptom:** After a second condensation the agent loses critical context — forgets the task goal, confuses files, repeats actions.
+**Cause:** Task progress (`Read files: a.go, b.go, c.go`) is updated in the system prompt after each tool call.
 
-**Cause:** Condense is called repeatedly on already compressed context. Each iteration loses details exponentially.
+**Solution:** Live state lives in tool results / in the last user message / in Notes — that is, **in the tail of history**. Don't touch the prefix. Detailed breakdown — [Chapter 12: Live state without mutating the system prompt](../12-agent-memory/README.md#live-state-without-mutating-the-system-prompt).
 
-**Solution:** Limit condense to **once per Run**. On repeated overflow — wrap up and save progress:
+### Error 3: Importance scoring and reordering
+
+**Symptom:** The provider returns `400 Bad Request: tool_use without matching tool_result` (or the mirror error).
+
+**Cause:** A "smart" algorithm scored some `tool` messages as "unimportant" and dropped them, leaving `assistant` with dangling `tool_calls`.
+
+**Solution:** Don't do message scoring or reordering. Use **condense** — it replaces the entire old part with a text summary, and the problem of tearing `tool_call ↔ tool_result` pairs disappears by construction.
+
+### Error 4: Re-condensing an already condensed context
+
+**Symptom:** After 2-3 condenses the agent forgets the task goal, confuses files, repeats actions.
+
+**Cause:** Condense is called every time on overflow, without a limit.
+
+**Solution:**
 
 ```go
-// BAD: unlimited condensation
+// BAD: infinite condensation
 for {
     resp, err := llm.Chat(ctx, messages)
     if isContextOverflow(err) {
-        messages = condense(ctx, messages) // gets worse every time
-        continue
-    }
-}
-
-// GOOD: at most once
-condenseCount := 0
-for {
-    resp, err := llm.Chat(ctx, messages)
-    if isContextOverflow(err) && condenseCount == 0 {
         messages = condense(ctx, messages)
-        condenseCount++
         continue
     }
+}
+
+// GOOD: at most once per Run, then wrapUp
+condenseDone := false
+for {
+    resp, err := llm.Chat(ctx, messages)
     if isContextOverflow(err) {
-        return wrapUpAndSaveProgress() // don't re-condense
+        if condenseDone {
+            return wrapUpAndSaveProgress()
+        }
+        messages = condense(ctx, messages)
+        condenseDone = true
+        continue
     }
 }
 ```
+
+### Error 5: Counting tokens via `len(content)/3`
+
+**Symptom:** Condense doesn't fire until the actual overflow, or vice versa — it fires when the context is only 30% full.
+
+**Cause:** You're using a char-based estimate ("3 characters = 1 token"). For Russian the real ratio is 1.5-2x that estimate; for code — 0.5x. Error ±50%.
+
+**Solution:** Take `usage.PromptTokens` from the provider response to the previous request. It's a **fact**, computed by the provider itself, and it comes for free. More — [Chapter 12, Error 7](../12-agent-memory/README.md#error-7-estimating-tokens-via-char3).
+
+### Error 6: Hardcoded model dictionary in code
+
+**Symptom:** When the model is swapped, the agent behaves "somehow off" — hits overflow earlier than it should, or starts `condense` too late.
+
+**Cause:** A dictionary like `var ModelLimits = map[string]int{"gpt-4o": 128000, ...}` wasn't updated for the new model, and the new one got the default `4096`.
+
+**Solution:** Take the limit from your SDK's model catalog (see the [Model Limits](#model-limits) section above). In one place, don't spread it across the code.
 
 ## Mini-Exercises
 
-### Exercise 1: Implement Summarization
+### Exercise 1: BeforeNextRequest
 
-Create a function that summarizes conversation history:
+Implement a function that decides whether to run `condense` **before** the next request.
 
 ```go
-func summarizeConversation(messages []openai.ChatCompletionMessage) (string, error) {
-    // Use LLM to create summary
+type Run struct {
+    contextWindow int
+    lastTokens    int
+    condenseDone  bool
+}
+
+func (r *Run) ShouldCondense() bool {
+    // your code
 }
 ```
 
 **Expected result:**
-- Summary preserves key facts
-- Significantly reduces token count
-- Can recover main points
+- Returns `true` if `lastTokens / contextWindow >= 0.80` and condense hasn't happened yet.
+- Returns `false` in all other cases.
+- No message counters, no layers.
+
+### Exercise 2: Reactive condense on overflow
+
+Finish the loop so that on `ContextOverflowError` it runs condense once and retries the request, and on a second overflow it exits with `wrapUp`.
+
+```go
+for {
+    resp, err := client.Chat(ctx, mem.Snapshot())
+    // your code
+}
+```
+
+**Expected result:**
+- Condense is called at most once per Run.
+- On a repeated overflow — `wrapUp`, not another condense.
+- Non-overflow errors — propagated up, not "healed" with a condense.
+
+### Exercise 3: Moving facts from system to user
+
+Given: code where facts from long-term memory were added as a separate `system` message and rewritten on every iteration. Task: move them so the facts go into the **first user message of the Run** and are not changed after that (if the set of facts changes within a Run — that's a signal you need a `recall` tool, not context mutation).
+
+**Expected result:**
+- One `system` message per Run in the code, immutable.
+- Facts are added exactly to the first `user` message of the Run.
+- Cache hit ratio in provider logs grows.
 
 ## Completion Criteria / Checklist
 
 **Completed:**
-- [x] Understand context layers
-- [x] Can summarize conversations
-- [x] Extract and store facts
-- [x] Manage context within token limits
-- [x] Know the 4 levels of progressive compression
-- [x] Understand how the condensation prompt works
+- [x] You understand the 4 context layers as a **mental model**, not as 4 separate `system` messages
+- [x] You take `usage.PromptTokens` from the provider as the primary source for the token count
+- [x] Model limits live in one place (catalog/config), not scattered across the code
+- [x] Compression — one trigger (threshold or overflow), one limit (once per Run)
+- [x] Condense — full history replacement, summary as `user`, the tail of the last 3-5 messages untouched
+- [x] The system prompt is stable within a Run (live state — outside `system`, see [Chapter 12](../12-agent-memory/README.md#live-state-without-mutating-the-system-prompt))
+- [x] You understand the trade-off: an "adaptive prompt" almost always loses to prompt cache on cost
+- [x] You know that on a repeated overflow you do `wrapUp`, not another condense
 
 **Not completed:**
-- [ ] No summarization, context grows infinitely
-- [ ] Too aggressive summarization, facts lost
-- [ ] No fact selection, token waste
-- [ ] Re-condensing already compressed context
+- [ ] Context grows unbounded — no condense by threshold
+- [ ] Condense is called again on an already condensed context (details are lost exponentially)
+- [ ] A dynamic system prompt changes on every iteration (cache miss)
+- [ ] Live state (progress, files read, current date on every iteration) sits in `system`
+- [ ] Importance scoring and message reordering — tears `tool_call ↔ tool_result` chains
+- [ ] Counting tokens via `len(content)/3` instead of `usage.PromptTokens`
+- [ ] A hardcoded model dictionary in code — goes stale faster than the code is updated
+- [ ] "Layers with ratios" (`SystemRatio: 0.10, FactsRatio: 0.10 ...`) — it's the illusion of control, not control
+
+## For the Curious
+
+> This section is for those who still want to go deeper. You can skip it.
+
+### Why one threshold, not two
+
+In the literature you often see a cascade "warning at 75% → condense at 80% → wrap-up at 90%". In practice, with the condition `usage.PromptTokens >= contextWindow * 0.80`, one threshold covers all cases, because:
+
+- By the time you reach 80%, you already have **exact** information about consumption (from the last `usage`). No uncertainty that would require a separate "warning" level.
+- A warning via mutation of the system prompt is an anti-pattern (cache miss). Via mutation of `assistant` — also a bad idea (the model sees someone else's "voice"). That leaves inserting into `user` — and then it's no longer a separate level, just "added a line to the next user message".
+- Wrap-up isn't a level of compression, it's an **outcome**. It doesn't shrink context, it saves state and finishes the Run. Logically it stands **after** condense, not in parallel with it.
+
+### What about block memory and recall
+
+If you have an agent with REPL-like interaction (one complex request → one big result → next request), **block memory** with a `recall` tool can be useful: history is cataloged into "blocks", summaries go into the active context, and the full content of a block is loaded on demand by the model. That's no longer the base case; the breakdown is in [Chapter 12: Block Memory](../12-agent-memory/README.md#block-memory).
+
+### When the context really doesn't fit
+
+If the task is so big that 128K isn't enough even after condense — that's a signal not to "optimize compression" but to **split the task into sub-Runs** (see [Chapter 09: Architecture](../09-agent-architecture/README.md)). Each sub-Run runs in its own context, the result is saved to long-term memory or a file, and the top level then collects the results. That's how every production agent capable of working with large codebases does it.
 
 ## Connection with Other Chapters
 
-- **[Chapter 11: State Management](../11-state-management/README.md)** — Task state is used when assembling context
-- **[Chapter 12: Agent Memory Systems](../12-agent-memory/README.md)** — Facts from memory are used in context (storage/retrieval described there)
-- **[Chapter 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md)** — Token budgets control context selection policies
+- **[Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md)** — the simple loop with `BeforeNextRequest` and overflow reaction built in
+- **[Chapter 11: State Management](../11-state-management/README.md)** — `wrapUp` saves state through a checkpoint
+- **[Chapter 12: Agent Memory Systems](../12-agent-memory/README.md)** — linear memory, facts in user, live state without mutating system, recall for block memory
+- **[Chapter 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md)** — prefix stability, prompt cache, cost of condense
 
-**IMPORTANT:** Context Engineering focuses on **assembling context** from various sources (memory, state, retrieval). Data storage is described in respective chapters (Memory, State Management, RAG).
+**Important:** Context Engineering is about **assembling the context for a single request**. Storing knowledge between sessions is described in Memory; persistent data (schemas, policies) — in State Management; external search — in RAG.
 
 ## What's Next?
 
-After mastering context engineering, proceed to:
-- **[14. Ecosystem and Frameworks](../14-ecosystem-and-frameworks/README.md)** — Learn about agent frameworks
+After mastering context engineering, move on to:
+- **[14. Ecosystem and Frameworks](../14-ecosystem-and-frameworks/README.md)** — an overview of popular agent frameworks and where they help vs. get in the way.
 
+---
+
+**Navigation:** [← Chapter 12: Memory](../12-agent-memory/README.md) | [Table of Contents](../README.md) | [Chapter 14: Ecosystem →](../14-ecosystem-and-frameworks/README.md)

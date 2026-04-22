@@ -113,5 +113,5 @@ var toolCatalog = []ToolDefinition{
 
 **Примечание:** Это опциональная лаба. После Lab 12 можно переходить к прод-темам или выполнить эту лабу для более глубокого понимания tool retrieval.
 
-**Следующий шаг:** После успешного прохождения Lab 13 переходите к прод-темам или [Lab 14: Evals в CI](../lab14-evals-in-ci/README.md) (если доступна)
+**Следующий шаг:** После успешного прохождения Lab 13 — это последняя лаба курса. Дальше — прод-темы из руководства, в первую очередь [Глава 23: Evals в CI/CD](../../book/23-evals-in-cicd/README.md), [Глава 19: Observability и Tracing](../../book/19-observability-and-tracing/README.md) и [Глава 17: Security и Governance](../../book/17-security-and-governance/README.md).
 

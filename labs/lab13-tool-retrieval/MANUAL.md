@@ -332,5 +332,5 @@ func validatePipeline(pipeline Pipeline, catalog []ToolDefinition) error {
 
 ---
 
-**Next step:** After successfully completing Lab 13, proceed to production topics or [Lab 14: Evals in CI](../lab14-evals-in-ci/README.md) (if available)
+**Next step:** Lab 13 is the final lab of the course. From here, head to the production-oriented chapters of the handbook — first of all [Chapter 23: Evals in CI/CD](../../book/23-evals-in-cicd/README.md), [Chapter 19: Observability and Tracing](../../book/19-observability-and-tracing/README.md), and [Chapter 17: Security and Governance](../../book/17-security-and-governance/README.md).
 

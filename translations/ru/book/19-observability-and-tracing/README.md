@@ -533,10 +533,21 @@ func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
 
 ### Span-ы для итераций агента и tool calls
 
+> **Правило: PII не попадает в спан в открытом виде.** Спаны уходят во внешнюю систему трейсинга (Jaeger / Tempo / DataDog), где их видят SRE, аналитики, иногда вендор. `userInput`, `tool.args`, `tool.result`, `final_answer` могут содержать персональные данные, токены, секреты, медицинские/финансовые сведения. Поэтому в `attribute.String(...)` мы кладём **только** одно из:
+>
+> - **метаданные**: `len(input)`, `tool.name`, кол-во токенов, latency, status;
+> - **redacted-форму**: префикс/суффикс + хэш (`"client@a***...x9f3"`);
+> - **корреляционный ID**: `prompt_id`, `tool_call_id`, `message_hash`, по которым можно найти полный контент в защищённом хранилище с RBAC и retention-политикой.
+>
+> Никогда — сырой текст. Если очень нужен дамп для отладки — отдельным sampler-ом и в защищённый storage, а не в общий трейс.
+
 Оборачиваем каждый шаг агента в span:
 
 ```go
 import (
+    "crypto/sha256"
+    "fmt"
+
     "go.opentelemetry.io/otel"
     "go.opentelemetry.io/otel/attribute"
     "go.opentelemetry.io/otel/trace"
@@ -544,12 +555,27 @@ import (
 
 var tracer = otel.Tracer("devops-agent")
 
+// redact превращает любое потенциально чувствительное значение в безопасную метку:
+// длина исходного текста + короткий sha256-префикс. По этой метке можно сопоставить
+// span с записью в защищённом хранилище логов, но восстановить исходный текст нельзя.
+func redact(s string) string {
+    if s == "" {
+        return ""
+    }
+    sum := sha256.Sum256([]byte(s))
+    return fmt.Sprintf("len=%d sha256=%x", len(s), sum[:6])
+}
+
 func runAgentWithTracing(ctx context.Context, client *openai.Client, userInput string) (string, error) {
-    // Корневой span — весь запуск агента
+    runID := generateRunID()
+
+    // Корневой span — весь запуск агента. Полный текст userInput НЕ кладём в атрибут;
+    // оставляем только run_id (по нему ищем входящий запрос в защищённом хранилище)
+    // и redacted-метку для дебага.
     ctx, rootSpan := tracer.Start(ctx, "agent_run",
         trace.WithAttributes(
-            attribute.String("user_input", userInput),
-            attribute.String("run_id", generateRunID()),
+            attribute.String("run_id", runID),
+            attribute.String("user_input.redacted", redact(userInput)),
         ),
     )
     defer rootSpan.End()
@@ -587,17 +613,24 @@ func runAgentWithTracing(ctx context.Context, client *openai.Client, userInput s
 
         msg := resp.Choices[0].Message
         if len(msg.ToolCalls) == 0 {
-            rootSpan.SetAttributes(attribute.String("final_answer", msg.Content))
+            // Финальный ответ модели тоже может содержать PII — пишем только redacted.
+            // Полный ответ — в защищённое хранилище по run_id.
+            rootSpan.SetAttributes(
+                attribute.String("final_answer.redacted", redact(msg.Content)),
+                attribute.Int("final_answer.length", len(msg.Content)),
+            )
             iterSpan.End()
             return msg.Content, nil
         }
 
-        // Span для каждого tool call
+        // Span для каждого tool call: имя инструмента и tool_call_id безопасны,
+        // arguments и result — нет.
         for _, toolCall := range msg.ToolCalls {
             _, toolSpan := tracer.Start(ctx, "tool_call",
                 trace.WithAttributes(
                     attribute.String("tool.name", toolCall.Function.Name),
-                    attribute.String("tool.args", toolCall.Function.Arguments),
+                    attribute.String("tool.call_id", toolCall.ID),
+                    attribute.String("tool.args.redacted", redact(toolCall.Function.Arguments)),
                 ),
             )
 
@@ -606,7 +639,10 @@ func runAgentWithTracing(ctx context.Context, client *openai.Client, userInput s
                 toolSpan.RecordError(err)
                 toolSpan.SetAttributes(attribute.Bool("tool.error", true))
             } else {
-                toolSpan.SetAttributes(attribute.String("tool.result", result))
+                toolSpan.SetAttributes(
+                    attribute.String("tool.result.redacted", redact(result)),
+                    attribute.Int("tool.result.length", len(result)),
+                )
             }
             toolSpan.End()
         }
@@ -617,6 +653,8 @@ func runAgentWithTracing(ctx context.Context, client *openai.Client, userInput s
     return "", nil
 }
 ```
+
+> **Что писать в защищённое хранилище.** Связку «`run_id` → исходный `userInput` / `final_answer`» и «`tool.call_id` → исходные `arguments` / `result`» — в отдельный логгер с шифрованием на стороне сервиса, RBAC по ролям SRE/Privacy/Compliance и retention 7–30 дней. Так у вас остаётся возможность дебажить инцидент, но в общем трейсе нет ни одного байта PII.
 
 ### Propagation: передача контекста между сервисами
 

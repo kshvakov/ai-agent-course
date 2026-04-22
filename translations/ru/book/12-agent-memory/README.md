@@ -2,51 +2,75 @@
 
 ## Зачем это нужно?
 
-Агентам нужна память, чтобы удерживать контекст между разговорами, учиться на прошлом опыте и не повторять одни и те же ошибки. Без этого агент быстро забывает важное и тратит токены на повторные объяснения.
+Агенту нужна память, чтобы удерживать контекст между итерациями цикла, не забывать решения внутри одной задачи и не начинать каждый разговор с нуля. Без памяти агент тратит токены на повторные объяснения, теряет смысл задачи на 5-й итерации и не помнит, что было неделю назад.
 
-В этой главе разберём системы памяти, которые помогают агентам запоминать, извлекать и забывать информацию эффективно.
+Но память — это не только «куда положить данные». Любая работа с памятью затрагивает контекстное окно LLM, бюджет токенов и **prompt cache** провайдера. Неаккуратная архитектура памяти превращает дешёвый агент в дорогой и медленный.
+
+В этой главе разберём, как устроена память в продакшен-агенте: какие горизонты бывают, что хранить иммутабельно, чем `compact` отличается от `condense`, и почему «динамический system prompt» — обычно дорогая ошибка.
 
 ### Реальный кейс
 
-**Ситуация:** Пользователь спрашивает агента: "Какая была проблема с базой данных, которую мы исправили на прошлой неделе?" Агент отвечает: "У меня нет информации об этом."
+**Ситуация:** Пользователь спрашивает агента: «Какая была проблема с базой данных, которую мы исправили на прошлой неделе?» Агент отвечает: «У меня нет информации об этом».
 
-**Проблема:** У агента нет памяти о прошлых разговорах. Каждое взаимодействие начинается с нуля, тратя контекст и время пользователя.
+**Проблема:** У агента нет памяти о прошлых разговорах. Каждое взаимодействие начинается с нуля.
 
-**Решение:** Система памяти сохраняет важные факты, достаёт их при необходимости и забывает устаревшее, чтобы не вылезать за лимиты контекста.
+**Решение:** Долговременная память сохраняет ключевые факты (решения, артефакты, предпочтения), даёт их извлечь при необходимости и забывает устаревшее, чтобы не вылезать за лимиты контекста.
 
 ## Теория простыми словами
 
-### Типы памяти
+### Два горизонта памяти
 
-**Кратковременная память:**
-- История текущего разговора (хранится в runtime, не в долговременном хранилище)
-- Ограничена контекстным окном LLM
-- Теряется при завершении разговора
-- **Примечание:** Управление кратковременной памятью (саммаризация, отбор) описано в [Context Engineering](../13-context-engineering/README.md). Термин "рабочая память" используется в Context Engineering для обозначения недавних поворотов разговора в контексте.
+У агента два разных уровня памяти, и их нельзя путать:
 
-**Долговременная память (постоянное хранилище):**
-- Факты, предпочтения, прошлые решения
-- Хранится в базе данных/файлах
-- Сохраняется между разговорами
+**Внутри Run (между итерациями цикла):**
+- История сообщений текущей задачи: `[]Message`.
+- Растёт от итерации к итерации.
+- Ограничена контекстным окном модели.
+- При завершении Run может быть сохранена — или забыта.
 
-**Episodic память:**
-- Конкретные события: "Пользователь спрашивал о месте на диске 2026-01-06"
-- Полезна для отладки и обучения
+**Между Run / сессиями (долговременная):**
+- Решения, факты, предпочтения, артефакты.
+- Хранится в БД/файлах.
+- Не лезет в контекст LLM целиком — извлекается выборочно.
 
-**Semantic память:**
-- Общие знания: "Пользователь предпочитает JSON ответы"
-- Извлекается из эпизодов
+Большинство ошибок в дизайне памяти случается из-за того, что эти два уровня смешивают: пытаются хранить весь Run в долговременном хранилище, или наоборот — превращают долговременное хранилище в часть system prompt и тратят на него токены каждой итерации.
+
+### Понятийная классификация (как принято в литературе)
+
+**Кратковременная (working) память** — состояние текущей задачи: что агент уже сделал, какие файлы прочитал, какой план в работе.
+
+**Долговременная память** — переживает завершение Run: факты, предпочтения, истории решений.
+
+**Episodic** — конкретные события: «Пользователь спрашивал о месте на диске 2026-01-06».
+
+**Semantic** — обобщения: «Пользователь предпочитает JSON ответы». Извлекается из эпизодов.
+
+Эти термины полезны для общения, но в коде вам обычно достаточно различать «история текущего Run» и «персистентное хранилище».
 
 ### Операции с памятью
 
-1. **Store** — Сохранить информацию для будущего
-2. **Retrieve** — Найти релевантную информацию
-3. **Forget** — Удалить устаревшую информацию
-4. **Update** — Изменить существующую информацию
+1. **Store** — сохранить информацию.
+2. **Retrieve** — найти релевантную.
+3. **Forget** — удалить устаревшую.
+4. **Update** — изменить существующую.
+
+### Принцип: память — иммутабельная история
+
+Главное правило, на котором держится всё дальнейшее:
+
+> **История уже отправленных сообщений не переписывается. Она только дополняется (append) или полностью заменяется (replace).**
+
+Из этого правила вытекают три практических следствия:
+
+1. **Не переписывай прошлое.** Никаких «удалим лишний tool result» или «уплотним assistant-ответ». Это ломает prompt cache на хвосте и иногда заставляет модель имитировать собственный прежний стиль.
+2. **System prompt стабилен.** Динамические данные (что прочитали, какой план) не вписывай в system prompt — это вычислительный налог на каждой итерации.
+3. **Сжатие — это полная замена.** Если истории слишком много, мы её осознанно, целиком и редко заменяем на summary + хвост (см. condense ниже). Никаких частичных перезаписей.
+
+Эти правила выглядят строго, но именно они делают разницу между «агент работает быстро и предсказуемо» и «агент стоит дорого, тормозит и теряет контекст».
 
 ## Как это работает (пошагово)
 
-### Шаг 1: Интерфейс памяти
+### Шаг 1: Базовый интерфейс памяти
 
 ```go
 type Memory interface {
@@ -62,11 +86,11 @@ type MemoryItem struct {
     Metadata map[string]any
     Created  time.Time
     Accessed time.Time
-    TTL      time.Duration // Время жизни
+    TTL      time.Duration
 }
 ```
 
-### Шаг 2: Сохранение информации
+### Шаг 2: Простое хранилище с TTL
 
 ```go
 type SimpleMemory struct {
@@ -77,64 +101,22 @@ type SimpleMemory struct {
 func (m *SimpleMemory) Store(key string, value any, metadata map[string]any) error {
     m.mu.Lock()
     defer m.mu.Unlock()
-    
+
     m.store[key] = MemoryItem{
         Key:      key,
         Value:    value,
         Metadata: metadata,
         Created:  time.Now(),
         Accessed: time.Now(),
-        TTL:      24 * time.Hour, // Дефолтный TTL
+        TTL:      24 * time.Hour,
     }
     return nil
 }
-```
 
-### Шаг 3: Извлечение с поиском
-
-```go
-func (m *SimpleMemory) Retrieve(query string, limit int) ([]MemoryItem, error) {
-    m.mu.RLock()
-    defer m.mu.RUnlock()
-    
-    // Простой поиск по ключевым словам (в проде используйте embeddings)
-    results := make([]MemoryItem, 0, len(m.store))
-    queryLower := strings.ToLower(query)
-    
-    for _, item := range m.store {
-        // Проверяем, не истёк ли срок
-        if item.TTL > 0 && time.Since(item.Created) > item.TTL {
-            continue
-        }
-        
-        // Простое сопоставление ключевых слов
-        valueStr := fmt.Sprintf("%v", item.Value)
-        if strings.Contains(strings.ToLower(valueStr), queryLower) {
-            item.Accessed = time.Now() // Обновляем время доступа
-            results = append(results, item)
-        }
-    }
-    
-    // Сортируем по времени доступа (самые свежие первыми)
-    sort.Slice(results, func(i, j int) bool {
-        return results[i].Accessed.After(results[j].Accessed)
-    })
-    
-    if len(results) > limit {
-        results = results[:limit]
-    }
-    
-    return results, nil
-}
-```
-
-### Шаг 4: Забывание истёкших элементов
-
-```go
 func (m *SimpleMemory) Cleanup() error {
     m.mu.Lock()
     defer m.mu.Unlock()
-    
+
     now := time.Now()
     for key, item := range m.store {
         if item.TTL > 0 && now.Sub(item.Created) > item.TTL {
@@ -145,311 +127,292 @@ func (m *SimpleMemory) Cleanup() error {
 }
 ```
 
-### Шаг 5: Интеграция с агентом
+### Шаг 3: Извлечение
 
 ```go
-func runAgentWithMemory(ctx context.Context, client *openai.Client, memory Memory, userInput string) (string, error) {
-    // Извлекаем релевантные воспоминания
-    memories, _ := memory.Retrieve(userInput, 5)
-    
-    // Строим контекст с воспоминаниями
-    messages := []openai.ChatCompletionMessage{
-        {Role: "system", Content: "Ты полезный ассистент с доступом к памяти."},
-    }
-    
-    // Добавляем релевантные воспоминания как контекст
-    if len(memories) > 0 {
-        memoryContext := "Релевантная прошлая информация:\n"
-        for _, mem := range memories {
-            memoryContext += fmt.Sprintf("- %s: %v\n", mem.Key, mem.Value)
+func (m *SimpleMemory) Retrieve(query string, limit int) ([]MemoryItem, error) {
+    m.mu.RLock()
+    defer m.mu.RUnlock()
+
+    results := make([]MemoryItem, 0, len(m.store))
+    queryLower := strings.ToLower(query)
+
+    for _, item := range m.store {
+        if item.TTL > 0 && time.Since(item.Created) > item.TTL {
+            continue
         }
-        messages = append(messages, openai.ChatCompletionMessage{
-            Role:    "system",
-            Content: memoryContext,
+        valueStr := fmt.Sprintf("%v", item.Value)
+        if strings.Contains(strings.ToLower(valueStr), queryLower) {
+            item.Accessed = time.Now()
+            results = append(results, item)
+        }
+    }
+
+    sort.Slice(results, func(i, j int) bool {
+        return results[i].Accessed.After(results[j].Accessed)
+    })
+
+    if len(results) > limit {
+        results = results[:limit]
+    }
+    return results, nil
+}
+```
+
+В продакшене keyword-поиск заменяют на embeddings: модель кодирует query и каждый item в вектор, и retrieve возвращает top-K по косинусной близости. Это другой раздел и сильно зависит от выбранной vector db; для базового понимания достаточно того, что выше.
+
+### Шаг 4: Интеграция с агентом
+
+```go
+func runAgentWithMemory(ctx context.Context, ep llm.Endpoint, mem Memory, userInput string) (string, error) {
+    memories, _ := mem.Retrieve(userInput, 5)
+
+    messages := []llm.Message{
+        {Role: "system", Content: "Ты полезный ассистент."},
+    }
+
+    if len(memories) > 0 {
+        var sb strings.Builder
+        sb.WriteString("Релевантные факты из долговременной памяти:\n")
+        for _, m := range memories {
+            fmt.Fprintf(&sb, "- %s: %v\n", m.Key, m.Value)
+        }
+        messages = append(messages, llm.Message{
+            Role:    "user",
+            Content: sb.String(),
         })
     }
-    
-    messages = append(messages, openai.ChatCompletionMessage{
-        Role:    "user",
-        Content: userInput,
-    })
-    
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    "gpt-4o-mini",
-        Messages: messages,
-    })
+
+    messages = append(messages, llm.Message{Role: "user", Content: userInput})
+
+    resp, err := ep.Chat(ctx, llm.Request{Messages: messages})
     if err != nil {
         return "", err
     }
-    
-    answer := resp.Choices[0].Message.Content
-    
-    // Сохраняем важную информацию из разговора
+    answer := resp.Content
+
     if shouldStore(userInput, answer) {
-        key := generateKey(userInput)
-        memory.Store(key, answer, map[string]any{
+        _ = mem.Store(generateKey(userInput), answer, map[string]any{
             "user_input": userInput,
-            "timestamp": time.Now(),
+            "timestamp":  time.Now(),
         })
     }
-    
     return answer, nil
 }
 ```
 
-## Блочная память (Block Memory)
+Обратите внимание: факты из долговременной памяти приходят **в первом user-сообщении**, не в system prompt. Если вы в начале каждого Run меняете system prompt в зависимости от того, что нашлось в памяти, у вас будет cache miss при каждом запросе.
 
-Простой `SimpleMemory` на map подходит для учебных целей. В production-агенте память устроена сложнее. Ключевая идея: **блочная архитектура**.
+## Линейная память внутри Run
 
-Блок (Block) — это единица взаимодействия. Один запрос пользователя, цепочка tool calls, финальный ответ — всё это один блок. Блок хранит оригинальные сообщения и их компактную версию.
+Дефолтная модель памяти на уровне одного Run — **линейная**: плоский `[]Message`, в который каждый шаг цикла дописывается новое.
 
-### Жизненный цикл блока
+### Минимальный код
 
-```mermaid
-flowchart LR
-    A[Prepare] --> B[Append]
-    B --> C[BuildContext]
-    C --> D[Close]
-    D --> E["Compact + Summary"]
+```go
+type LinearMemory struct {
+    msgs []llm.Message
+    mu   sync.Mutex
+}
+
+func (m *LinearMemory) Append(msgs ...llm.Message) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+    m.msgs = append(m.msgs, msgs...)
+}
+
+func (m *LinearMemory) Snapshot() []llm.Message {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+    out := make([]llm.Message, len(m.msgs))
+    copy(out, m.msgs)
+    return out
+}
+
+// Reset — единственный способ изменить уже добавленное.
+// Используется только condense (см. ниже) и тестами.
+func (m *LinearMemory) Reset(msgs []llm.Message) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+    m.msgs = append(m.msgs[:0], msgs...)
+}
 ```
 
-1. **Prepare** — создаём новый блок, привязываем к хранилищу
-2. **Append** — добавляем сообщения (user, assistant, tool results)
-3. **BuildContext** — собираем историю из текущего и прошлых блоков
-4. **Close** — финализируем: создаём compact-версию, считаем токены, генерируем summary
+### Почему именно так
 
-### Compact: 91% сжатие tool chains
+- **Prompt cache работает.** Современные провайдеры (OpenAI, Anthropic, Z.AI и совместимые) кэшируют префикс запроса. Стабильный префикс — почти бесплатные input-токены на повторных итерациях. Любая мутация хвоста сбрасывает кэш дальше точки изменения, мутация префикса — сбрасывает весь кэш.
+- **Меньше движущихся частей.** Отдельная история = отдельная истина. Нет «оригинала» и «compact-копии», которые могут разъехаться.
+- **Совместимость с провайдерами.** Все драйверы (OpenAI, Anthropic, Sber, vLLM) принимают один и тот же массив сообщений. Любые надстройки — recall, blocks, summaries — это уже на верхнем уровне.
 
-При закрытии блока цепочки tool calls схлопываются в компактную форму:
+### Live state без мутации system prompt
+
+Соблазн положить динамическое состояние в system prompt очень большой:
+
+```go
+// ПЛОХО: меняется на каждой итерации → cache miss всего префикса
+sysPrompt := basePrompt +
+    "\n\nFiles read: " + filesRead.Join(", ") +
+    "\nLast actions: " + lastActions.Join(", ") +
+    "\nPlan: " + plan.Render()
+```
+
+Что не так: каждое изменение `filesRead` или `plan` инвалидирует кэш на всех ~N тысячах токенов system prompt. На длинной задаче это превращается в стабильный налог: вы платите за input-токены полную цену каждую итерацию, хотя 95% префикса не менялось.
+
+Куда складывать live state:
+
+1. **В результат последнего tool call.** Если tool вернул `read_file: {content}`, к нему естественно дописать заметки агента.
+2. **В отдельные `Notes` структуры**, которые рендерятся в последнее `user`-сообщение или в первое сообщение очередной итерации.
+3. **В tool, который агент сам зовёт**, чтобы поставить себе чекпоинт (`update_plan`, `set_goal`).
+
+```go
+// ХОРОШО: live state в результате последнего tool call
+result := tool.Result{
+    Content: actualOutput,
+    Notes: []string{
+        "plan: 2/5 done",
+        "files touched: a.go, b.go",
+    },
+}
+```
+
+Стабильный system prompt + дописываемая история = максимум cache hits и минимум поверхности для багов.
+
+Подробнее про сборку контекста, бюджет и динамические секции (когда они всё-таки нужны и как платить за них минимально) — в [Главе 13: Context Engineering](../13-context-engineering/README.md).
+
+## Блочная память: когда она нужна
+
+Линейная модель решает 80% задач. Оставшиеся 20% — это случаи, когда задачи внутри одного процесса агента естественно делятся на закрытые сюжеты, а пользователю/самому агенту полезно адресовать их по идентификатору.
+
+Типичные кейсы:
+- REPL-интерфейс: каждая команда пользователя — отдельный сюжет, и хочется на 10-й команде дать модели возможность сказать «глянь, что я делал в команде #3».
+- Длительный коучинг-агент, где сессии явно разделены и между ними есть смысл подтягивать только summary.
+
+Здесь полезна **блочная память**: историю мы группируем в блоки по «один пользовательский запрос → один цикл агента → завершение».
+
+### Структура блока (без compact-через-теги)
 
 ```go
 type Block struct {
     ID       int
-    Query    string
-    Messages []Message        // оригинал
-    Compact  []Message        // сжатая версия
-    Summary  string
-    Tokens   int
-}
-
-func (b *Block) Close() {
-    b.Query = extractQuery(b.Messages)      // первые 120 символов user-сообщения
-    b.Compact = compactMessages(b.Messages)
-    b.Tokens = estimateTokens(b.Compact)    // chars / 3
-    b.Summary = buildSummary(b.Query, b.Messages, b.Compact)
+    Query    string         // первые 120 символов первого user-сообщения
+    Messages []llm.Message  // оригинал, иммутабельно
+    Tokens   int            // Usage.PromptTokens из последнего ответа провайдера
+    Summary  string         // 1-2 строки для каталога
 }
 ```
 
-Функция `compactMessages` схлопывает цепочки `assistant(tool_calls) → tool_result` в одно сообщение с тегами `<prior_tool_use>`:
+Принцип:
+- `Messages` — это правда. Никаких «compact-копий с урезанными tool args».
+- `Summary` — короткая строка для каталога блоков, не заменитель содержимого. Делается на закрытии блока (один LLM-вызов на дешёвой модели либо вручную из заголовка задачи).
+- `Tokens` берём из ответа провайдера, не считаем «по символам». Это важно — см. ошибку 7 ниже.
 
-```go
-func compactMessages(msgs []Message) []Message {
-    var result []Message
-    var toolBuf strings.Builder
+### Каталог и recall
 
-    for _, msg := range msgs {
-        if msg.HasToolCalls() {
-            for _, tc := range msg.ToolCalls {
-                args := truncate(tc.Arguments, 80)
-                res := truncate(findToolResult(msgs, tc.ID), 200)
-                line := fmt.Sprintf("%s %s -- %s", tc.Name, args, res)
-                if !isDuplicate(toolBuf.String(), line) {
-                    toolBuf.WriteString(line + "\n")
-                }
-            }
-            continue
-        }
-        if msg.Role == "tool" {
-            continue // уже обработано выше
-        }
-        if toolBuf.Len() > 0 {
-            result = append(result, Message{
-                Role:    "user", // не assistant — модель не имитирует свой контент
-                Content: "<prior_tool_use>\n" + toolBuf.String() + "</prior_tool_use>",
-            })
-            toolBuf.Reset()
-        }
-        result = append(result, msg)
-    }
-    return result
-}
-```
-
-Compact-сообщения получают роль `user`, а не `assistant`. Это предотвращает ситуацию, когда модель воспринимает сжатый контент как свои предыдущие слова и начинает их имитировать.
-
-### BuildContext: бюджетирование блоков
-
-При сборке контекста мы берём compact-версии прошлых блоков (от новых к старым), пока хватает бюджета:
-
-```go
-func (m *Memory) BuildContext(currentBlock *Block, contextSize int) []Message {
-    budget := contextSize - currentBlock.Tokens - 4096 // резерв
-
-    var history []Message
-    // от новых блоков к старым
-    for i := len(m.blocks) - 1; i >= 0 && budget > 0; i-- {
-        block := m.blocks[i]
-        if block.Tokens > budget {
-            break
-        }
-        history = append(block.Compact, history...)
-        budget -= block.Tokens
-    }
-
-    return append(history, currentBlock.Messages...)
-}
-```
-
-## Каталог блоков и Recall
-
-Модель не видит содержимое прошлых блоков напрямую. Вместо этого в system prompt рендерится **каталог** — список блоков с краткими описаниями:
+Модель не видит содержимое прошлых блоков напрямую. В первое user-сообщение очередного блока подкладывается **каталог** — короткий список блоков с summary:
 
 ```
 [CONTEXT BLOCKS]
-Blocks from prior interactions (use recall tool to get full details):
-#0: check disk usage — exec x3, read x1 → "Disk /data at 92%, cleaned logs" (~5K tokens)
-#1: deploy service — edit x2, exec x4 → "Deployed v2.3.1 to staging" (~8K tokens)
-#2: fix nginx config — read x2, edit x1 → "Updated proxy_pass for /api" (~3K tokens)
+#0: check disk usage — "Disk /data at 92%, cleaned logs" (~5K tokens)
+#1: deploy service   — "Deployed v2.3.1 to staging" (~8K tokens)
+#2: fix nginx config — "Updated proxy_pass for /api" (~3K tokens)
 ```
 
-Когда модели нужны подробности, она вызывает инструмент `recall`:
+Если для текущей задачи нужны подробности — модель вызывает tool `recall(block_id)`:
 
 ```go
-type RecallTool struct {
-    memory *Memory
-}
+type RecallTool struct{ store *BlockStore }
 
 func (t *RecallTool) Execute(ctx context.Context, args RecallArgs) (string, error) {
-    msgs := t.memory.BlockMessages(args.BlockID)
-    if msgs == nil {
+    msgs, ok := t.store.Block(args.BlockID)
+    if !ok {
         return "Block not found", nil
     }
-    return formatMessages(msgs), nil // полные оригинальные сообщения
+    return formatMessages(msgs), nil
 }
 ```
 
-Recall возвращает **оригинальные** сообщения блока, а не compact-версию. Это критично: compact теряет детали, а для глубокого анализа нужна полная информация.
+Recall возвращает **оригинальные** `Messages` блока. Это критично: смысл всего механизма именно в том, что под рукой есть полные данные на случай, если summary недостаточно.
 
-## Working Memory (Рабочая память)
+### Что НЕ делать
 
-Working Memory — это динамическая секция system prompt, которая содержит контекст текущей задачи. В отличие от block memory (прошлые взаимодействия), Working Memory — это "что агент знает прямо сейчас".
+Исторически в блочную модель часто добавляли «compact-сообщения» — заменяли цепочку `assistant(tool_calls) → tool_result` одной строкой вида:
 
-### Компоненты Working Memory
-
-| Компонент | Назначение |
-|-----------|-----------|
-| **TaskContext** | Текущая задача (первые 50 слов), прочитанные/изменённые файлы, последние действия |
-| **LivePlan** | Цель, шаги с статусами (pending/in_progress/completed/cancelled) |
-| **Budget** | Предупреждения о заполнении контекстного окна |
-| **ContextBlocks** | Каталог прошлых блоков для recall |
-
-### Render в system prompt
-
-```go
-type WorkingMemory struct {
-    Task         string
-    FilesRead    *Ring[string]  // кольцевой буфер, MRU-семантика
-    FilesModified *Ring[string]
-    LastActions  *Ring[string]
-    Plan         *LivePlan
-    Budget       *BudgetTracker
-    Blocks       []BlockSummary
-    maxChars     int            // ~6000 символов
-}
-
-func (wm *WorkingMemory) Render() string {
-    var sb strings.Builder
-
-    sb.WriteString("[TASK CONTEXT]\n")
-    sb.WriteString("Task: " + wm.Task + "\n")
-    sb.WriteString("Files read: " + wm.FilesRead.Join(", ") + "\n")
-    sb.WriteString("Files modified: " + wm.FilesModified.Join(", ") + "\n")
-    sb.WriteString("Recent: " + wm.LastActions.Join(", ") + "\n")
-
-    if wm.Plan != nil {
-        sb.WriteString("\n" + wm.Plan.Render() + "\n")
-    }
-    if wm.Budget.ShouldWarn() {
-        sb.WriteString("\n[BUDGET]\n" + wm.Budget.Warning() + "\n")
-    }
-    if len(wm.Blocks) > 0 {
-        sb.WriteString("\n[CONTEXT BLOCKS]\n")
-        for _, b := range wm.Blocks {
-            sb.WriteString(fmt.Sprintf("#%d: %s (~%dK tokens)\n", b.ID, b.Summary, b.Tokens/1000))
-        }
-    }
-
-    // Trimming при превышении бюджета
-    if sb.Len() > wm.maxChars {
-        wm.LastActions.Trim(3)
-        wm.FilesRead.Trim(5)
-    }
-
-    return sb.String()
-}
+```
+<prior_tool_use>
+read_file path=a.go -- ok, 450 lines
+exec git diff -- 123 lines, 5 files
+</prior_tool_use>
 ```
 
-### Проблема: Working Memory не персистентна
+На бумаге это даёт 80-90% сжатие. На практике — две устойчивые проблемы:
 
-Working Memory живёт в оперативной памяти. Между сессиями она теряется: агент забывает план, перечитывает файлы, начинает с нуля.
+1. **Cache invalidation.** Compact меняет хвост истории → следующая итерация это full miss prompt cache на всём, что после точки compact.
+2. **Имитация.** Если compact-сообщение положить с ролью `assistant`, модель часто начинает воспринимать чужие/свои прежние компакты как «свой стиль» и продолжает писать в этом же формате (включая теги). Если положить как `user` — повышается шум и снижается доверие модели к контексту.
 
-Решение: передавать Working Memory как параметр в `Run()`, чтобы она переживала между REPL-циклами. Для персистенции между сессиями — реализовать Export/Import:
+Поэтому compact-через-теги в современных моделях скорее вредит. Если истории много — сжимайте через condense (LLM-summary, см. ниже), а не через структурное переписывание.
 
-```go
-func (wm *WorkingMemory) Export() WorkingMemorySnapshot {
-    return WorkingMemorySnapshot{
-        Task:          wm.Task,
-        FilesRead:     wm.FilesRead.Items(),
-        FilesModified: wm.FilesModified.Items(),
-        Plan:          wm.Plan.Export(),
-    }
-}
+## Compact, Condense, Recall: что чем отличается
 
-func (wm *WorkingMemory) Restore(snap WorkingMemorySnapshot) {
-    wm.Task = snap.Task
-    for _, f := range snap.FilesRead {
-        wm.FilesRead.Push(f)
-    }
-    // ...
-}
-```
+Терминология часто путается. Зафиксируем:
 
-> **4 уровня памяти в production-агенте:**
->
-> 1. **Working Memory** — задача, план, бюджет, файлы (в system prompt)
-> 2. **Block Memory** — завершённые взаимодействия (original + compact)
-> 3. **Recall** — model-driven retrieval полных данных блока
-> 4. **Condense** — emergency LLM-сжатие при overflow (см. [Context Engineering](../13-context-engineering/README.md))
+| Стратегия | Затраты | Cache impact | Когда применять |
+|---|---|---|---|
+| **Compact** (структурный) | CPU копейки | full miss + риск имитации | Почти никогда. Только если у вас закрыт блок и вы заранее уверены, что cache всё равно сбрасывается. |
+| **Condense** (LLM) | один вызов LLM | full miss (полная замена истории) | По threshold (≈75-80% контекстного окна) или при `ContextOverflowError` от провайдера. Максимум 1 раз за Run. |
+| **Recall** (model-driven) | один tool call | append, кэш не страдает | Только в блочной модели. Модель сама запрашивает старый блок, когда ей нужны детали. |
+
+Принцип **never destroy originals** одинаково применим ко всем: condense создаёт новую историю, оригиналы (либо в виде блоков, либо в виде snapshot перед condense) остаются для recovery и аудита.
+
+Подробности промпта condense, threshold-логика и инкрементальная суммаризация — в [Главе 13: Context Engineering](../13-context-engineering/README.md#condensation-prompt).
+
+## Долговременная память (между сессиями)
+
+Внутри Run работает линейная (или блочная) история. Между сессиями она теряется — нужно явное хранилище.
+
+### Что класть
+
+- **Решения и их обоснования.** «Выбрали PostgreSQL, потому что нужна транзакционность» — это вечно полезный факт.
+- **Стабильные идентификаторы.** Имя пользователя, namespace, окружение, рабочая директория.
+- **Установленные предпочтения** — с явным типом `preference` (см. anchoring bias в гл. 13).
+- **Артефакты задач.** Ссылки на созданные ресурсы, миграции, ID PR-ов.
+
+### Что НЕ класть
+
+- **Каждый поворот разговора.** Это шум, retrieval начинает возвращать мусор.
+- **Гипотезы и временный статус.** «Сервис сейчас падает» — устареет к следующей сессии и собьёт диагностику.
+- **Полные транскрипты сессий.** Если очень нужно — храните отдельно, не в той же таблице, где факты для retrieval.
+
+### Связь с лабой
+
+Реализация: запись фактов в файл/БД, retrieval на embeddings, фильтрация по типу — отрабатывается в [Lab 11: Memory & Context Engineering](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab11-memory-context).
 
 ## Checkpoint и Resume
 
-Агент может работать часами над сложной задачей. Если процесс упадёт посередине, потеряется весь прогресс. Checkpoint (чекпоинт) сохраняет состояние разговора периодически. При сбое агент возобновляет работу с последней сохранённой точки.
+Длинный Run может упасть посередине: процесс убили, кончился rate limit, упала сеть. Чекпоинт сохраняет состояние, чтобы при перезапуске не начинать с нуля.
 
-Базовая реализация Checkpoint (структура, сохранение/загрузка, интеграция с agent loop) описана в [Главе 09: Анатомия Агента](../09-agent-architecture/README.md#checkpoint-и-resume-сохранение-и-восстановление). Продвинутые стратегии (гранулярность, валидация, ротация) — в [Главе 11: State Management](../11-state-management/README.md#продвинутые-стратегии-checkpoint).
+Базовая реализация (структура, save/load, интеграция с agent loop) описана в [Главе 09: Анатомия Агента](../09-agent-architecture/README.md#checkpoint-и-resume-сохранение-и-восстановление). Продвинутые стратегии (гранулярность, валидация, ротация) — в [Главе 11: State Management](../11-state-management/README.md#продвинутые-стратегии-checkpoint).
 
-Здесь мы рассматриваем, как Checkpoint связан с памятью агента:
+В контексте памяти важны три правила:
 
-- **Что сохранять:** историю сообщений (`messages[]`), содержимое памяти, состояние инструментов, текущий шаг выполнения.
-- **Когда сохранять:** после каждого значимого шага (вызов инструмента, ответ пользователю). Для коротких задач (2-3 итерации) Checkpoint избыточен. Для длинных задач (10+ итераций) — обязателен.
-- **TTL:** устанавливайте TTL на Checkpoint (например, 24 часа), чтобы устаревшие снимки не накапливались.
+- **Сохраняй оригинал, не compact.** Если в snapshot записан compact-вариант истории, после resume вы не сможете восстановить детали.
+- **Сохраняй после каждого значимого шага** (вызов инструмента, ответ пользователю). Для коротких задач (2-3 итерации) чекпоинт избыточен. Для длинных (10+ итераций) — обязателен.
+- **Поставь TTL** (например, 24 часа), чтобы старые snapshot'ы не накапливались.
 
 ### Shared Memory между агентами
 
-В мульти-агентных системах агенты обмениваются информацией через общее хранилище памяти. Каждый агент читает и пишет в общий store, разграничивая данные по namespace:
+В мульти-агентных системах агенты обмениваются информацией через общее хранилище, разграничивая данные по namespace:
 
 ```go
 type SharedMemoryStore struct {
     store CheckpointStore
 }
 
-// Запись с namespace агента
 func (s *SharedMemoryStore) Put(ctx context.Context, agentID, key string, value any) error {
     fullKey := fmt.Sprintf("shared:%s:%s", agentID, key)
     data, _ := json.Marshal(value)
     return s.store.Set(ctx, fullKey, data, 0)
 }
 
-// Чтение данных другого агента
 func (s *SharedMemoryStore) Get(ctx context.Context, agentID, key string) (any, error) {
     fullKey := fmt.Sprintf("shared:%s:%s", agentID, key)
     data, err := s.store.Get(ctx, fullKey)
@@ -460,47 +423,46 @@ func (s *SharedMemoryStore) Get(ctx context.Context, agentID, key string) (any, 
     return result, json.Unmarshal(data, &result)
 }
 
-// Получить все записи всех агентов (для supervisor)
 func (s *SharedMemoryStore) ListAll(ctx context.Context) (map[string]any, error) {
     keys, _ := s.store.Keys(ctx, "shared:*")
     result := make(map[string]any)
     for _, key := range keys {
         val, _ := s.store.Get(ctx, key)
         var parsed any
-        json.Unmarshal(val, &parsed)
+        _ = json.Unmarshal(val, &parsed)
         result[key] = parsed
     }
     return result, nil
 }
 ```
 
-> **Связь:** Подробнее об управлении состоянием агента — в [Главе 11: State Management](../11-state-management/README.md). Checkpoint — это частный случай персистенции состояния.
+> **Связь:** Подробнее об управлении состоянием агента — в [Главе 11: State Management](../11-state-management/README.md). Чекпоинт — частный случай персистенции состояния.
 
 ## Типовые ошибки
 
-### Ошибка 1: Нет TTL (Time To Live)
+### Ошибка 1: Нет TTL
 
-**Симптом:** Память растёт бесконечно, потребляя хранилище и контекст.
+**Симптом:** Память растёт бесконечно, потребляя хранилище и контекст. Retrieval возвращает устаревшие факты.
 
 **Причина:** Не забывается устаревшая информация.
 
-**Решение:** Реализуйте TTL и периодическую очистку.
+**Решение:** Реализуйте TTL и периодическую очистку. Для разных типов фактов — разный TTL: предпочтения пользователя живут долго, временный статус — часы.
 
 ### Ошибка 2: Сохранение всего
 
-**Симптом:** Память заполняется нерелевантной информацией, делая извлечение шумным.
+**Симптом:** Память заполняется нерелевантной информацией, retrieval становится шумным.
 
-**Причина:** Нет фильтрации того, что сохранять.
+**Причина:** Нет фильтрации того, что вообще стоит сохранять.
 
-**Решение:** Сохраняйте только важные факты, не каждый поворот разговора.
+**Решение:** Сохраняйте только важные факты, не каждый поворот разговора. Хороший фильтр — отдельный лёгкий LLM-вызов в конце Run: «извлеки из этого диалога факты, которые стоит запомнить надолго».
 
-### Ошибка 3: Нет оптимизации извлечения
+### Ошибка 3: Только keyword-поиск
 
 **Симптом:** Извлечение возвращает нерелевантные результаты или пропускает важную информацию.
 
-**Причина:** Простое сопоставление ключевых слов вместо семантического поиска.
+**Причина:** Простое сопоставление подстрок не понимает синонимов и парафразов.
 
-**Решение:** Используйте embeddings для семантического поиска по сходству.
+**Решение:** Используйте embeddings для семантического поиска. Hybrid (BM25 + embeddings) обычно лучше любого из двух по отдельности.
 
 ### Ошибка 4: Compact уничтожает оригиналы
 
@@ -511,115 +473,138 @@ func (s *SharedMemoryStore) ListAll(ctx context.Context) (map[string]any, error)
 **Решение:**
 
 ```go
-// ПЛОХО: перезаписываем оригинал
+// ПЛОХО: перезаписали оригинал
 block.Messages = compactMessages(block.Messages)
 
-// ХОРОШО: храним оба варианта
+// ХОРОШО: оригинал жив, compact — отдельный view
 block.Compact = compactMessages(block.Messages)
-// block.Messages остаётся без изменений
+// block.Messages не трогаем
 ```
 
-Принцип **Never destroy originals**: condensation — это view, не мутация. Оригиналы нужны для recall по полной истории.
+Принцип **never destroy originals**: любая форма сжатия — это view, не мутация. Оригиналы нужны и для recall, и для recovery, и для аудита.
 
-### Ошибка 5: Программная компакция mid-loop
+### Ошибка 5: Compact или condense mid-loop
 
-**Симптом:** Агент теряет контекст посередине задачи, начинает заново или повторяет действия.
+**Симптом:** Агент теряет контекст посередине задачи, начинает заново или повторяет действия. На следующей итерации модель не видит, что только что обсуждалось.
 
-**Причина:** Компакция вызывается внутри цикла агента, пока задача ещё выполняется.
+**Причина:** Сжатие вызывается внутри цикла агента, пока задача ещё выполняется.
 
-**Решение:** Compact — только при `Block.Close()`, когда взаимодействие завершено. Внутри цикла используйте LLM-конденсацию (condense), которая создаёт осмысленное резюме вместо механического сжатия.
+**Решение:** Compact — только при закрытии блока. Condense — по threshold или `ContextOverflowError`, и не чаще одного раза за Run. Внутри живой задачи историю не трогайте.
+
+### Ошибка 6: Live state в system prompt
+
+**Симптом:** На каждой итерации prompt-cache hit ≈ 0%, latency растёт линейно с длиной истории, цена ×3-5 от ожидаемой. Метрика `cached_tokens` от провайдера колеблется около нуля.
+
+**Причина:** В system prompt вписаны изменяющиеся данные (текущий файл, прочитанные файлы, прогресс плана). Любая мутация делает invalidate всего префикса.
+
+**Решение:** Держи system prompt стабильным. Стабильные включения (дата, рабочая директория) фиксируй один раз в начале Run и больше не меняй. Live state кладёт в tool results, в Notes последнего сообщения или в специальные tool-вызовы (`update_plan`, `set_goal`), которые модель совершает сама.
+
+### Ошибка 7: Оценка токенов через char/3
+
+**Симптом:** Threshold-condense срабатывает не вовремя — то слишком рано (теряем контекст зря), то слишком поздно (получаем `ContextOverflowError`). Поведение между моделями сильно расходится.
+
+**Причина:** «Длина в символах / 3» — приближение, которое систематически промахивается на 30%+. Для русского, кода, и моделей с обновлёнными токенизаторами (например, после смены словаря) промах ещё больше.
+
+**Решение:** Берите `Usage.PromptTokens` из ответа провайдера на предыдущую итерацию — это бесплатно и точно. Char-based оценка нужна только для нового пользовательского сообщения, которое ещё не уехало в LLM.
+
+```go
+// ПЛОХО
+estimate := totalChars / 3
+if estimate > threshold { condense() }
+
+// ХОРОШО
+budget := lastUsage.PromptTokens + roughEstimate(newUserMessage)
+if budget > threshold { condense() }
+```
 
 ## Мини-упражнения
 
-### Упражнение 1: Реализуйте Memory Store
+### Упражнение 1: File-backed Memory
 
-Создайте хранилище памяти, которое сохраняется на диск:
+Реализуйте хранилище памяти, переживающее перезапуск процесса:
 
 ```go
 type FileMemory struct {
     filepath string
-    // Ваша реализация
+    // ...
 }
 
 func (m *FileMemory) Store(key string, value any, metadata map[string]any) error {
-    // Сохранить в файл
+    // Сохраните в JSON-файл (atomic write через temp + rename)
 }
 ```
 
 **Ожидаемый результат:**
-- Память сохраняется между перезапусками
-- Можно загрузить из файла при старте
+- Память переживает перезапуск.
+- Запись атомарна (нет частично записанных файлов при крахе).
+- Есть отдельная команда `Cleanup()` для пробежки по TTL.
 
 ### Упражнение 2: Семантический поиск
 
-Реализуйте извлечение с использованием embeddings:
+Реализуйте retrieval через embeddings:
 
 ```go
 func (m *Memory) RetrieveSemantic(query string, limit int) ([]MemoryItem, error) {
-    // Используйте embeddings для поиска семантически похожих элементов
+    // Закодируйте query, посчитайте cosine similarity к items, верните top-K
 }
 ```
 
 **Ожидаемый результат:**
-- Находит релевантные элементы даже без точного совпадения ключевых слов
-- Возвращает самые похожие элементы первыми
+- Находит релевантные элементы без точного совпадения слов.
+- Возвращает наиболее похожие первыми.
+- Падение модели embeddings не должно крашить Retrieve (ошибки логируются, метод возвращает то, что смог).
 
-### Упражнение 3: Реализуйте Block Memory с Compact
+### Упражнение 3: Линейная память + threshold-condense
 
-Реализуйте блочную память с компакцией tool chains:
+Реализуйте `LinearMemory` (Append / Snapshot / Reset) и функцию-сторож:
 
 ```go
-type BlockMemory struct {
-    blocks []*Block
-    current *Block
+func shouldCondense(usage llm.Usage, ctxWindow int, threshold float64) bool {
+    // true, если usage.PromptTokens / ctxWindow >= threshold
 }
 
-func (m *BlockMemory) NewBlock() *Block {
-    // Создать новый блок
-}
-
-func (m *BlockMemory) CloseBlock() {
-    // Закрыть текущий блок: compact + summary
-}
-
-func (m *BlockMemory) BuildContext(contextSize int) []Message {
-    // Собрать историю из compact-версий прошлых блоков + текущий блок
+func condense(ctx context.Context, ep llm.Endpoint, msgs []llm.Message) ([]llm.Message, error) {
+    // 1. Разделить на head (старое) и tail (последние 2 user-шага)
+    // 2. Попросить ep собрать summary head по промпту из гл. 13
+    // 3. Вернуть [summary as user message] + tail
 }
 ```
 
 **Ожидаемый результат:**
-- Compact сжимает цепочку из 10 tool calls в 1-2 сообщения
-- BuildContext укладывается в бюджет токенов
-- Оригинальные сообщения сохраняются для recall
+- Память append-only, никаких mutations кроме `Reset`.
+- Threshold срабатывает по реальным `PromptTokens`, не по char/3.
+- Original-snapshot сохраняется до успешного condense (если LLM-вызов упал, история не теряется).
+- Condense не вызывается чаще одного раза за Run.
 
 ## Критерии сдачи / Чек-лист
 
-**Сдано:**
-- [x] Понимаете разные типы памяти (включая блочную и рабочую)
-- [x] Можете сохранять и извлекать информацию
-- [x] Реализуете TTL и очистку
-- [x] Интегрируете память с агентом
-- [x] Понимаете разницу между compact и оригиналом
-- [x] Знаете, зачем нужна Working Memory
+✅ **Сдано:**
+- Понимаете разделение «внутри Run» vs «между сессиями».
+- Используете линейную память по умолчанию; переходите на блочную осознанно.
+- Не мутируете system prompt live-состоянием.
+- Различаете compact, condense и recall по применимости.
+- Считаете токены через `Usage.PromptTokens`, не через char/3.
+- Реализуете TTL и фильтрацию для долговременной памяти.
+- Соблюдаете «never destroy originals».
 
-**Не сдано:**
-- [ ] Нет TTL, память растёт бесконечно
-- [ ] Сохранение всего без фильтрации
-- [ ] Только простой поиск по ключевым словам
-- [ ] Compact уничтожает оригиналы
-- [ ] Нет блочной структуры — вся история в одном массиве
+❌ **Не сдано:**
+- Compact или condense вызываются mid-loop.
+- Live state живёт в system prompt.
+- Char/3 — единственный счётчик токенов.
+- Compact уничтожает оригиналы.
+- Долговременная память без TTL и без фильтра, что туда класть.
+- Используется блочная память без явной причины (вроде REPL или модельного recall).
 
 ## Связь с другими главами
 
-- **[Глава 09: Анатомия Агента](../09-agent-architecture/README.md)** — Память — ключевой компонент агента
-- **[Глава 13: Context Engineering](../13-context-engineering/README.md)** — Память питает управление контекстом (факты из памяти используются при сборке контекста)
-- **[Глава 08: Evals и Надежность](../08-evals-and-reliability/README.md)** — Память влияет на консистентность агента
+- **[Глава 09: Анатомия Агента](../09-agent-architecture/README.md)** — память как один из ключевых компонентов агента, связь с runtime.
+- **[Глава 11: State Management](../11-state-management/README.md)** — чекпоинты, идемпотентность, persist state.
+- **[Глава 13: Context Engineering](../13-context-engineering/README.md)** — сборка контекста из памяти, бюджеты, condense, динамические секции system prompt.
+- **[Глава 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md)** — почему prompt cache настолько важен и как его не сломать.
 
-**ВАЖНО:** Память (эта глава) отвечает за **хранение и извлечение** информации. Управление тем, как эта информация включается в контекст LLM, описано в [Context Engineering](../13-context-engineering/README.md).
+> **Граница:** эта глава отвечает за **хранение и извлечение** информации. Управление тем, как эта информация складывается в контекст LLM, — в [Context Engineering](../13-context-engineering/README.md).
 
 ## Что дальше?
 
 После понимания систем памяти переходите к:
-- **[13. Context Engineering](../13-context-engineering/README.md)** — Узнайте, как эффективно управлять контекстом из памяти, состояния и retrieval
-
-
+- **[13. Context Engineering](../13-context-engineering/README.md)** — научитесь собирать контекст из памяти, состояния и retrieval, не ломая prompt cache.

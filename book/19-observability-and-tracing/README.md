@@ -533,10 +533,21 @@ func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
 
 ### Spans for Agent Iterations and Tool Calls
 
+> **Rule: PII does not land in a span in plaintext.** Spans go to an external tracing system (Jaeger / Tempo / DataDog), where they're seen by SREs, analysts, sometimes the vendor. `userInput`, `tool.args`, `tool.result`, `final_answer` may contain personal data, tokens, secrets, medical/financial info. So in `attribute.String(...)` we put **only** one of:
+>
+> - **metadata**: `len(input)`, `tool.name`, token counts, latency, status;
+> - **redacted form**: prefix/suffix + hash (`"client@a***...x9f3"`);
+> - **correlation IDs**: `prompt_id`, `tool_call_id`, `message_hash` you can use to find the full content in a protected store with RBAC and a retention policy.
+>
+> Never raw text. If you really need a dump for debugging — do it via a separate sampler into a protected store, not into the general trace.
+
 Wrap each agent step in a span:
 
 ```go
 import (
+    "crypto/sha256"
+    "fmt"
+
     "go.opentelemetry.io/otel"
     "go.opentelemetry.io/otel/attribute"
     "go.opentelemetry.io/otel/trace"
@@ -544,12 +555,28 @@ import (
 
 var tracer = otel.Tracer("devops-agent")
 
+// redact turns any potentially sensitive value into a safe label:
+// length of the original text + a short sha256 prefix. With this label
+// you can match a span to a record in a protected log store, but you
+// can't reconstruct the original text from it.
+func redact(s string) string {
+    if s == "" {
+        return ""
+    }
+    sum := sha256.Sum256([]byte(s))
+    return fmt.Sprintf("len=%d sha256=%x", len(s), sum[:6])
+}
+
 func runAgentWithTracing(ctx context.Context, client *openai.Client, userInput string) (string, error) {
-    // Root span — the entire agent run
+    runID := generateRunID()
+
+    // Root span — the entire agent run. We do NOT put the full userInput
+    // into an attribute; we keep only run_id (use it to find the incoming
+    // request in the protected store) and a redacted label for debugging.
     ctx, rootSpan := tracer.Start(ctx, "agent_run",
         trace.WithAttributes(
-            attribute.String("user_input", userInput),
-            attribute.String("run_id", generateRunID()),
+            attribute.String("run_id", runID),
+            attribute.String("user_input.redacted", redact(userInput)),
         ),
     )
     defer rootSpan.End()
@@ -587,17 +614,24 @@ func runAgentWithTracing(ctx context.Context, client *openai.Client, userInput s
 
         msg := resp.Choices[0].Message
         if len(msg.ToolCalls) == 0 {
-            rootSpan.SetAttributes(attribute.String("final_answer", msg.Content))
+            // The model's final answer can also contain PII — write only redacted.
+            // The full answer goes into the protected store, looked up by run_id.
+            rootSpan.SetAttributes(
+                attribute.String("final_answer.redacted", redact(msg.Content)),
+                attribute.Int("final_answer.length", len(msg.Content)),
+            )
             iterSpan.End()
             return msg.Content, nil
         }
 
-        // Span for each tool call
+        // Span for each tool call: the tool name and tool_call_id are safe;
+        // arguments and result are not.
         for _, toolCall := range msg.ToolCalls {
             _, toolSpan := tracer.Start(ctx, "tool_call",
                 trace.WithAttributes(
                     attribute.String("tool.name", toolCall.Function.Name),
-                    attribute.String("tool.args", toolCall.Function.Arguments),
+                    attribute.String("tool.call_id", toolCall.ID),
+                    attribute.String("tool.args.redacted", redact(toolCall.Function.Arguments)),
                 ),
             )
 
@@ -606,7 +640,10 @@ func runAgentWithTracing(ctx context.Context, client *openai.Client, userInput s
                 toolSpan.RecordError(err)
                 toolSpan.SetAttributes(attribute.Bool("tool.error", true))
             } else {
-                toolSpan.SetAttributes(attribute.String("tool.result", result))
+                toolSpan.SetAttributes(
+                    attribute.String("tool.result.redacted", redact(result)),
+                    attribute.Int("tool.result.length", len(result)),
+                )
             }
             toolSpan.End()
         }
@@ -617,6 +654,8 @@ func runAgentWithTracing(ctx context.Context, client *openai.Client, userInput s
     return "", nil
 }
 ```
+
+> **What goes into the protected store.** Pairs `run_id → original userInput / final_answer` and `tool.call_id → original arguments / result` go into a separate logger with server-side encryption, RBAC for SRE / Privacy / Compliance roles, and 7–30 day retention. That way you keep the ability to debug an incident, but the general trace contains no PII bytes.
 
 ### Propagation: Passing Context Between Services
 

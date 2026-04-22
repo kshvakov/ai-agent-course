@@ -18,6 +18,8 @@ State management is what makes long-lived agents reliable. Without it, tasks tha
 
 **Solution:** Persist state in a DB, make operations idempotent, add retry with backoff, and enforce deadlines. Now the agent can resume from where it stopped, and repeated calls won't create duplicates.
 
+> **Junior employee model.** For an agent, idempotency and checkpoints automate the habit of "don't press the button a second time before you're sure the first press didn't go through". Retry with backoff = "wait and try again carefully, not hammer like a robot". A human has this brake built in (it's psychologically painful to repeat a destructive action), an agent doesn't — so we put it in code. See [Preface → Mental Model](../00-preface/README.md#mental-model-an-agent-is-a-new-employee) and [Ch. 17: Security and Governance](../17-security-and-governance/README.md).
+
 ## Theory in Simple Terms
 
 ### What Is State Management?

@@ -78,6 +78,49 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) {
 
 **See also:** [Chapter 09: Agent Anatomy](../09-agent-architecture/README.md#runtime-execution-environment)
 
+## Mental Model: an Agent Is a New Employee
+
+The most useful and accurate model of an agent is **a new employee, an intern**. Not "new software", not "a magic system", not "a special LLM machine". Just a new person on probation: capable, fast, well-read — but **without your context, without a sense of consequences, without accumulated trust**.
+
+This model is not a metaphor for decoration. It radically simplifies three things: **onboarding, security, and the conversation with people who own risk.**
+
+### What Carries Over from Working with People
+
+The way you already know how to work with a new employee applies to an agent about 90% of the time:
+
+- **Job description = system prompt.** Same idea: what's in scope, what isn't, how to behave in ambiguous cases, who to escalate to.
+- **Role-based access.** A new data analyst doesn't get root in production. Same with the agent: you give it exactly the tools it needs for its role and not one more. The `least-privilege` principle hasn't changed.
+- **Approval for dangerous actions.** Drop a table in prod, ship a release, ban a user — for a junior you require sign-off from a senior. For an agent it's `Human-in-the-Loop` confirmation or `dry-run` mode (see [Ch. 05](../05-safety-and-hitl/README.md), [Ch. 17](../17-security-and-governance/README.md)).
+- **Action log.** Any regulated process needs a trail: "who did what, when, why". The agent's audit log is the same journal — it just lives in Loki/ClickHouse instead of a paper notebook. Same RBAC, same change management, same accountability.
+- **Trust expanded gradually.** A new employee starts with read-only access and a staging environment. Then a narrow set of operations. Then more. Same with the agent: start with reads and dry-run, broaden the allowed scope as you accumulate evidence that it's safe.
+
+If you can explain to your security team how onboarding a new employee works, you can explain how the agent works. No new regulations, no new certifications, no "special AI policies" required. Same `least-privilege`, same audit, same blast radius.
+
+### What Does NOT Carry Over: Four Asymmetries
+
+The agent is an intern, but **an unusual one**. Ignoring the asymmetries means naively assuming "it's all the same". These are the four places where the "like with a person" model breaks:
+
+1. **Speed is 1000× higher.** An intern manages to hit `rm -rf` once. An agent runs it fifty times in a minute inside a loop while you grab coffee. Hence: rate limits, cooldowns between dangerous operations, iteration limits on the loop.
+2. **Parallelism.** A person does one thing at a time. An agent can fire 100 tool calls in parallel and overload a downstream service. Hence: concurrency limits at the runtime level, idempotent operations.
+3. **No sense of consequences.** An intern fears being fired and damage to their reputation. An agent does not. So no "soft norms" in the prompt ("please don't do anything dangerous") replace **hard technical guards**: tool allowlists, parameter validation, dry-run-by-default for destructive actions.
+4. **Vulnerability to prompt injection.** This is **the direct analog of social engineering against a junior**: "Hi, I'm from IT security, give me your password." Only for the agent the injection arrives through data (web pages, tickets, log lines) it reads as part of its job. Hence: source isolation, never-trust-the-input, separate policy gates at the tool layer — not just at the prompt layer.
+
+Remember these four spots. They explain why almost the whole course is about the control loop and not about "LLM magic".
+
+### How to Use This Model Throughout the Course
+
+We will return to the "agent is an employee" idea in:
+
+- **[Ch. 03 Tools](../03-tools-and-function-calling/README.md)** — granting tools = granting access to a junior.
+- **[Ch. 04 Autonomy](../04-autonomy-and-loops/README.md)** — iteration limits = "time before escalation".
+- **[Ch. 05 Human-in-the-Loop](../05-safety-and-hitl/README.md)** — confirmation for dangerous actions = sign-off from a senior.
+- **[Ch. 07 Multi-Agent](../07-multi-agent/README.md)** — orchestrator as a tech lead, subagents as the team.
+- **[Ch. 11 State Management](../11-state-management/README.md)** — idempotency and retries as protection against the "double click".
+- **[Ch. 17 Security and Governance](../17-security-and-governance/README.md)** — full development of the "junior employee" model applied to the platform and processes.
+- **[Ch. 18 Tool Servers](../18-tool-protocols-and-servers/README.md)** — authn/authz as a building badge.
+
+If at any point in the course the "new" AI practices feel confusing — ask yourself: **"how would I set this up for a new junior?"** Nine times out of ten, the answer is the same.
+
 ## Agent Examples in Different Domains
 
 ### DevOps (our main focus)

@@ -1,306 +1,363 @@
 # Manual: Lab 11 — Memory and Context Management
 
-## Why This Lab?
+## Why this matters
 
-In this lab you'll learn how to implement a memory system for the agent: long-term storage, fact extraction, and efficient context management.
+In this lab you'll implement a **minimum viable** memory system for an agent: one `condense` when the model window fills up, and three tools for long-term notes. No `LayeredContext`, no automatic fact extraction, no "importance" scoring.
 
-### Real-World Case Study
+### Real-world case
 
-**Situation:** Agent works with user over extended period.
+**Situation:** an assistant agent works with a user in long sessions.
 
 **Without memory:**
-- User: "My name is Ivan"
-- Agent: "Hello, Ivan!"
-- [After 20 messages]
-- User: "What's my name?"
-- Agent: "I don't know" (forgot)
 
-**With memory:**
-- User: "My name is Ivan"
-- Agent extracts fact: "User name: Ivan" → saves to memory
-- [After 20 messages]
-- User: "What's my name?"
-- Agent retrieves from memory: "User name: Ivan"
-- Agent: "Your name is Ivan"
+- User: "My name is Ivan."
+- 50 messages later: "What's my name?" → "I don't know" (we hit the window, history was truncated).
 
-**Difference:** Memory allows agent to remember important information between sessions.
+**With memory (done right):**
 
-## Theory in Simple Terms
+- User: "Remember that my name is Ivan and I'm responsible for the prod cluster."
+- The agent decides on its own: "this is a stable fact" → calls `memory.save("user.name", "Ivan, responsible for the prod cluster")`.
+- 50 messages later / in a new session: "Who am I on this project?" → the agent calls `memory.recall("who is the user")` → answers.
 
-### Types of Memory
+**Difference from the "trendy" scheme:** it's not an agent-server automatically pushing the whole dialogue through an extraction-LLM — the agent itself decides what to write. Less noise, a clear log, cheaper.
 
-**Working Memory (Short-term):**
-- Recent conversation turns (last 5-10 messages)
-- Current task context
-- Limited by model's context window
+## Theory in simple terms
 
-**Long-term Memory:**
-- Important facts extracted from conversations
-- User preferences
-- Past decisions and results
-- Stored separately from context
+### Two memory horizons
 
-### Fact Extraction
+```text
+                    one Run                       many Runs
+              ┌────────────────────────┐    ┌──────────────────┐
+   In-Run     │  []Message (linear)    │    │   forgotten      │
+              │  + one condense        │    │   on exit        │
+              └────────────────────────┘    └──────────────────┘
 
-Not all information is equally important:
-- User name, preferences → important (store)
-- Temporary server status → less important (can forget)
-- Decisions made → important (store)
-
-**Example:**
-```
-Conversation: "Hi, I'm Ivan. I work at TechCorp. Server is running now."
-Extracted facts:
-  - User name: Ivan (importance: 10)
-  - Company: TechCorp (importance: 8)
-  - Server status: running (importance: 2) → don't save, this is temporary
+   Long-term  ┌────────────────────────────────────────────────┐
+              │   Store: save / recall / delete (tool calls)   │
+              │   lives in a file / DB; agent writes itself    │
+              └────────────────────────────────────────────────┘
 ```
 
-### Context Layers
+| Horizon | Lifetime | Who writes | Where |
+|---|---|---|---|
+| In-Run | one run | runtime | `[]openai.ChatCompletionMessage` |
+| Long-term | survives restart | agent via tool | JSON / SQLite |
 
-Efficient context management uses layers:
+### One threshold, one reaction
 
-```
-Final context = 
-  System Prompt (always first)
-  + Facts Layer (relevant facts from memory)
-  + Summary Layer (compressed history)
-  + Working Memory (last 5-10 messages)
-```
+The window-management loop is the simplest possible:
 
-**Example:**
-```
-System Prompt: "You are a DevOps assistant"
-Facts Layer: "User: Ivan, company: TechCorp"
-Summary Layer: "Discussed server problem. Decided to restart."
-Working Memory: 
-  - User: "Check status"
-  - Assistant: "Checking..."
-```
+1. After every provider response, remember `usage.PromptTokens`.
+2. Before the next request, check: `lastTokens > contextMax * 0.80`?
+3. Yes → one `condense` (if not already done in this Run).
+4. If the provider still returns `ContextOverflowError` → reactive `condense` + retry exactly once. Another overflow → bubble the error up; decompose the task.
 
-### Summarization
+No 4-level strategies, no budget trackers, no message scoring. See [Ch. 13: Budget](../../book/13-context-engineering/README.md).
 
-When context overflows, compress old messages:
-- Preserve important information
-- Reduce token count
-- Maintain context continuity
+### Why not truncate
 
-**Example summary:**
-```
-Original history (2000 tokens):
-- User: "My name is Ivan"
-- Assistant: "Hello, Ivan!"
-- User: "We have a server problem"
-- Assistant: "Describe the problem"
-... (50 more messages)
+A naive `messages = messages[len(messages)-N:]` breaks `tool_call ↔ tool_result` pairs — the provider returns 400. On top of that, you lose context with no trace.
 
-Summary (200 tokens):
-"User Ivan, DevOps engineer from TechCorp. Discussed server problem. 
-Current task: diagnostics. Important decisions: decided to restart service."
-```
+Condense:
 
-## Execution Algorithm
+1. Preserves the system prompt **byte-for-byte** (important for prompt cache).
+2. Replaces the middle with a single `user` message: "Context of previous work: …".
+3. The tail (last N messages) stays intact, with pair checking.
 
-### Step 1: Memory Storage
+### Long-term memory as a tool, not a "layer"
+
+Courses often teach "Final context = System + Facts layer + Summary layer + Working memory". This is a bad idea:
+
+- Every change to "Facts layer" invalidates prompt cache → you pay for a full re-encode on every step.
+- Content in the `system` role gets mixed with the rules for the model — the model starts to confuse what's an instruction and what's data.
+- Auto-extracting facts from every message = noise like "user said thanks".
+
+The right way: long-term memory is just **tools** in the catalog (like `read_file` or `bash`) that the agent calls deliberately. In the system prompt we say only: "these tools exist, use them for stable facts". Memory contents enter the context only when the agent itself called `memory.recall(...)`.
+
+## Step-by-step
+
+### Step 1: Run skeleton + token tracking
 
 ```go
-type FileMemory struct {
-    items []MemoryItem
-    file  string
+type Run struct {
+    messages     []openai.ChatCompletionMessage
+    lastTokens   int
+    contextMax   int
+    condenseDone bool
+    client       *openai.Client
+    model        string
+    tools        []openai.Tool
 }
 
-func (m *FileMemory) Store(key string, value any, importance int) error {
-    item := MemoryItem{
-        Key:        key,
-        Value:      fmt.Sprintf("%v", value),
-        Importance: importance,
-        Timestamp:  time.Now().Unix(),
-    }
-    m.items = append(m.items, item)
-    return m.save()
-}
-
-func (m *FileMemory) Retrieve(query string, limit int) ([]MemoryItem, error) {
-    var results []MemoryItem
-    queryLower := strings.ToLower(query)
-    
-    for _, item := range m.items {
-        if strings.Contains(strings.ToLower(item.Value), queryLower) {
-            results = append(results, item)
-        }
-    }
-    
-    // Sort by importance
-    sort.Slice(results, func(i, j int) bool {
-        return results[i].Importance > results[j].Importance
+func (r *Run) Step(ctx context.Context, userInput string) (string, error) {
+    r.messages = append(r.messages, openai.ChatCompletionMessage{
+        Role: openai.ChatMessageRoleUser, Content: userInput,
     })
-    
-    if len(results) > limit {
-        results = results[:limit]
-    }
-    
-    return results, nil
-}
-```
 
-### Step 2: Fact Extraction
-
-```go
-func extractFacts(ctx context.Context, client *openai.Client, conversation string) ([]Fact, error) {
-    prompt := fmt.Sprintf(`Extract important facts from this conversation.
-    
-Conversation:
-%s
-
-Return facts in JSON format:
-{
-  "facts": [
-    {"key": "user_name", "value": "Ivan", "importance": 10},
-    {"key": "company", "value": "TechCorp", "importance": 8}
-  ]
-}
-
-Importance: 1-10, where 10 is very important (user name, preferences),
-1-3 is temporary information (server status, temporary events).`, conversation)
-
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: "gpt-4o-mini",
-        Messages: []openai.ChatCompletionMessage{
-            {Role: "user", Content: prompt},
-        },
-        Temperature: 0,
-    })
-    if err != nil {
-        return nil, err
-    }
-    
-    // Parse JSON response
-    var data struct {
-        Facts []Fact `json:"facts"`
-    }
-    json.Unmarshal([]byte(resp.Choices[0].Message.Content), &data)
-    
-    return data.Facts, nil
-}
-```
-
-### Step 3: Summarization
-
-```go
-func summarizeConversation(ctx context.Context, client *openai.Client, messages []openai.ChatCompletionMessage) (string, error) {
-    // Collect text of all messages (except System)
-    var textParts []string
-    for _, msg := range messages {
-        if msg.Role != openai.ChatMessageRoleSystem && msg.Content != "" {
-            textParts = append(textParts, fmt.Sprintf("%s: %s", msg.Role, msg.Content))
-        }
-    }
-    conversationText := strings.Join(textParts, "\n")
-    
-    prompt := fmt.Sprintf(`Create a brief summary of this conversation, keeping only:
-1. Important decisions made
-2. Key facts discovered (user name, preferences)
-3. Current state of the task
-
-Conversation:
-%s
-
-Summary (maximum 200 words):`, conversationText)
-
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: "gpt-4o-mini",
-        Messages: []openai.ChatCompletionMessage{
-            {Role: "user", Content: prompt},
-        },
-        Temperature: 0,
-    })
-    if err != nil {
+    if err := r.beforeRequest(ctx); err != nil {
         return "", err
     }
-    
-    return resp.Choices[0].Message.Content, nil
+
+    resp, err := r.callLLM(ctx)
+    if err != nil {
+        if isContextOverflow(err) {
+            if cerr := r.condense(ctx); cerr != nil {
+                return "", cerr
+            }
+            resp, err = r.callLLM(ctx)
+            if err != nil {
+                return "", err
+            }
+        } else {
+            return "", err
+        }
+    }
+
+    r.lastTokens = resp.Usage.PromptTokens
+    return r.handleResponse(ctx, resp)
+}
+
+func (r *Run) beforeRequest(ctx context.Context) error {
+    if r.lastTokens > 0 && float64(r.lastTokens) > float64(r.contextMax)*0.80 {
+        return r.condense(ctx)
+    }
+    return nil
 }
 ```
 
-### Step 4: Layered Context Assembly
+### Step 2: condense
 
 ```go
-func buildLayeredContext(
-    systemPrompt string,
-    memory Memory,
-    summary string,
-    workingMemory []openai.ChatCompletionMessage,
-    query string,
-) []openai.ChatCompletionMessage {
-    messages := []openai.ChatCompletionMessage{
-        {Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
+func (r *Run) condense(ctx context.Context) error {
+    if r.condenseDone || len(r.messages) < 6 {
+        return nil
     }
-    
-    // Facts layer
-    facts, _ := memory.Retrieve(query, 5)
-    if len(facts) > 0 {
-        var factTexts []string
-        for _, fact := range facts {
-            factTexts = append(factTexts, fmt.Sprintf("- %s: %s", fact.Key, fact.Value))
-        }
-        messages = append(messages, openai.ChatCompletionMessage{
-            Role: openai.ChatMessageRoleSystem,
-            Content: "Important facts:\n" + strings.Join(factTexts, "\n"),
-        })
+
+    system := r.messages[0]
+    tail := safeTail(r.messages, 4)
+    head := r.messages[1 : len(r.messages)-len(tail)]
+
+    summary, err := r.summarize(ctx, head)
+    if err != nil {
+        return err
     }
-    
-    // Summary layer
-    if summary != "" {
-        messages = append(messages, openai.ChatCompletionMessage{
-            Role: openai.ChatMessageRoleSystem,
-            Content: "Summary of previous conversation:\n" + summary,
-        })
+
+    next := make([]openai.ChatCompletionMessage, 0, 2+len(tail))
+    next = append(next, system)
+    next = append(next, openai.ChatCompletionMessage{
+        Role:    openai.ChatMessageRoleUser,
+        Content: "Context of previous work:\n\n" + summary,
+    })
+    next = append(next, tail...)
+
+    r.messages = next
+    r.condenseDone = true
+    return nil
+}
+
+// safeTail returns >=N trailing messages, expanding the boundary to the left
+// if the first element is a tool result without its tool_call in the tail.
+func safeTail(msgs []openai.ChatCompletionMessage, n int) []openai.ChatCompletionMessage {
+    if n > len(msgs)-1 {
+        n = len(msgs) - 1
     }
-    
-    // Working memory
-    messages = append(messages, workingMemory...)
-    
-    return messages
+    start := len(msgs) - n
+    for start > 1 && msgs[start].Role == openai.ChatMessageRoleTool {
+        start--
+    }
+    return msgs[start:]
 }
 ```
 
-## Common Mistakes
+Prompt for `summarize`:
 
-### Mistake 1: All Facts Extracted Without Filtering
+```text
+You are compressing the agent's working transcript into a brief handoff for the next step.
+Preserve:
+1. The user's original task.
+2. Decisions already made and the reasoning behind them.
+3. Which files / resources have been read and what's relevant in them.
+4. What still needs to be done.
+Drop pleasantries and chatter.
+```
 
-**Symptom:** Memory fills with unimportant facts.
+### Step 3: long-term memory as Store + tools
 
-**Cause:** Facts not filtered by importance.
+Storage — a simple JSON file:
 
-**Solution:** Only save facts with importance >= 5.
+```go
+type Entry struct {
+    Key       string    `json:"key"`
+    Value     string    `json:"value"`
+    CreatedAt time.Time `json:"created_at"`
+}
 
-### Mistake 2: Summarization Loses Important Information
+type FileStore struct {
+    mu      sync.Mutex
+    path    string
+    entries []Entry
+}
 
-**Symptom:** After summarization agent forgets user name.
+func (s *FileStore) Save(_ context.Context, key, value string) error {
+    s.mu.Lock(); defer s.mu.Unlock()
+    for i, e := range s.entries {
+        if e.Key == key {
+            s.entries[i].Value = value
+            s.entries[i].CreatedAt = time.Now()
+            return s.flush()
+        }
+    }
+    s.entries = append(s.entries, Entry{key, value, time.Now()})
+    return s.flush()
+}
 
-**Cause:** Summary doesn't include important facts.
+func (s *FileStore) Recall(_ context.Context, query string) ([]Entry, error) {
+    s.mu.Lock(); defer s.mu.Unlock()
+    q := strings.ToLower(query)
+    var hits []Entry
+    for _, e := range s.entries {
+        if q == "" || strings.Contains(strings.ToLower(e.Key+" "+e.Value), q) {
+            hits = append(hits, e)
+        }
+    }
+    if len(hits) > 5 {
+        hits = hits[:5]
+    }
+    return hits, nil
+}
 
-**Solution:** Specify in summarization prompt to preserve important facts.
+func (s *FileStore) Delete(_ context.Context, key string) error {
+    s.mu.Lock(); defer s.mu.Unlock()
+    out := s.entries[:0]
+    for _, e := range s.entries {
+        if e.Key != key {
+            out = append(out, e)
+        }
+    }
+    s.entries = out
+    return s.flush()
+}
+```
 
-### Mistake 3: Facts Not Retrieved by Relevance
+Tool registration:
 
-**Symptom:** Agent doesn't find relevant facts for current query.
+```go
+tools := []openai.Tool{
+    {Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{
+        Name: "memory_save",
+        Description: "Save a long-term note. Use for stable facts about the user or project.",
+        Parameters: jsonSchema(`{"type":"object","properties":{
+            "key":{"type":"string"},"value":{"type":"string"}
+        },"required":["key","value"]}`),
+    }},
+    {Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{
+        Name: "memory_recall",
+        Description: "Search long-term notes by query (substring).",
+        Parameters: jsonSchema(`{"type":"object","properties":{
+            "query":{"type":"string"}
+        },"required":["query"]}`),
+    }},
+    {Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{
+        Name: "memory_delete",
+        Description: "Delete a note by key.",
+        Parameters: jsonSchema(`{"type":"object","properties":{
+            "key":{"type":"string"}
+        },"required":["key"]}`),
+    }},
+}
+```
 
-**Cause:** Memory search doesn't consider relevance.
+System prompt — once and only about role/rules:
 
-**Solution:** Use semantic search or improve keywords.
+```text
+You are an assistant.
+You have memory_save / memory_recall / memory_delete tools that persist between sessions.
+Use them for stable facts about the user and project. Don't store transient statuses.
+```
 
-## Completion Criteria
+### Step 4: tool dispatching loop
 
-✅ **Completed:**
-- Memory saved to file
-- Facts extracted via LLM
-- Summarization reduces tokens
-- Context assembled from layers
-- Agent remembers important facts between sessions
+```go
+for {
+    resp, err := r.callLLM(ctx)
+    if err != nil { return "", err }
+    r.lastTokens = resp.Usage.PromptTokens
 
-❌ **Not completed:**
-- Memory not saved
-- Facts not extracted
-- Summarization loses important information
-- Context not layered
+    msg := resp.Choices[0].Message
+    r.messages = append(r.messages, msg)
+
+    if len(msg.ToolCalls) == 0 {
+        return msg.Content, nil
+    }
+
+    for _, tc := range msg.ToolCalls {
+        result := dispatchTool(ctx, store, tc)
+        r.messages = append(r.messages, openai.ChatCompletionMessage{
+            Role:       openai.ChatMessageRoleTool,
+            ToolCallID: tc.ID,
+            Content:    result,
+        })
+    }
+}
+```
+
+## Common errors
+
+### Error 1: a dynamic system prompt with the memory list
+
+**Symptom:** expensive and slow — every request recomputes the prefix.
+
+**Cause:** the long-term memory contents are stitched into `messages[0]` on every request.
+
+**Solution:** the agent uses memory through `memory.recall`; the system prompt only mentions that the tools exist.
+
+### Error 2: truncate without checking tool pairs
+
+**Symptom:** the provider returns 400 with a message about `tool_calls without matching tool messages`.
+
+**Cause:** you cut `messages` exactly between an `assistant`-tool_call and a `tool` result.
+
+**Solution:** `condense` or `safeTail` that expands the boundary to the left until a complete pair.
+
+### Error 3: tokens counted via `len(content)/3`
+
+**Symptom:** condense fires either too early or too late — the real cost doesn't match the prediction.
+
+**Cause:** `usage.PromptTokens` from the provider isn't being used.
+
+**Solution:** record `r.lastTokens = resp.Usage.PromptTokens` after every response. Your own estimates are good only for a pre-send check.
+
+### Error 4: condense fires every step
+
+**Symptom:** the agent slows down, the history is constantly "shrinking", fresh context is lost.
+
+**Cause:** no "one condense per Run" limit.
+
+**Solution:** a `condenseDone bool` flag. If you overflow again after the first condense — that's a signal the task isn't decomposable, and you should bubble the error up.
+
+### Error 5: auto-extracting "facts" from every message
+
+**Symptom:** memory fills up with junk like `user_said_hi=true`.
+
+**Cause:** every step runs a separate "extract facts" LLM pass.
+
+**Solution:** drop it entirely. The agent decides what to record, through `memory_save`. Cheaper and easier to read in the logs.
+
+## Completion criteria
+
+✅ **Done:**
+
+- `messages[0]` (system) is stable for the whole Run — verified by byte-for-byte comparison.
+- `condense` fires on `usage.PromptTokens > contextMax * 0.80` or reactively on overflow.
+- In one Run — at most one `condense` (plus exactly one reactive retry on overflow).
+- After `condense`, `tool_call ↔ tool_result` pairs are intact.
+- Long-term memory works through 3 tools and survives process restart.
+- The system prompt contains no long-term memory contents.
+
+❌ **Not done:**
+
+- `LayeredContext` (Facts/Summary/Working layers stitched into one prompt).
+- Auto-extraction of facts from every message.
+- Truncate without checking tool pairs.
+- Multiple condense calls in a row with no limit.
+- Window accounting via `len(content)/3` instead of `usage.PromptTokens`.

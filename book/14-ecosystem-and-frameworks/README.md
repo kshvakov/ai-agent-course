@@ -280,6 +280,8 @@ In practice, most teams pick one of the popular frameworks. Here are the main pl
 
 ### Comparison Table
 
+> **Disclaimer:** agent frameworks evolve fast — major releases ship every few months, APIs break, strengths and weaknesses shift. The table below is a snapshot at the time of writing. Before choosing one, check the latest documentation, recent releases, and real production reports (issue trackers, downgrade write-ups).
+
 | Framework | Language | Strengths | Weaknesses |
 |-----------|----------|-----------|------------|
 | **LangGraph** | Python | Graph-based workflows, flexible state, streaming | Complex API, steep learning curve |
@@ -299,39 +301,6 @@ A2A (Agent-to-Agent) is a protocol from Google for inter-agent communication. Ea
 
 A2A solves the interoperability problem: agents from different teams and frameworks interact through a single protocol. For more details, see [Chapter 18: Tool Protocols and Tool Servers](../18-tool-protocols-and-servers/README.md).
 
-## Case Study: Atlas vs Crush
-
-Two real Go agents, both built on **their own custom frameworks** (Crush on Fantasy by Charmbracelet, Atlas on its internal `pkg/agent`), not on third-party LangGraph/CrewAI. The comparison shows which decisions are critical in production:
-
-| Aspect | Crush (Charmbracelet) | Atlas |
-|--------|----------------------|-------|
-| **Working Memory** | None | TaskContext + LivePlan + Budget |
-| **Plan** | Todos (UI checklist, lost on summarize) | LivePlan in Go struct (survives condense) |
-| **Context** | Binary summarization (all or summary) | 4-level progressive compression |
-| **Loop detection** | SHA256 signatures (agent-level) | Repetition/pattern/entropy (provider-level) |
-| **Tool descriptions** | .md files, not duplicated | Duplicated in system prompt + definitions |
-| **Testing** | VCR (recorded responses) | None |
-| **Persistence** | SQLite | JSON files |
-| **Sub-agents** | 1 type (coder) | 6 typed roles |
-| **Budget** | Post-step (StopWhen) | Proactive (before API call) |
-| **LSP** | gopls, typescript-ls | None |
-
-### Key Lessons
-
-1. **Working Memory is critical.** Without it, the agent loses its plan and the context of files read between REPL cycles.
-
-2. **Plan = program state, not messages.** Storing the plan in a Go struct lets it survive condensation. Storing it in messages means losing the plan on summarization.
-
-3. **Gradual degradation > hard cut.** 4-level progressive compression (trim → compact → condense → eviction) is better than binary "all or nothing" summarization.
-
-4. **VCR tests for agents.** Recording LLM responses and replaying them in tests is the only reliable way to test the agent loop. Without this — only manual testing.
-
-5. **SHA256 loop detection — cheap and reliable.** Hashing `(tool + input + output)` catches loops without LLM calls.
-
-### Strategy
-
-Both agents are built on their own custom frameworks, tailored to the project. This confirms the course's approach: understanding the internals lets you create your own framework with the right abstractions — rather than adapting to someone else's. Each pattern above (Working Memory, LivePlan, progressive compression, SHA256 loop detection, VCR testing) arose from specific project needs. Third-party frameworks don't provide these abstractions out of the box.
-
 ### Why This Course Teaches from Scratch
 
 This course builds an agent from scratch for several reasons:
@@ -343,6 +312,8 @@ This course builds an agent from scratch for several reasons:
 3. **Portable knowledge.** Frameworks change. Knowledge of principles (agent loop, Function Calling, context management) transfers to any framework. Knowledge of a specific API does not.
 
 4. **Go as an explicit language.** Most frameworks are written in Python. This course uses Go, which forces you to implement patterns explicitly — no decorator "magic" or metaprogramming.
+
+5. **Simplicity over fashion.** Many "advanced" patterns from agent posts and surveys turn out to be unnecessary in practice. A linear message history, a single `condense` on overflow, a fixed system prompt, an iteration limit, repeat protection — that's enough for most tasks (see [Ch. 12](../12-agent-memory/README.md), [Ch. 13](../13-context-engineering/README.md)). Multi-level compression, message-importance scoring, dynamic prompts, heavy "memory frameworks" usually solve the wrong problem: they're expensive, they kill prompt cache, and they complicate debugging — while rarely paying off on real workloads. That doesn't mean they're always harmful — but before you adopt them, check the basics and confirm that a simple solution really isn't enough. When you write the runtime yourself, that difference is obvious.
 
 ## Common Errors
 
@@ -517,25 +488,28 @@ Fill the matrix based on your specific requirements.
 
 ## Completion Criteria / Checklist
 
-**Completed:**
-- [x] Understand when to use frameworks vs custom runtime
-- [x] Know how to avoid vendor lock-in through interfaces
-- [x] Can evaluate frameworks against your requirements
-- [x] Understand common patterns in frameworks
+**Done:**
+- [x] You understand when to use a framework vs a custom runtime.
+- [x] You know how to avoid vendor lock-in through your own interfaces (Tool, Memory, AgentLoop).
+- [x] You can evaluate a framework against your requirements and stay calm about loud claims of "revolutionary" patterns.
+- [x] You understand the shared patterns that recur across all frameworks (Tool Registry, Agent Loop, Memory).
+- [x] When picking a framework, you double-check that the data is current (releases, issues, real production reports).
 
-**Not completed:**
-- [ ] Choosing framework without evaluating requirements
-- [ ] Tight coupling to framework API
-- [ ] No migration path if framework doesn't fit
-- [ ] Ignoring framework limitations
+**Not done:**
+- [ ] Picking a framework without evaluating requirements.
+- [ ] Tight coupling to the framework API (framework types leak everywhere into business logic).
+- [ ] No migration path if the framework turns out to be a wrong fit.
+- [ ] Ignoring framework limitations ("I'll force it to do what it wasn't designed for").
+- [ ] Blindly copying "advanced" patterns from other repos and blog posts without understanding the specific problem they solve.
 
 ## Connection with Other Chapters
 
-- **[Chapter 09: Agent Anatomy](../09-agent-architecture/README.md)** — Understanding agent components helps evaluate frameworks
-- **[Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md)** — Tool interfaces are key to portability
-- **[Chapter 10: Planning and Workflow Patterns](../10-planning-and-workflows/README.md)** — Frameworks often provide planning patterns
-- **[Chapter 18: Tool Protocols and Tool Servers](../18-tool-protocols-and-servers/README.md)** — Standard protocols reduce vendor lock-in
-- **[Agent Skills](https://agentskills.io/)** — Open format for agent skills (`SKILL.md`), supported by Cursor, Claude Code, VS Code, and others. See [Chapter 09: Agent Anatomy](../09-agent-architecture/README.md#skills)
+- **[Chapter 09: Agent Anatomy](../09-agent-architecture/README.md)** — understanding the agent's components helps you evaluate frameworks.
+- **[Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md)** — tool interfaces are key to portability.
+- **[Chapter 10: Planning and Workflow Patterns](../10-planning-and-workflows/README.md)** — frameworks often ship planning patterns.
+- **[Chapter 12: Agent Memory Systems](../12-agent-memory/README.md)** and **[Chapter 13: Context Engineering](../13-context-engineering/README.md)** — the simple memory and context model to measure any framework against before adopting it as an "advanced" solution.
+- **[Chapter 18: Tool Protocols and Tool Servers](../18-tool-protocols-and-servers/README.md)** — standard protocols (MCP, A2A) reduce vendor lock-in.
+- **[Agent Skills](https://agentskills.io/)** — open format for agent skills (`SKILL.md`), supported by Cursor, Claude Code, VS Code, and others. See [Chapter 09: Agent Anatomy](../09-agent-architecture/README.md#skills).
 
 ## What's Next?
 

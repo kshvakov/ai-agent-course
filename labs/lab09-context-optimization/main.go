@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -9,177 +10,239 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-const (
-	maxContextTokens = 4000 // Context window limit (GPT-3.5-turbo)
-	threshold80      = int(float64(maxContextTokens) * 0.8)
-	threshold90      = int(float64(maxContextTokens) * 0.9)
-)
+// estimateTokens — a rough token-count estimate for a string.
+// Used ONLY to decide "don't even send a clearly overflowing batch"
+// before we get a provider response. The authoritative source for
+// token counts in production is resp.Usage.PromptTokens.
+func estimateTokens(text string) int {
+	if text == "" {
+		return 0
+	}
+	// Empirical: for mixed RU/EN text, ~3 characters per token + 1 buffer.
+	return len(text)/3 + 1
+}
+
+// estimateMessages — estimate over the whole history, accounting for
+// tool calls and per-message envelope.
+func estimateMessages(msgs []openai.ChatCompletionMessage) int {
+	// TODO 1: walk the messages, add estimateTokens(content),
+	// 4 tokens of per-message overhead, and for each ToolCall —
+	// estimateTokens(name) + estimateTokens(args) + 8.
+	return 0
+}
+
+// Run — state of one agent "run".
+// system lives in messages[0] and DOES NOT change during the Run.
+type Run struct {
+	messages     []openai.ChatCompletionMessage
+	lastTokens   int  // resp.Usage.PromptTokens from the previous response
+	contextMax   int  // model window; take it from configuration, do not hardcode
+	condenseDone bool // limit: one condense per Run
+
+	client *openai.Client
+	model  string
+	tools  []openai.Tool
+}
+
+func NewRun(client *openai.Client, model string, contextMax int, systemPrompt string, tools []openai.Tool) *Run {
+	return &Run{
+		client:     client,
+		model:      model,
+		contextMax: contextMax,
+		tools:      tools,
+		messages: []openai.ChatCompletionMessage{
+			{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
+		},
+	}
+}
+
+// Step appends user input, runs the loop with tool calls, and returns the final text.
+func (r *Run) Step(ctx context.Context, userInput string) (string, error) {
+	r.messages = append(r.messages, openai.ChatCompletionMessage{
+		Role:    openai.ChatMessageRoleUser,
+		Content: userInput,
+	})
+
+	for {
+		// TODO 2: proactive condense.
+		// If r.lastTokens > 0 && lastTokens > contextMax * 0.80 — call r.condense(ctx).
+
+		resp, err := r.callLLM(ctx)
+		if err != nil {
+			// TODO 3: reactive condense on ContextOverflow + exactly one retry.
+			// If the retry also fails with overflow — return a clear error.
+			return "", err
+		}
+
+		r.lastTokens = resp.Usage.PromptTokens
+		r.logUsage()
+
+		msg := resp.Choices[0].Message
+		r.messages = append(r.messages, msg)
+
+		if len(msg.ToolCalls) == 0 {
+			return msg.Content, nil
+		}
+
+		for _, tc := range msg.ToolCalls {
+			result := r.dispatchTool(ctx, tc)
+			r.messages = append(r.messages, openai.ChatCompletionMessage{
+				Role:       openai.ChatMessageRoleTool,
+				ToolCallID: tc.ID,
+				Name:       tc.Function.Name,
+				Content:    result,
+			})
+		}
+	}
+}
+
+func (r *Run) callLLM(ctx context.Context) (openai.ChatCompletionResponse, error) {
+	return r.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+		Model:       r.model,
+		Messages:    r.messages,
+		Tools:       r.tools,
+		Temperature: 0,
+	})
+}
+
+// logUsage prints estimated vs actual for the "how accurate is my pre-send estimate" exercise.
+func (r *Run) logUsage() {
+	estimated := estimateMessages(r.messages)
+	threshold := int(float64(r.contextMax) * 0.80)
+	delta := r.lastTokens - estimated
+	pct := 0.0
+	if estimated > 0 {
+		pct = float64(delta) * 100 / float64(estimated)
+	}
+	fmt.Printf("  usage: estimated=%d actual=%d (Δ=%+d, %+.1f%%) threshold@80%%=%d\n",
+		estimated, r.lastTokens, delta, pct, threshold)
+}
+
+// safeTail returns >=N trailing messages, expanding the boundary to the left
+// if the tail begins with a tool result whose matching assistant tool_call
+// is not in the tail.
+func safeTail(msgs []openai.ChatCompletionMessage, n int) []openai.ChatCompletionMessage {
+	if n > len(msgs)-1 {
+		n = len(msgs) - 1
+	}
+	start := len(msgs) - n
+	for start > 1 && msgs[start].Role == openai.ChatMessageRoleTool {
+		start--
+	}
+	return msgs[start:]
+}
+
+// condense performs a SINGLE compaction of the middle of the history.
+// Preserves messages[0] (system) and the tail (last >=4 messages with intact tool pairs).
+func (r *Run) condense(ctx context.Context) error {
+	if r.condenseDone || len(r.messages) < 6 {
+		return nil
+	}
+
+	// TODO 4:
+	// 1. system := r.messages[0]
+	// 2. tail := safeTail(r.messages, 4)
+	// 3. head := r.messages[1 : len(r.messages)-len(tail)]
+	// 4. summary, err := r.summarize(ctx, head)
+	// 5. next := [system, user("Context of previous work:\n\n"+summary), tail...]
+	// 6. r.messages = next; r.condenseDone = true
+
+	return fmt.Errorf("condense not implemented")
+}
+
+// summarize calls the LLM to get a short summary of a chunk of history.
+func (r *Run) summarize(ctx context.Context, head []openai.ChatCompletionMessage) (string, error) {
+	// TODO 5: assemble input as linear text ("role: content\n"),
+	// call r.client with the system prompt from MANUAL.md (section "Step 4: condense"),
+	// and return Choices[0].Message.Content.
+	return "", fmt.Errorf("summarize not implemented")
+}
+
+// dispatchTool — a simple fake tool so the demo can exercise tool calls
+// and verify pair-protection during condense.
+func (r *Run) dispatchTool(ctx context.Context, tc openai.ToolCall) string {
+	switch tc.Function.Name {
+	case "fake_lookup":
+		var args struct {
+			Query string `json:"query"`
+		}
+		_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
+		return fmt.Sprintf("result for %q: ok", args.Query)
+	}
+	return "unknown tool: " + tc.Function.Name
+}
+
+// isContextOverflow returns true if the error looks like a context-window overflow.
+// TODO 6: parse the OpenAI SDK error or check for the substrings
+// "context_length" / "context window".
+func isContextOverflow(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "context_length") ||
+		strings.Contains(msg, "maximum context") ||
+		strings.Contains(msg, "context window")
+}
+
+func jsonSchema(s string) json.RawMessage { return json.RawMessage(s) }
 
 func main() {
-	// Client setup
 	token := os.Getenv("OPENAI_API_KEY")
 	baseURL := os.Getenv("OPENAI_BASE_URL")
 	if token == "" {
 		token = "dummy"
 	}
 
-	config := openai.DefaultConfig(token)
+	cfg := openai.DefaultConfig(token)
 	if baseURL != "" {
-		config.BaseURL = baseURL
+		cfg.BaseURL = baseURL
 	}
-	client := openai.NewClientWithConfig(config)
+	client := openai.NewClientWithConfig(cfg)
+
+	tools := []openai.Tool{
+		{Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{
+			Name:        "fake_lookup",
+			Description: "Fake lookup tool used to exercise tool_call/tool_result pairs in the history.",
+			Parameters: jsonSchema(`{
+				"type":"object",
+				"properties":{"query":{"type":"string"}},
+				"required":["query"]
+			}`),
+		}},
+	}
+
+	systemPrompt := "You are an assistant. Answer briefly and to the point. If a lookup is needed — call fake_lookup."
+
+	// contextMax is intentionally lowered to trigger a proactive condense quickly.
+	// In production this value comes from model metadata or configuration.
+	const contextMax = 4_000
+
+	run := NewRun(client, "gpt-4o-mini", contextMax, systemPrompt, tools)
 
 	ctx := context.Background()
 
-	// Initialize history
-	messages := []openai.ChatCompletionMessage{
-		{
-			Role:    openai.ChatMessageRoleSystem,
-			Content: "You are a polite assistant. Remember important details about the user.",
-		},
+	// A long dialogue with deliberately "fat" turns to push past the 80% threshold.
+	steps := []string{
+		"Hi! My name is Ivan, I'm a DevOps engineer at TechCorp. Stack: Ubuntu 22.04, Docker, Kubernetes, PostgreSQL, Redis, Nginx, GitLab CI, Terraform, Ansible, Vault, Prometheus, Grafana, ELK, PagerDuty, SonarQube, Bacula.",
+		"Walk me through, step by step, how to bring up a single-node Kubernetes on bare Ubuntu for a PoC.",
+		"Now lay out a migration plan for PostgreSQL 14 → 16 with minimum downtime in a Kubernetes environment.",
+		"Which Prometheus metrics are critical for a production PostgreSQL cluster, and how do I alert on them?",
+		"Best practices for storing secrets in Vault when consuming them from Kubernetes via the Vault Agent Injector.",
+		"Compare Bacula and Restic for backing up a 10TB+ database — when to pick which?",
+		"What's my name and what's our stack?", // memory check after compaction
 	}
 
-	fmt.Println("=== Lab 09: Context Optimization ===")
-	fmt.Println("Enter messages. After 10+ messages, context will start optimizing.")
-	fmt.Println("Try asking about early messages after optimization.\n")
-
-	// Simulate long conversation
-	testMessages := []string{
-		"Hello! My name is Ivan, I work as a DevOps engineer at TechCorp.",
-		"We have a server on Ubuntu 22.04.",
-		"We use Docker for application containerization.",
-		"Our main stack: PostgreSQL, Redis, Nginx.",
-		"We deployed monitoring via Prometheus and Grafana.",
-		"We have CI/CD on GitLab CI.",
-		"We use Terraform for infrastructure management.",
-		"Our applications run in a Kubernetes cluster.",
-		"We use Ansible for server configuration.",
-		"We have backup via Bacula.",
-		"We monitor logs via ELK Stack.",
-		"We have an alerting system via PagerDuty.",
-		"We use Vault for secret management.",
-		"Our code is stored in GitLab.",
-		"We use Jira for task management.",
-		"We have documentation in Confluence.",
-		"We conduct code reviews for all changes.",
-		"We have automated testing.",
-		"We use SonarQube for code analysis.",
-		"We have a staging environment for testing.",
-		"What's my name?",      // Memory check
-		"Where do I work?",     // Memory check
-		"What's our stack?",    // Memory check
-	}
-
-	for i, userMsg := range testMessages {
-		fmt.Printf("\n[Message %d] User: %s\n", i+1, userMsg)
-
-		// Add user message
-		messages = append(messages, openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleUser,
-			Content: userMsg,
-		})
-
-		// Optimize context before each request
-		messages = adaptiveContextManagement(ctx, client, messages, maxContextTokens)
-
-		// Show statistics
-		usedTokens := countTokensInMessages(messages)
-		fmt.Printf("📊 Tokens used: %d / %d (%.1f%%)\n", usedTokens, maxContextTokens, float64(usedTokens)/float64(maxContextTokens)*100)
-
-		// Send request
-		resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-			Model:      "gpt-4o-mini",
-			Messages:   messages,
-			Temperature: 0.7,
-		})
+	for i, input := range steps {
+		fmt.Printf("\n--- Step %d ---\nUser: %s\n", i+1, input)
+		answer, err := run.Step(ctx, input)
 		if err != nil {
-			fmt.Printf("❌ Error: %v\n", err)
-			continue
+			fmt.Fprintf(os.Stderr, "step error: %v\n", err)
+			os.Exit(1)
 		}
-
-		assistantMsg := resp.Choices[0].Message
-		fmt.Printf("Assistant: %s\n", assistantMsg.Content)
-
-		// Add response to history
-		messages = append(messages, assistantMsg)
+		fmt.Printf("Assistant: %s\n", answer)
+		if run.condenseDone {
+			fmt.Println("  (condense already done in this Run)")
+		}
 	}
-
-	fmt.Println("\n=== Test completed ===")
-}
-
-// TODO 1: Implement approximate token counting
-// Hint: 1 token ≈ 4 characters for English, ≈ 3 characters for Russian
-func estimateTokens(text string) int {
-	// TODO: Implement counting
-	return 0
-}
-
-// TODO 2: Implement token counting in all messages
-// Consider: System/User/Assistant messages, Tool calls also take tokens
-func countTokensInMessages(messages []openai.ChatCompletionMessage) int {
-	total := 0
-	// TODO: Go through all messages and count tokens
-	// Consider: ToolCalls also take tokens (approximately 80 tokens per call)
-	return total
-}
-
-// TODO 3: Implement history truncation
-// Always keep System Prompt (messages[0])
-// Keep last messages until you reach maxTokens
-func truncateHistory(messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
-	// TODO: Implement truncation
-	// Hint: Go from the end and add messages until you reach the limit
-	return messages
-}
-
-// TODO 4: Implement summarization of old messages
-// Use LLM to create a brief summary
-// Preserve: important facts, decisions, current task state
-func summarizeMessages(ctx context.Context, client *openai.Client, messages []openai.ChatCompletionMessage) string {
-	// TODO: Collect text of all messages (except System)
-	// TODO: Create summarization prompt
-	// TODO: Call LLM to create summary
-	// TODO: Return result
-	
-	// Hint: Use this prompt:
-	// "Summarize this conversation, keeping only:
-	//  1. Important decisions made
-	//  2. Key facts discovered
-	//  3. Current state of the task
-	//  Conversation: [text]"
-	
-	return ""
-}
-
-// TODO 5: Implement context compression via summarization
-// Split messages into "old" and "new" (last 10)
-// Compress old ones via summarizeMessages
-// Assemble new context: System + Summary + Recent
-func compressOldMessages(ctx context.Context, client *openai.Client, messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
-	// TODO: Implement compression
-	return messages
-}
-
-// TODO 6: Implement message prioritization
-// Preserve:
-// - System Prompt (always)
-// - Last 5 messages (current context)
-// - Messages with tool results (Role == "tool")
-// - Messages with errors (contain "error")
-func prioritizeMessages(messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
-	// TODO: Implement prioritization
-	return messages
-}
-
-// TODO 7: Implement adaptive context management
-// If context < 80% — do nothing
-// If 80-90% — apply prioritization
-// If > 90% — apply summarization
-func adaptiveContextManagement(ctx context.Context, client *openai.Client, messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
-	usedTokens := countTokensInMessages(messages)
-	
-	// TODO: Implement optimization technique selection logic
-	// Hint: Use threshold80 and threshold90
-	
-	return messages
 }

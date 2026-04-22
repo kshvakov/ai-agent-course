@@ -26,8 +26,8 @@ For programmers who want to build production AI agents
 - **[09. Agent Anatomy](./09-agent-architecture/README.md)** — Memory, Tools, Planning, Runtime
 - **[10. Planning and Workflow Patterns](./10-planning-and-workflows/README.md)** — Plan→Execute, Plan-and-Revise, task decomposition, DAG/workflow, stop conditions
 - **[11. State Management](./11-state-management/README.md)** — Tool idempotency, retries with exponential backoff, deadlines, persist state, task resumption
-- **[12. Agent Memory Systems](./12-agent-memory/README.md)** — Short/long-term memory, episodic/semantic memory, forgetting/TTL, memory verification, storage/retrieval
-- **[13. Context Engineering](./13-context-engineering/README.md)** — Context layers, fact selection policies, summarization, token budgets, context assembly from state+memory+retrieval
+- **[12. Agent Memory Systems](./12-agent-memory/README.md)** — Two memory horizons (in-Run working memory vs cross-session long-term), linear history as an immutable log, prompt cache and why the system prompt stays stable, compact vs condense vs recall, optional block-based memory
+- **[13. Context Engineering](./13-context-engineering/README.md)** — Stable system prefix, single threshold and single reaction (`condense` with a 1/Run cap), `usage.PromptTokens` as the primary source, common over-engineering traps (LayeredContext, message scoring, dynamic system prompt)
 - **[14. Ecosystem and Frameworks](./14-ecosystem-and-frameworks/README.md)** — Choosing between custom runtime and frameworks, portability, avoiding vendor lock-in
 
 ### Part IV: Practice (case studies/practices)
@@ -60,7 +60,7 @@ For programmers who want to build production AI agents
 
 ### For Beginners (recommended path — practice-first)
 
-1. **Start with [Preface](./00-preface/README.md)** — learn what an agent is and how to use this handbook
+1. **Start with [Preface](./00-preface/README.md)** — what an agent is, the `Brain + Tools + Memory + Planning` equation, and **don't skip** the section [«Mental Model: an Agent Is a New Employee»](./00-preface/README.md#mental-model-an-agent-is-a-new-employee). Without it the security chapters read as "special LLM machinery" instead of "common sense you already know".
 2. **Study [LLM Physics](./01-llm-fundamentals/README.md)** — the foundation for understanding everything else
 3. **Master [Prompting](./02-prompt-engineering/README.md)** — the foundation of working with agents
 4. **Build a working agent:**
@@ -75,15 +75,17 @@ For programmers who want to build production AI agents
     - [Agent Anatomy](./09-agent-architecture/README.md) — components and their interactions
     - [Planning and Workflow Patterns](./10-planning-and-workflows/README.md) — planning complex tasks
     - [State Management](./11-state-management/README.md) — execution reliability
-    - [Agent Memory Systems](./12-agent-memory/README.md) — long-term memory
-    - [Context Engineering](./13-context-engineering/README.md) — context management
+    - [Agent Memory Systems](./12-agent-memory/README.md) — linear in-Run memory, cross-session long-term memory, prompt cache
+    - [Context Engineering](./13-context-engineering/README.md) — stable prefix, `condense` on overflow, no over-engineering
 7. **Practice:** Complete laboratory assignments alongside reading chapters
 
 ### For Experienced Programmers
 
 You can skip basic chapters and go directly to:
+- [Preface → Mental Model: an Agent Is a New Employee](./00-preface/README.md#mental-model-an-agent-is-a-new-employee) — 5 minutes; explains the entire security part of the course with one idea
 - [Tools and Function Calling](./03-tools-and-function-calling/README.md)
 - [Autonomy and Loops](./04-autonomy-and-loops/README.md)
+- [Agent Memory Systems](./12-agent-memory/README.md) and [Context Engineering](./13-context-engineering/README.md) — memory and context without over-engineering
 - [Case Studies](./15-case-studies/README.md) — for understanding real-world applications
 
 ### Quick Track: Core Concepts in 10 Minutes
@@ -97,7 +99,13 @@ If you're an experienced developer and want to quickly understand the essence:
     - Memory is history and long-term storage
     - Planning is the ability to break down a task into steps
 
-2. **How does the agent loop work?**
+2. **Mental model (more important than it sounds right now):**
+    - An agent is **a new employee on probation**, not "new software".
+    - Role-based access, sign-off for dangerous actions, audit log, gradual trust expansion — same as for a person.
+    - Four asymmetries (where the "like with a person" model breaks): 1000× higher speed, parallelism, no sense of consequences, prompt injection as social engineering.
+    - Full version: [Preface → Mental Model](./00-preface/README.md#mental-model-an-agent-is-a-new-employee).
+
+3. **How does the agent loop work?**
     ```
     While (task not solved):
       1. Send history to LLM
@@ -106,13 +114,15 @@ If you're an experienced developer and want to quickly understand the essence:
       4. If text → show user and stop
     ```
 
-3. **Key points:**
+4. **Key points:**
     - LLM doesn't execute code. It generates JSON with an execution request.
     - Runtime (your code) executes real Go functions.
     - LLM doesn't "remember" the past. It processes it in `messages[]`, which Runtime collects.
     - Temperature = 0 for deterministic agent behavior.
+    - History is an immutable log; the system prompt stays stable across iterations (otherwise prompt cache is lost — see [Ch. 12](./12-agent-memory/README.md), [Ch. 13](./13-context-engineering/README.md)).
+    - Take token counts from `usage.PromptTokens` in the provider's response, not from your own counters.
 
-4. **Minimal example:**
+5. **Minimal example:**
     ```go
     // 1. Define tool
     tools := []openai.Tool{{
@@ -145,10 +155,11 @@ If you're an experienced developer and want to quickly understand the essence:
     }
     ```
 
-5. **What to read next:**
+6. **What to read next:**
     - [Chapter 03: Tools](./03-tools-and-function-calling/README.md) — detailed protocol
     - [Chapter 04: Autonomy](./04-autonomy-and-loops/README.md) — agent loop
     - [Chapter 09: Agent Anatomy](./09-agent-architecture/README.md) — architecture
+    - [Chapter 12: Agent Memory](./12-agent-memory/README.md) and [Chapter 13: Context Engineering](./13-context-engineering/README.md) — without over-engineering
 
 ### After Completing the Main Course
 
@@ -174,8 +185,8 @@ After studying chapters 1-16, proceed to:
 | [10. Planning and Workflow Patterns](./10-planning-and-workflows/README.md) | [Lab 10](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab10-planning-workflows) (Planning & Workflow) |
 | [11. State Management](./11-state-management/README.md) | [Lab 10](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab10-planning-workflows) (Planning & Workflow) — partially |
 | [12. Agent Memory Systems](./12-agent-memory/README.md), [13. Context Engineering](./13-context-engineering/README.md) | [Lab 11](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab11-memory-context) (Memory & Context Engineering) |
-| [18. Tool Protocols and Tool Servers](./18-tool-protocols-and-servers/README.md) | [Lab 12](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab12-tool-server) (Tool Server Protocol) |
-| [17. Security and Governance](./17-security-and-governance/README.md) | [Lab 13](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab13-tool-retrieval) (Agent Security Hardening) — Optional |
+| [18. Tool Protocols and Tool Servers](./18-tool-protocols-and-servers/README.md) | [Lab 12](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab12-tool-server) (Tool Server Protocol), [Lab 13](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab13-tool-retrieval) (Tool Retrieval & Pipelines) — Optional |
+| [17. Security and Governance](./17-security-and-governance/README.md) | — (read as a theory capstone; security practice is embedded in Lab 02 / Lab 05 / Lab 12) |
 | [22. Prompt and Program Management](./22-prompt-program-management/README.md) | [Lab 01](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab01-basics) (Basics) — partially |
 
 ---

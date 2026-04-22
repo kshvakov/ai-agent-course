@@ -2,13 +2,15 @@
 
 ## Why This Chapter?
 
-An agent isn't just an LLM with tools. It's a complex system with memory, planning, and an execution environment. Without understanding the architecture, you won't be able to:
-- Properly manage context and dialogue history
-- Implement an autonomous agent work loop
-- Optimize token usage
-- Create an extensible system
+An agent is a **simple** system. At its core: a loop "LLM responds → calls tools → gets results → responds again", plus a linear message history and a stable system prompt. No "meta-architectures", state graphs, or multi-layer memory are needed in the base case (see [Preface: Mental Model](../00-preface/README.md#mental-model-an-agent-is-a-new-employee)).
 
-In this chapter, we'll break down the core components and how they fit together.
+But for that loop to be **reliable in production**, it helps to understand what it actually consists of: where messages live, what the system prompt is and why you can't mutate it on every step, how to defend against infinite loops, how to isolate a subagent. Without this anatomy it's easy to "fix" the problem in the wrong place and bolt on trendy patterns that complicate the agent without solving anything.
+
+In this chapter we'll go through the **minimal set of components** and how they connect, so you can:
+- Properly manage context and dialogue history (linear history + a single `condense`).
+- Implement an autonomous agent loop with predictable safeguards.
+- Optimize token usage via prompt cache, not via "smart" strategies.
+- Build an extensible system through tools, not through over-engineered abstractions inside the core.
 
 ### Real-World Case Study
 
@@ -16,7 +18,7 @@ In this chapter, we'll break down the core components and how they fit together.
 
 **Problem:** Dialogue history overflows the model's context window. Old messages are "pushed out", and the agent loses important information.
 
-**Solution:** Once you understand memory, you can optimize context: summarize history, or prioritize the messages that matter.
+**Solution:** Once you understand memory, on overflow you can `condense` the old part of the history into a short summary via the LLM — without breaking `tool_call ↔ tool_result` pairs and without touching the stable system prefix. Details in [Ch. 13: Context Engineering](../13-context-engineering/README.md). You do **not** need to reorder messages "by importance": that's an anti-pattern that kills prompt cache (see [Ch. 12: Agent Memory](../12-agent-memory/README.md)).
 
 ## Theory in Simple Terms
 
@@ -59,14 +61,21 @@ messages := []ChatCompletionMessage{
 **Problem example:**
 
 ```go
-// Context window: 4k tokens
-// System Prompt: 200 tokens
-// Dialogue history: 4000 tokens
-// New request: 100 tokens
-// TOTAL: 4300 tokens > 4000 [ERROR]
+// Model context window: 128 000 tokens
+// System Prompt:            500 tokens
+// Dialogue history:     127 000 tokens   // 30 iterations with large tool_results
+// New request:            1 000 tokens
+// TOTAL:                128 500 tokens > 128 000 [ERROR: context overflow]
 ```
 
-**IMPORTANT:** Detailed context optimization techniques (summarization, fact selection, token budgets, selection policies) are described in [Chapter 13: Context Engineering](../13-context-engineering/README.md). Here, only the concept of short-term memory as an agent component is described.
+Modern models have windows from 128k (most) to 1M+ (Gemini 2.5). The problem hasn't disappeared — it's just shifted: in long agent sessions with large `tool_result` payloads (logs, dumps, web pages), overflow shows up around iterations 20-50.
+
+**Two rules that make this memory work** (details in [Ch. 12](../12-agent-memory/README.md) and [Ch. 13](../13-context-engineering/README.md)):
+
+1. **History is immutable.** Messages are only appended at the end; nothing is reordered or deleted "by importance", old messages are not edited. Any prefix mutation kills the provider's prompt cache, which means 5-10× more expensive input and higher latency.
+2. **The system prompt stays stable within a Run.** Any "dynamic" update of the system prompt between iterations (live state, facts, plan progress) is an anti-pattern. Dynamic data lives in `tool_result` and the latest `user` message — not in the system prefix.
+
+When the window overflows, there is one reaction — `condense`: call the LLM and ask it to summarize the old part of the history, then replace that part with a single `user` message "Context of previous work: ...". Limit: one condense per Run; the token count comes from `usage.PromptTokens` in the provider's response, not from your own counters. Details in [Ch. 13](../13-context-engineering/README.md).
 
 ### Long-term Memory
 
@@ -838,44 +847,26 @@ In practice, a single `Agent` type serves different modes through Config:
 ```go
 type Config struct {
     MaxIter    int
-    PromptFunc func(state LoopState) string  // dynamic system prompt
-    ToolFilter func(iter int) []Tool          // tool filter per iteration
+    Prompt     string                         // system prompt is fixed at the start of the Run
+    Tools      []Tool                         // tool set is fixed at the start of the Run
     Hooks      Hooks                          // AfterResponse, BeforeToolExec, AfterToolExec
-    Condenser  Condenser                      // recovery on context overflow
+    Condenser  Condenser                      // reaction to context overflow (see Ch. 13)
     OnDelta    func(delta string)             // streaming
     OnToolCall func(name, args string)        // tool call notification
-}
-
-type LoopState struct {
-    Iter         int
-    IsFirstTurn  bool
-    CalledTools  []string
 }
 ```
 
 The same `Agent` works as:
+- **Main agent** — full Config (a prompt with the full role, Hooks for skill selection, Condenser for overflow).
+- **Subagent** — minimal Config (a narrow prompt for the subtask, no Hooks, no Condenser).
+- **Triage agent** — narrow prompt + a trimmed Tools list, no callbacks.
+- **ChatOnly** — Tools = nil, simple dialogue.
 
-- **Main agent** — full Config (PromptFunc with routing, Hooks for skill selection, Condenser for overflow)
-- **Subagent** — minimal Config (static prompt, no Hooks, no Condenser)
-- **Triage agent** — only PromptFunc and ToolFilter, no callbacks
-- **ChatOnly** — Tools = nil, simple dialogue
+Instead of inheritance or if-branching — **behavior injection through Config**. This makes each component independently unit-testable.
 
-Instead of inheritance or if-branching — **behavior injection through Config**. This allows unit-testing each component separately.
+**Why are Prompt and Tools fields, not `func(state)`?** Because the `system` message and the `tools[]` block sit at the very start of the request and form the **prefix** that the provider caches. If you return a different prompt text or a different tool list on every iteration, the cache misses on every step, input cost goes up 5-10×, and latency grows. Dynamic data lives in `tool_result` and `user` messages — not in the system prefix. If behavior changes radically (a new role, a different tool set), that's a **new Run**, not a modification of the current one.
 
-**Nop Pattern for Working Memory:**
-
-```go
-func Nop() *WorkingMemory {
-    return &WorkingMemory{nop: true}
-}
-
-func (wm *WorkingMemory) SetTask(task string) {
-    if wm.nop { return }
-    wm.Task = truncateWords(task, 50)
-}
-```
-
-Subagents don't need Working Memory, but checking `wm != nil` on every call is unreliable. `Nop()` returns a safe object where all methods are no-ops.
+A subagent built this way doesn't need any kind of "Working Memory" — it has its own short history for its `task`. If the main agent wants to pass it context, it does so as text inside `task`, not via a shared structure.
 
 ### Event System
 
@@ -1426,24 +1417,32 @@ Checkpoint is insurance. For short tasks (2-3 iterations), it's overkill. For lo
 
 ### Error 1: History Overflow
 
-**Symptom:** Agent "forgets" beginning of conversation. After N messages, stops remembering task context.
+**Symptom:** Agent "forgets" the beginning of the conversation. After N messages it stops remembering task context; or the provider returns `context_length_exceeded`.
 
-**Cause:** Dialogue history exceeds model's context window size. Old messages are "pushed out" of context.
+**Cause:** Dialogue history exceeds the model's context window. Old messages are "pushed out" of context, or the request is rejected outright.
 
-**Solution:**
+**Solution — `condense` (see [Ch. 13](../13-context-engineering/README.md)):**
+
 ```go
-// BAD: Simply truncate history (lose information)
+// BAD: blindly truncating the middle — risks breaking tool_call ↔ tool_result pairs,
+// returning a provider validation error, and losing important context.
 if len(messages) > maxHistoryLength {
     messages = append(
-        []openai.ChatCompletionMessage{messages[0]},  // System
-        messages[len(messages)-maxHistoryLength+1:]...,  // Last ones
+        []openai.ChatCompletionMessage{messages[0]},
+        messages[len(messages)-maxHistoryLength+1:]...,
     )
 }
 
-// GOOD: Compress old messages through summarization
-// Detailed optimization techniques described in [Chapter 13: Context Engineering](../13-context-engineering/README.md)
-compressed := compressContext(messages, maxTokens)
+// BAD: reordering messages "by importance" — kills prompt cache
+// and almost always produces an "orphan tool_result" error.
+
+// GOOD: condense — ask the LLM to summarize the old part of the history
+// and replace it with a single user message. System stays. The last N messages
+// (with intact tool_call/tool_result pairs) also stay. Limit: one condense per Run.
+messages = condense(ctx, messages, keepLastN)
 ```
+
+The trigger for `condense` is `usage.PromptTokens >= 0.80 * contextWindow` or a `context_length_exceeded` error. Don't use your own token counter for the trigger — it drifts. Details in [Ch. 13](../13-context-engineering/README.md).
 
 ### Error 2: Agent Loops
 
@@ -1534,68 +1533,99 @@ type Hooks struct {
 
 ## Mini-Exercises
 
-### Exercise 1: Count Tokens in History
+### Exercise 1: Pre-send token estimate
 
-Implement a function to count tokens in message history:
+Implement an approximate token estimator over the message history — for metrics and for deciding "is it time to trigger `condense` early":
 
 ```go
-func countTokensInMessages(messages []openai.ChatCompletionMessage) int {
-    // Count total number of tokens
-    // Consider: Content, ToolCalls, system messages
+func estimateTokens(messages []openai.ChatCompletionMessage) int {
+    // Approximate via tiktoken (or any fast tokenizer).
+    // Account for: Content, ToolCalls, ToolCallID, Role overhead.
+    // In production this is only an estimate — the exact number always comes
+    // from usage.PromptTokens.
+}
+```
+
+**Important rule (see [Ch. 13](../13-context-engineering/README.md)):** in a real agent loop the primary source of token counts is the `usage.PromptTokens` field from the provider's response. Your own counter is good only for an estimate **before** the very first request, or for cheap metrics. You cannot use it as the `condense` trigger — it systematically misses by 5-30% (especially with tool_calls and multilingual content).
+
+**Expected result:**
+- The function returns an estimate within ±10% of `usage.PromptTokens` on a typical history.
+- Accounts for all message types (system, user, assistant, tool).
+- In agent code it is called **only before the first request**; after the first response, the `condense` trigger is computed from `usage.PromptTokens`.
+
+### Exercise 2: Implement condense
+
+**Note:** the theory is in [Ch. 13: Context Engineering](../13-context-engineering/README.md). Here is the skeleton for self-implementation.
+
+Implement `condense` — the single history-compression operation the agent applies on context overflow:
+
+```go
+// condense replaces the "middle" of the history with a single user message
+// containing a summary, by calling the LLM with a request to summarize the
+// passed fragment.
+//
+// Guarantees:
+//   - the first message (system) is preserved as-is;
+//   - the last keepLastN messages are preserved as-is, with intact
+//     tool_call ↔ tool_result pairs (no "orphan tool_result");
+//   - everything between them is replaced with a single role="user" message
+//     whose content is "Context of previous work:\n\n" + summary.
+//
+// Per-Run limit — 1 condense call; a repeated overflow right after a condense
+// means the task is too large for a single Run.
+func condense(
+    ctx context.Context,
+    client *openai.Client,
+    messages []openai.ChatCompletionMessage,
+    keepLastN int,
+) ([]openai.ChatCompletionMessage, error) {
+    // 1) if len(messages) < 2 + keepLastN — nothing to compress, return as-is
+    // 2) split off head (without system and without the last keepLastN) and tail
+    // 3) call the LLM with a prompt "summarize head into N tokens"
+    // 4) assemble [system, summary-as-user, ...tail] and return
 }
 ```
 
 **Expected result:**
-- Function returns accurate token count
-- Considers all message types (system, user, assistant, tool)
-
-### Exercise 2: Context Optimization
-
-**Note:** Detailed context optimization techniques are described in [Chapter 13: Context Engineering](../13-context-engineering/README.md). Here, a basic exercise is proposed.
-
-Implement a context compression function through summarization:
-
-```go
-func compressContext(messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
-    // If tokens less than maxTokens, return as is
-    // Otherwise compress old messages through summarization
-    // Detailed techniques: see [Chapter 13: Context Engineering](../13-context-engineering/README.md)
-}
-```
-
-**Expected result:**
-- System Prompt always remains first
-- Old messages compressed through LLM
-- Last N messages preserved completely
+- system always remains first.
+- The last `keepLastN` messages are preserved in full.
+- Between them — exactly one `user` message with the summary.
+- No "orphan tool_result": if a `tool_result` ends up in `tail` without its matching `tool_call`, either pull the pair into `tail` together, or drop both.
+- No reordering, no "importance scoring", no mutation of `system`.
 
 ## Completion Criteria / Checklist
 
-**Completed:**
-- [x] Short-term memory (message history) is managed
-- [x] Token counting and context monitoring implemented
-- [x] Context optimization applied (summarization/prioritization)
-- [x] Long-term memory (RAG) configured (if needed)
-- [x] Planning (ReAct/Plan-and-Solve) implemented
-- [x] Runtime correctly parses LLM responses
-- [x] Runtime executes tools
-- [x] Runtime manages loop
-- [x] Protection against loops exists
+**Done:**
+- [x] Short-term memory is a linear immutable history (`messages[]`).
+- [x] System prompt and tool list are fixed at the start of the Run and don't change between iterations.
+- [x] The `condense` trigger is computed from `usage.PromptTokens` in the provider's response (your own counter — only for a pre-send estimate).
+- [x] On overflow, `condense` is applied with a 1-per-Run limit; `tool_call ↔ tool_result` pairs are not torn apart.
+- [x] Long-term memory (RAG) is set up if the task needs cross-session knowledge.
+- [x] Planning (ReAct/Plan-and-Solve) is implemented.
+- [x] Runtime correctly parses LLM responses, executes tools, manages the loop.
+- [x] There's protection against loops (iteration limit + repeat detection).
+- [x] Subagent is a standalone Agent with its own Config — not a "shared structure with shared memory".
 
-**Not completed:**
-- [ ] History overflows (no context optimization)
-- [ ] Agent loops (no iteration limit)
-- [ ] Tool results not added to history
-- [ ] No token usage monitoring
-- [ ] Monolithic Run() with no separation of concerns
-- [ ] Hardcoded special tools in shared executeTools
+**Not done (anti-patterns):**
+- [ ] History overflows and there's no reaction (neither `condense` nor a hard stop).
+- [ ] Messages are reordered "by importance" ("important" ones promoted, "unimportant" dropped) — prompt cache is killed, tool pairs are broken.
+- [ ] System prompt is mutated between iterations (live state, facts, plan progress are stitched into it) — prompt cache is killed.
+- [ ] Tool list changes on every iteration without a strong reason — same problem.
+- [ ] The `condense` trigger or the budget cap is computed from your own `len(content)/3` or `tiktoken` counter instead of `usage.PromptTokens`.
+- [ ] The agent loops (no iteration limit).
+- [ ] Tool results are not added to history.
+- [ ] Monolithic `Run()` with no separation of concerns.
+- [ ] Hardcoding special tools inside the shared `executeTools` — every "special" tool adds another `if`.
 
 ## Connection with Other Chapters
 
-- **[Chapter 01: LLM Physics](../01-llm-fundamentals/README.md)** — Understanding context window helps manage memory
-- **[Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md)** — How Runtime executes tools
-- **[Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md)** — How Planning works in agent loop
-- **[Chapter 13: Context Engineering](../13-context-engineering/README.md)** — Detailed context optimization techniques (summarization, fact selection, token budgets)
-- **[Agent Skills Specification](https://agentskills.io/specification)** — Open format for agent skills (`SKILL.md`)
+- **[Preface → Mental Model](../00-preface/README.md#mental-model-an-agent-is-a-new-employee)** — why Runtime, tool permissions, and confirmation for dangerous actions are not "special LLM machinery" but "the same as for a new employee".
+- **[Chapter 01: LLM Physics](../01-llm-fundamentals/README.md)** — understanding the context window and tokens.
+- **[Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md)** — how Runtime executes tools.
+- **[Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md)** — how Planning works in the agent loop; loop detection, recovery state machine.
+- **[Chapter 12: Agent Memory Systems](../12-agent-memory/README.md)** — two memory horizons, linear history as an immutable log, prompt cache, compact vs condense vs recall.
+- **[Chapter 13: Context Engineering](../13-context-engineering/README.md)** — stable system prefix, single threshold and single reaction (`condense` with a 1/Run cap), `usage.PromptTokens` as the primary source.
+- **[Agent Skills Specification](https://agentskills.io/specification)** — open format for agent skills (`SKILL.md`).
 
 ## What's Next?
 

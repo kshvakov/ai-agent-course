@@ -12,6 +12,8 @@ An agent processes user personal data (email, phone, address). This data gets in
 
 **Solution:** Detect and mask PII before logging and sending to the LLM, protect secrets, redact logs, and enforce TTL for stored data.
 
+> **Junior-employee model.** Data privacy for an agent is **the same data policies you apply to a new employee**. They sign an NDA, don't forward client emails outside the company, don't paste screenshots with PII into a public channel, and delete personal data after the reporting period (retention). The agent is the same: it doesn't write PII into spans/logs in the clear (see [Ch. 19](../19-observability-and-tracing/README.md), the rule about redacted attributes), doesn't pass extra data to the LLM provider, and deletes data by TTL. There's nothing fundamentally new here — it's an adaptation of familiar GDPR practices to code. For the full framing — [Preface → Mental Model](../00-preface/README.md#mental-model-an-agent-is-a-new-employee) and [Ch. 17: Security and Governance](../17-security-and-governance/README.md).
+
 ## Theory in Simple Terms
 
 ### What Is PII?
@@ -256,8 +258,9 @@ func (m *RedactionMiddleware) Handle(ctx context.Context, r slog.Record) error {
 
 ## Connection with Other Chapters
 
-- **[Chapter 17: Security and Governance](../17-security-and-governance/README.md)** — Data protection
-- **[Chapter 19: Observability and Tracing](../19-observability-and-tracing/README.md)** — Safe logging
+- **[Preface → Mental Model](../00-preface/README.md#mental-model-an-agent-is-a-new-employee)** — Base framing: data policies for the agent are an adaptation of data policies for people.
+- **[Chapter 17: Security and Governance](../17-security-and-governance/README.md)** — Threat modeling, RBAC and onboarding discipline for the agent; data privacy is a special case of that framing.
+- **[Chapter 19: Observability and Tracing](../19-observability-and-tracing/README.md)** — Safe logging: the rule "PII does not land in a span in plaintext", redacted attributes + a protected store keyed by a correlation ID.
 
 ## What's Next?
 

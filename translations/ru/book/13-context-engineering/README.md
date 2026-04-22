@@ -2,495 +2,261 @@
 
 ## Зачем это нужно?
 
-Контекстные окна ограничены. По мере роста диалога вам приходится решать, что оставлять в контексте, а что сжимать или выкидывать. Плохое управление контекстом тратит токены, теряет важное и путает агента.
+Контекстное окно конечно. В долгом Run агент рано или поздно упрётся в лимит. Эта глава — про то, как с этим жить.
 
-В этой главе разберём техники управления контекстом: слои, саммаризация, отбор фактов и адаптивная сборка контекста.
+Главная мысль в одной строке: **простая память — закончилась, сжимаем**. Всё остальное — стабильный system prompt, аккуратные prompt'ы к tools и неподдельные числа токенов.
+
+Если вы пришли сюда из учебников, где «context engineering» — это слои с фиксированными долями, скоринг важности сообщений, BudgetTracker с warning'ами в system prompt и три стратегии сжатия на выбор, — выдохните. В реальном агенте всё это не нужно. Дальше расскажу, почему.
 
 ### Реальный кейс
 
-**Ситуация:** Долго идущий разговор с агентом. После 50 поворотов контекст — 50K токенов. Новый запрос нуждается в недавней информации, но она похоронена в истории.
+**Ситуация:** Агент идёт уже 25 итераций. На последнем ответе провайдер сказал: `usage.prompt_tokens = 102_400` (модель — 128K). Следующий tool result добавит ещё пару тысяч токенов. Дальше — overflow.
 
 **Проблема:**
-- Включить всю историю: Превышает лимит контекста, дорого
-- Включить только недавнее: Теряет важный контекст из раннего
-- Нет стратегии: Агент путается или пропускает критическую информацию
+- Если ничего не делать — следующий запрос упадёт.
+- Если выкинуть «менее важные» сообщения — порвёте `tool_call ↔ tool_result`, и провайдер вернёт ошибку валидации.
+- Если перестроить контекст «по слоям с долями» — сбросите prompt cache, и каждый следующий запрос станет в 5-10 раз дороже.
 
-**Решение:** Context engineering: слои контекста (рабочая память, саммари, факты), селективное извлечение релевантного и саммаризация старых частей диалога с сохранением ключевых фактов.
+**Решение:** один раз за Run сжимаем старую часть истории через LLM, оставляем последние N сообщений нетронутыми, продолжаем работать. Это и есть **condense**. Один порог запуска, один лимит, никаких страусов.
+
+## Главная мысль (с опытом)
+
+С опытом понимаешь: реальный продакшен-агент состоит из четырёх простых вещей.
+
+1. **Простой loop.** `while True: ответ = llm.Chat(messages); если есть tool_calls — выполнить и положить результаты в messages; иначе — вернуть ответ`. Глава [04. Автономность и циклы](../04-autonomy-and-loops/README.md).
+2. **Простая память.** Один линейный массив `[]Message`. Растёт строго от старого к новому. Ничего не переставляется, ничего не удаляется в середине. Глава [12. Память](../12-agent-memory/README.md).
+3. **Сжатие при переполнении.** Условие срабатывания — одно, действие — одно (см. ниже).
+4. **Prompt engineering для tools.** Хорошее `description`, явные требования к параметрам, понятные сообщения об ошибках. Это даёт куда больше, чем любая «хитрая сборка контекста».
+
+Всё, что сложнее, — обычно лечит не ту болезнь. Если возникает желание добавить «приоритизацию», «слои с долями» или «динамический system prompt» — почти всегда это сигнал, что у задачи плохая архитектура (нужно разбить на под-Run, или вынести знания во внешний retrieval), а не что мало weights в формуле.
 
 ## Теория простыми словами
 
-### Слои контекста
+### Из чего состоит контекст
 
-**Рабочая память (недавние повороты):**
-- Последние N поворотов разговора
-- Всегда включены
-- Наиболее релевантны для текущей задачи
+Контекст для одного запроса — это `messages[]`, который вы отправляете провайдеру. В нём живут четыре слоя — но **как ментальная модель**, а не как четыре отдельных `system`-сообщения в коде.
 
-**Слой саммари:**
-- Саммаризированные старые разговоры
-- Сохраняет ключевые факты
-- Уменьшает использование токенов
+| Слой | Что туда кладём | Где физически |
+|------|------------------|---------------|
+| **System** | Роль, стиль, скилы, правила (стабильно внутри Run) | `messages[0]`, тип `system` |
+| **История** | Все user/assistant/tool сообщения | `messages[1..N-1]`, в порядке появления |
+| **Факты из долгой памяти** | Релевантные факты, выбранные на старте Run | В **первое user-сообщение** Run, не в system |
+| **Live state** | Прогресс задачи, прочитанные файлы, план | В tool results, в Notes, в последнее user-сообщение фрейма |
 
-**Слой фактов:**
-- Извлечённые важные факты из [долговременной памяти](../12-agent-memory/README.md)
-- Предпочтения пользователя, решения, ограничения
-- Постоянны между разговорами
-- **Примечание:** Хранение и извлечение фактов описано в [Memory](../12-agent-memory/README.md), здесь описывается только их использование в контексте
+Главное правило: **префикс стабилен, изменения уходят в хвост**. Тогда работает prompt cache провайдера, и большая часть запросов стоит копейки. Если префикс мутирует — кэш ломается, и каждый запрос платится по полной.
 
-> **Важно: Контекст как якорь (Anchoring Bias).**
-> Если в слой фактов попадают **предпочтения пользователя** ("пользователь считает X", "нам нужен ответ Y") или **гипотезы** без подтверждения, они становятся сильным якорем для модели. Модель может сместить ответ в сторону этих предпочтений, даже если фактические данные указывают на другое.
->
-> **Проблема:** Предпочтения и гипотезы, включённые в контекст как факты, могут исказить объективный анализ.
->
-> **Решение:** Разделяйте типы записей: **Fact** (проверенные данные), **Preference** (предпочтения пользователя), **Hypothesis** (гипотезы). Включайте предпочтения и гипотезы в контекст только когда это уместно (персонализация), и исключайте их для аналитических задач, требующих объективности.
+### Anchoring bias: осторожно с фактами
 
-**Состояние задачи:**
-- Прогресс текущей задачи
-- Что сделано, что ожидает
-- Позволяет возобновление
+Если в «факты» попадают **предпочтения пользователя** («пользователь думает, что проблема в БД») или **гипотезы**, модель воспринимает их как истину и подстраивает ответ под них — даже когда данные говорят обратное.
+
+Лечение простое: называйте вещи своими именами в самом тексте. Не «факт», а «гипотеза пользователя» или «предположение, требует проверки». Никакого хитрого фильтра по `Type == "hypothesis"` в коде — модель прекрасно понимает русский/английский префикс.
+
+```text
+[факт] Сервер web-01 не отвечает на ping с 14:32 UTC.
+[гипотеза пользователя] Пользователь предполагает, что проблема в БД (не подтверждено).
+[ограничение] Не трогать prod-кластер до 18:00 UTC.
+```
 
 ### Операции с контекстом
 
-1. **Select** — Выбрать, что включить
-2. **Summarize** — Сжать старую информацию
-3. **Extract** — Извлечь ключевые факты
-4. **Layer** — Организовать по важности/свежести
+В реальной жизни их всего две:
+
+1. **Append** — добавили новое сообщение в конец `messages[]`.
+2. **Condense** — один раз за Run заменили старую часть истории на summary.
+
+Всё. Никаких Select / Extract / Layer / Reorder.
 
 ## Как это работает (пошагово)
 
-### Шаг 1: Интерфейс Context Manager
+### Шаг 1: Линейная память
 
 ```go
-type ContextManager interface {
-    AddMessage(msg openai.ChatCompletionMessage) error
-    GetContext(maxTokens int) ([]openai.ChatCompletionMessage, error)
-    Summarize() error
-    ExtractFacts() ([]Fact, error)
+type Memory struct {
+    messages []llm.Message
 }
 
-type Fact struct {
-    Key        string
-    Value      string
-    Source     string // Какой разговор
-    Importance int    // 1-10
-    Type       string // "fact", "preference", "hypothesis", "constraint"
+func (m *Memory) Append(msg llm.Message) {
+    m.messages = append(m.messages, msg)
+}
+
+func (m *Memory) Snapshot() []llm.Message {
+    out := make([]llm.Message, len(m.messages))
+    copy(out, m.messages)
+    return out
+}
+
+func (m *Memory) Reset(msgs []llm.Message) {
+    m.messages = msgs
 }
 ```
 
-### Шаг 2: Слоистый контекст
+Всё. `Reset` нужен только для condense — больше нигде историю не переписываем.
+
+### Шаг 2: Один порог, одно действие
 
 ```go
-type LayeredContext struct {
-    workingMemory []openai.ChatCompletionMessage // Недавние повороты
-    summary       string                          // Саммаризированная история
-    facts         []Fact                          // Извлечённые факты
-    maxWorking    int                             // Макс поворотов в рабочей памяти
+type Run struct {
+    mem           *Memory
+    contextWindow int     // лимит модели, например 128_000
+    condenseAt    float64 // 0.80 — порог запуска condense
+    condenseDone  bool    // лимит: condense максимум 1 раз за Run
+    lastTokens    int     // usage.PromptTokens из последнего ответа провайдера
 }
 
-func (c *LayeredContext) GetContext(maxTokens int) ([]openai.ChatCompletionMessage, error) {
-    var messages []openai.ChatCompletionMessage
-    
-    // Добавляем системный промпт с фактами
-    if len(c.facts) > 0 {
-        factsContext := "Важные факты:\n"
-        for _, fact := range c.facts {
-            factsContext += fmt.Sprintf("- %s: %s\n", fact.Key, fact.Value)
+// Вызывается перед каждым следующим Chat-запросом.
+func (r *Run) BeforeNextRequest(ctx context.Context) error {
+    used := float64(r.lastTokens) / float64(r.contextWindow)
+    if used >= r.condenseAt && !r.condenseDone {
+        if err := r.condense(ctx); err != nil {
+            return err
         }
-        messages = append(messages, openai.ChatCompletionMessage{
-            Role:    "system",
-            Content: factsContext,
-        })
+        r.condenseDone = true
     }
-    
-    // Добавляем саммари, если есть
-    if c.summary != "" {
-        messages = append(messages, openai.ChatCompletionMessage{
-            Role:    "system",
-            Content: "Саммари предыдущего разговора: " + c.summary,
-        })
-    }
-    
-    // Добавляем рабочую память (недавние повороты)
-    messages = append(messages, c.workingMemory...)
-    
-    // Обрезаем, если превышает maxTokens
-    return truncateToTokenLimit(messages, maxTokens), nil
-}
-```
-
-### Шаг 3: Саммаризация
-
-```go
-func (c *LayeredContext) Summarize(ctx context.Context, client *openai.Client) error {
-    if len(c.workingMemory) <= c.maxWorking {
-        return nil // Ещё не нужно саммаризировать
-    }
-    
-    // Получаем старые сообщения для саммаризации
-    oldMessages := c.workingMemory[:len(c.workingMemory)-c.maxWorking]
-    
-    // Создаём промпт для саммаризации
-    prompt := "Саммаризируй этот разговор, сохраняя ключевые факты и решения:\n\n"
-    for _, msg := range oldMessages {
-        prompt += fmt.Sprintf("%s: %s\n", msg.Role, msg.Content)
-    }
-    
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: "gpt-4o-mini",
-        Messages: []openai.ChatCompletionMessage{
-            {Role: "system", Content: "Ты агент саммаризации. Извлекай ключевые факты и решения."},
-            {Role: "user", Content: prompt},
-        },
-        Temperature: 0,
-    })
-    if err != nil {
-        return err
-    }
-    
-    c.summary = resp.Choices[0].Message.Content
-    
-    // Оставляем только недавние сообщения в рабочей памяти
-    c.workingMemory = c.workingMemory[len(c.workingMemory)-c.maxWorking:]
-    
     return nil
 }
 ```
 
-### Шаг 4: Использование фактов из памяти
+### Шаг 3: Реакция на overflow от провайдера
 
-**ВАЖНО:** Извлечение и хранение фактов происходит в [Memory](../12-agent-memory/README.md). Здесь мы только используем уже извлечённые факты при сборке контекста.
+Иногда оценка по `lastTokens` не успевает: следующий tool result оказался жирнее, чем ожидалось, и провайдер вернул `ContextOverflowError`. Делаем то же самое, но реактивно.
 
 ```go
-func (c *LayeredContext) GetContext(maxTokens int, memory Memory, includePreferences bool) ([]openai.ChatCompletionMessage, error) {
-    var messages []openai.ChatCompletionMessage
-    
-    // Получаем факты из памяти (не извлекаем здесь!)
-    facts, _ := memory.Retrieve("user_preferences", 10)
-    
-    // Фильтруем факты по типу в зависимости от задачи
-    var filteredFacts []Fact
-    for _, fact := range facts {
-        if fact.Type == "fact" || fact.Type == "constraint" {
-            // Всегда включаем проверенные факты и ограничения
-            filteredFacts = append(filteredFacts, fact)
-        } else if includePreferences && (fact.Type == "preference" || fact.Type == "hypothesis") {
-            // Предпочтения и гипотезы включаем только если это уместно (персонализация)
-            filteredFacts = append(filteredFacts, fact)
-        }
-        // Иначе исключаем предпочтения/гипотезы для объективного анализа
+resp, err := client.Chat(ctx, r.mem.Snapshot())
+if isContextOverflow(err) {
+    if r.condenseDone {
+        return r.wrapUp(ctx) // condense уже был — graceful save
     }
-    
-    // Добавляем системный промпт с фактами
-    if len(filteredFacts) > 0 {
-        factsContext := "Важные факты:\n"
-        for _, fact := range filteredFacts {
-            // Размечаем тип для ясности
-            prefix := ""
-            if fact.Type == "preference" {
-                prefix = "[Предпочтение пользователя] "
-            } else if fact.Type == "hypothesis" {
-                prefix = "[Гипотеза] "
-            }
-            factsContext += fmt.Sprintf("- %s%s: %v\n", prefix, fact.Key, fact.Value)
-        }
-        messages = append(messages, openai.ChatCompletionMessage{
-            Role:    "system",
-            Content: factsContext,
-        })
+    if err := r.condense(ctx); err != nil {
+        return err
     }
-    
-    // Добавляем саммари, если есть
-    if c.summary != "" {
-        messages = append(messages, openai.ChatCompletionMessage{
-            Role:    "system",
-            Content: "Саммари предыдущего разговора: " + c.summary,
-        })
-    }
-    
-    // Добавляем рабочую память (недавние повороты)
-    messages = append(messages, c.workingMemory...)
-    
-    // Обрезаем, если превышает maxTokens
-    return truncateToTokenLimit(messages, maxTokens), nil
+    r.condenseDone = true
+    resp, err = client.Chat(ctx, r.mem.Snapshot()) // повтор
 }
 ```
 
-## Token Counting и truncateToTokenLimit
+Триггер всего два: **threshold** (proactive) и **overflow** (reactive). Действие одно: `condense`. Лимит один: `1 раз за Run`. При повторном overflow — `wrapUp` (см. ниже), не повторный condense.
 
-В предыдущих примерах мы вызывали `truncateToTokenLimit`, но не реализовали её. Разберём подсчёт токенов и обрезку контекста.
-
-### Зачем считать токены?
-
-Каждая модель имеет жёсткий лимит контекстного окна. Превысите — получите ошибку. Не добирёте — тратите деньги на пустое место. Точный подсчёт токенов позволяет использовать контекст максимально эффективно.
-
-### Простой подсчёт: слова vs токены
-
-Точный подсчёт требует токенизатора модели (например, `tiktoken` для OpenAI). Но для быстрой оценки подходит приближение: 1 токен ≈ 0.75 слова для английского текста, для русского — ближе к 0.5 слова (кириллица кодируется менее эффективно).
+### Шаг 4: Condense — что внутри
 
 ```go
-// TokenCounter — интерфейс подсчёта токенов.
-// Позволяет подменять реализацию: приближённую для тестов, точную для продакшена.
-type TokenCounter interface {
-    Count(text string) int
-}
+func (r *Run) condense(ctx context.Context) error {
+    msgs := r.mem.Snapshot()
+    if len(msgs) < 6 {
+        return nil // нечего сжимать
+    }
 
-// WordBasedCounter — приближённый подсчёт по словам.
-// Подходит для быстрой оценки без внешних зависимостей.
-type WordBasedCounter struct {
-    TokensPerWord float64 // Для английского ≈ 1.33, для русского ≈ 2.0
-}
+    head := msgs[1 : len(msgs)-4] // всё кроме system и последних 4
+    tail := msgs[len(msgs)-4:]
+    system := msgs[0]
 
-func (c *WordBasedCounter) Count(text string) int {
-    words := len(strings.Fields(text))
-    return int(float64(words) * c.TokensPerWord)
-}
-
-// TiktokenCounter — точный подсчёт через tiktoken.
-// Используйте в продакшене для точного бюджетирования.
-type TiktokenCounter struct {
-    encoding *tiktoken.Encoding
-}
-
-func NewTiktokenCounter(model string) (*TiktokenCounter, error) {
-    enc, err := tiktoken.EncodingForModel(model)
+    summary, err := r.summarizeWithLLM(ctx, head)
     if err != nil {
-        return nil, fmt.Errorf("encoding for model %s: %w", model, err)
-    }
-    return &TiktokenCounter{encoding: enc}, nil
-}
-
-func (c *TiktokenCounter) Count(text string) int {
-    return len(c.encoding.Encode(text, nil, nil))
-}
-```
-
-### Лимиты моделей
-
-Лимиты контекста зависят от модели. Держите их в конфигурации, а не в коде:
-
-```go
-// ModelLimits хранит ограничения конкретной модели.
-var ModelLimits = map[string]int{
-    "gpt-4o":      128_000,
-    "gpt-4o-mini": 128_000,
-    "gpt-4-turbo": 128_000,
-    "gpt-3.5-turbo": 16_385,
-    "claude-3-5-sonnet": 200_000,
-}
-
-// SafeLimit возвращает лимит с запасом на ответ модели.
-// Оставляем место для генерации (maxOutputTokens).
-func SafeLimit(model string, maxOutputTokens int) int {
-    limit, ok := ModelLimits[model]
-    if !ok {
-        return 4096 // Безопасный дефолт
-    }
-    return limit - maxOutputTokens
-}
-```
-
-### Реализация truncateToTokenLimit
-
-Обрезаем контекст с конца, но системные сообщения и последний запрос пользователя сохраняем всегда:
-
-```go
-func truncateToTokenLimit(
-    messages []openai.ChatCompletionMessage,
-    maxTokens int,
-    counter TokenCounter,
-) []openai.ChatCompletionMessage {
-    total := countMessages(messages, counter)
-    if total <= maxTokens {
-        return messages
+        return err
     }
 
-    // Разделяем: системные сообщения, середина, последнее сообщение пользователя
-    var system []openai.ChatCompletionMessage
-    var middle []openai.ChatCompletionMessage
-    var last openai.ChatCompletionMessage
-
-    for i, msg := range messages {
-        if msg.Role == "system" {
-            system = append(system, msg)
-        } else if i == len(messages)-1 {
-            last = msg
-        } else {
-            middle = append(middle, msg)
-        }
-    }
-
-    // Считаем фиксированные части (системные + последний запрос)
-    reserved := countMessages(system, counter) + counter.Count(last.Content) + 4 // +4 на метаданные
-
-    // Обрезаем середину с начала (удаляем самые старые сообщения)
-    budget := maxTokens - reserved
-    var kept []openai.ChatCompletionMessage
-    runningTotal := 0
-
-    for i := len(middle) - 1; i >= 0; i-- {
-        msgTokens := counter.Count(middle[i].Content) + 4
-        if runningTotal+msgTokens > budget {
-            break
-        }
-        runningTotal += msgTokens
-        kept = append([]openai.ChatCompletionMessage{middle[i]}, kept...)
-    }
-
-    result := append(system, kept...)
-    result = append(result, last)
-    return result
-}
-
-func countMessages(messages []openai.ChatCompletionMessage, counter TokenCounter) int {
-    total := 0
-    for _, msg := range messages {
-        total += counter.Count(msg.Content) + 4 // +4 токена на роль и разделители
-    }
-    return total
-}
-```
-
-**Почему +4?** Каждое сообщение в API кодируется с метаданными: роль, разделители начала и конца. Для OpenAI это примерно 4 токена на сообщение.
-
-## Продвинутые стратегии сжатия
-
-Базовая саммаризация через LLM — только один из способов сжать контекст. Рассмотрим более точные подходы.
-
-### Семантическое сжатие
-
-Идея: оставляем смысл, выбрасываем «воду». Вместо пересказа всего разговора — извлекаем только то, что влияет на дальнейшие решения.
-
-### Key-Value экстракция
-
-Идея: превращаем длинный нарратив в структурированные пары ключ-значение. Компактнее саммари, проще для модели.
-
-### Реализация
-
-```go
-// CompressionStrategy определяет способ сжатия.
-type CompressionStrategy string
-
-const (
-    StrategySummarize CompressionStrategy = "summarize" // Обычная саммаризация
-    StrategySemantic  CompressionStrategy = "semantic"   // Семантическое сжатие
-    StrategyKeyValue  CompressionStrategy = "keyvalue"   // Key-Value экстракция
-)
-
-// compressContext сжимает сообщения выбранной стратегией.
-func compressContext(
-    ctx context.Context,
-    client *openai.Client,
-    messages []openai.ChatCompletionMessage,
-    strategy CompressionStrategy,
-) (string, error) {
-    conversation := formatMessages(messages)
-
-    prompts := map[CompressionStrategy]string{
-        StrategySummarize: "Саммаризируй этот разговор. Сохрани ключевые факты и решения:\n\n" + conversation,
-
-        StrategySemantic: `Сожми этот разговор до минимума.
-Правила:
-- Оставь ТОЛЬКО факты, решения и открытые вопросы
-- Убери приветствия, благодарности, повторы
-- Убери рассуждения, если есть итоговое решение
-- Формат: одно утверждение на строку
-
-Разговор:
-` + conversation,
-
-        StrategyKeyValue: `Извлеки ключевые факты из разговора в формате "ключ: значение".
-Категории ключей:
-- decision: принятое решение
-- constraint: ограничение или требование
-- action: выполненное действие
-- open: нерешённый вопрос
-
-Пример:
-decision:database: Используем PostgreSQL
-constraint:budget: Не более 100$ в месяц
-
-Разговор:
-` + conversation,
-    }
-
-    prompt, ok := prompts[strategy]
-    if !ok {
-        return "", fmt.Errorf("unknown strategy: %s", strategy)
-    }
-
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: "gpt-4o-mini",
-        Messages: []openai.ChatCompletionMessage{
-            {Role: "system", Content: "Ты сжимаешь контекст. Будь максимально кратким."},
-            {Role: "user", Content: prompt},
-        },
-        Temperature: 0,
+    next := make([]llm.Message, 0, 2+len(tail))
+    next = append(next, system)
+    next = append(next, llm.Message{
+        Role:    "user",
+        Content: "Контекст предыдущей работы:\n\n" + summary,
     })
-    if err != nil {
-        return "", err
-    }
-    return resp.Choices[0].Message.Content, nil
-}
-
-func formatMessages(messages []openai.ChatCompletionMessage) string {
-    var b strings.Builder
-    for _, msg := range messages {
-        fmt.Fprintf(&b, "[%s]: %s\n", msg.Role, msg.Content)
-    }
-    return b.String()
+    next = append(next, tail...)
+    r.mem.Reset(next)
+    return nil
 }
 ```
 
-### Когда какую стратегию выбирать
+Три ключевых момента:
 
-| Стратегия | Степень сжатия | Потеря информации | Когда использовать |
-|---|---|---|---|
-| `summarize` | Средняя (~3x) | Низкая | Нужен контекст для продолжения диалога |
-| `semantic` | Высокая (~5-10x) | Средняя | Длинные обсуждения, нужна суть |
-| `keyvalue` | Очень высокая (~10-20x) | Высокая (только факты) | Долгосрочное хранение, кросс-сессии |
+1. **Полная замена истории**, а не «обрезание середины». Так чище и предсказуемее.
+2. **Summary кладём как `user`**, не как `assistant`. Модель тогда воспринимает его как «вот контекст, продолжай», а не как свой собственный ответ, который можно противоречить.
+3. **Хвост (последние 3-5 сообщений) — нетронут.** Это страховка от того, что в summary потерялось что-то важное и непосредственно нужное модели прямо сейчас.
 
-## Прогрессивное сжатие (4 уровня)
+### Шаг 5: Wrap-up при повторном overflow
 
-На практике сжатие контекста — не один приём, а **каскад из четырёх уровней**. Каждый следующий включается только когда предыдущего недостаточно:
+Если condense уже был — больше не сжимаем (повторное сжатие катастрофически теряет детали). Вместо этого: сохраняем прогресс, выдаём пользователю частичный результат, выходим из Run.
 
-```mermaid
-flowchart TD
-    A["Уровень 1: Trim"] -->|"WM > 6000 символов"| B["Уровень 2: Compact"]
-    B -->|"Block.Close()"| C["Уровень 3: Condense"]
-    C -->|"ContextOverflowError"| D["Уровень 4: Block Eviction"]
-    D -->|"BuildContext: бюджет"| E["Готовый контекст"]
+```go
+func (r *Run) wrapUp(ctx context.Context) error {
+    snapshot := r.mem.Snapshot()
+    if err := r.checkpoint.Save(snapshot); err != nil {
+        return err
+    }
+    return ErrRunWrappedUp // верхний уровень это ловит и показывает пользователю
+}
 ```
 
-| Уровень | Когда срабатывает | Что делает | Потеря информации |
-|---------|-------------------|------------|-------------------|
-| **Trim** | Working Memory > 6000 символов | Обрезает completed steps, старые файлы, действия | Минимальная |
-| **Compact** | Block.Close() | Схлопывает tool chains в `<prior_tool_use>` (91% сжатие) | Низкая |
-| **Condense** | ContextOverflowError от провайдера | LLM создаёт структурированное резюме | Средняя |
-| **Block Eviction** | BuildContext: не хватает бюджета | Старые блоки не включаются в контекст | Высокая (но доступны через recall) |
+Чек-поинт нужен, чтобы пользователь мог нажать «Continue» и продолжить с другой моделью / другим контекстом. См. [Главу 11: State Management](../11-state-management/README.md).
 
-Принцип: **gradual degradation вместо hard cut**. Бинарная суммаризация ("всё или ничего") теряет слишком много. Прогрессивное сжатие деградирует плавно.
+## Считаем токены правильно
+
+Иерархия источников — от лучшего к худшему:
+
+1. **`usage.PromptTokens` из ответа провайдера.** Точное число, по которому вам выставили счёт. Берёте из последнего ответа модели и используете для решения «не пора ли condense». Это **первичный источник**, не выдумывайте свой счётчик, если есть этот.
+2. **Токенизатор модели** (например, `tiktoken` для OpenAI, `anthropic.count_tokens` для Anthropic). Нужен в одном случае: вы хотите оценить вес ещё-не-отправленного сообщения, чтобы решить «отправлять или сначала сжать».
+3. **Приближение по словам/символам** — последнее средство. Подходит для черновой оценки, когда (1) и (2) недоступны.
+
+Подробнее про опасность char-based оценки см. [Главу 12, Ошибка 7](../12-agent-memory/README.md#ошибка-7-оценка-токенов-через-char3).
+
+```go
+// Самый частый паттерн: после каждого Chat-ответа сохраняем число токенов.
+resp, err := client.Chat(ctx, msgs)
+if err == nil {
+    r.lastTokens = resp.Usage.PromptTokens
+}
+```
+
+Никаких `WordBasedCounter` со ставкой `TokensPerWord = 2.0` для русского. Никакого подсчёта `len(content)/3`. Провайдер уже посчитал — берите готовое.
+
+## Лимиты моделей
+
+**Не хардкодьте словарь моделей в коде.** Модельный зоопарк меняется быстрее, чем код обновляют, и устаревший словарь даст неверный ответ для свежей модели.
+
+Минимальная структура и место хранения:
+
+```go
+type Model struct {
+    ID            string
+    ContextWindow int // максимальный вход + выход
+    MaxOutput     int // обычно меньше ContextWindow
+}
+
+func SafeBudget(m Model, reserveOutput int) int {
+    if reserveOutput == 0 {
+        reserveOutput = m.MaxOutput
+    }
+    return m.ContextWindow - reserveOutput
+}
+```
+
+Где брать `Model`:
+- из каталога моделей вашего LLM SDK (предпочтительно);
+- из конфига сервиса (если SDK не предоставляет каталог);
+- из переменных окружения для частных деплоев.
+
+Главное — **в одном месте**, не размазывайте `_ = 128000` по 15 файлам.
+
+## Условия для truncate
+
+`truncate` (выкинуть лишние сообщения из середины и оставить голову+хвост) — отдельный инструмент от `condense`. Он применим в трёх случаях:
+
+- **Single-shot запросы** без многошагового цикла (агентный loop тут вообще ни при чём).
+- **Провайдеры без prompt cache** — экономить нечего, остаётся только укладываться в лимит.
+- **Аварийный fallback**, когда condense уже отработал свой лимит 1/Run и контекст всё ещё переполнен — проще урезать, чем падать (но проще — отдать `wrapUp` и сохранить прогресс).
+
+В цикле агента с prompt cache `truncate` использовать **не нужно** — он сбрасывает кэш на каждой итерации, потому что middle меняется. Если очень хочется — пишите аккуратно, сохраняя пары `tool_call ↔ tool_result` целыми (рваная пара — это `400 Bad Request` от провайдера).
 
 ## Condensation Prompt
 
-Condense — экстренная мера. Срабатывает максимум **1 раз за Run**, когда провайдер возвращает `ContextOverflowError`. Повторная конденсация уже сжатого контекста даёт плохие результаты.
+Качество condense на 80% определяется промптом. Голое «суммаризируй» даёт бесполезный пересказ. Хороший промпт работает по принципу **«передаю задачу коллеге, который сейчас её подхватит»**.
 
-### Как работает Condense
-
-1. **Разделение**: история делится на head (старые сообщения) и tail (последние 2 шага)
-2. **Сжатие head**: LLM суммаризирует старую часть
-3. **Сборка**: summary (как user message) + tail
-4. **Замена**: `mem.Reset(condensedMsgs)`
-
-### Промпт конденсации
-
-Ключевая метафора: **"Напиши, как если бы передавал задачу коллеге"**. Промпт требует 8 обязательных секций:
-
-```
-Write a structured summary as if briefing a teammate taking over mid-task.
+```text
+You are summarizing a multi-turn agent run for a teammate
+who will continue the work. Be specific and operational.
 
 Required sections:
 1. Goal — what the user wants
-2. Key Findings — important discoveries
+2. Key Findings — important discoveries (with file:line if relevant)
 3. Resources Examined — files read, commands run
 4. Decisions Made — choices and their rationale
 5. Work Completed — what's done
@@ -501,487 +267,245 @@ Required sections:
 Be SPECIFIC:
 - "Add JWT middleware to internal/auth/middleware.go:45" — GOOD
 - "implement authentication" — BAD
-- "Found memory leak in worker pool goroutine at pkg/pool/pool.go:120" — GOOD
+- "Found memory leak in worker pool at pkg/pool/pool.go:120" — GOOD
 - "found a bug" — BAD
 
-Max words: {maxWords}
+Hard limit: {maxWords} words.
 ```
 
-Summary сохраняется как **user message** (не assistant). Модель воспринимает его как инструкцию ("вот контекст, продолжай"), а не как свой предыдущий ответ.
+Что важно:
+- **Чёткие секции.** Иначе модель пишет эссе, и из summary невозможно вытащить «что осталось сделать».
+- **Требование конкретики с примерами.** Без этого получите воду «реализована аутентификация».
+- **Жёсткий лимит слов.** Если не указать — summary раздуется почти до размера оригинала.
 
-## Инкрементальная суммаризация
+## System Prompt: стабильность важнее экономии
 
-### Проблема
+System prompt занимает токены на **каждой итерации** loop'а. Возникает соблазн «оптимизировать»: показать длинные инструкции на первой итерации и убрать часть на последующих. На бумаге — экономия. На практике — почти всегда дороже.
 
-Каждый раз суммаризировать всю историю — дорого. Если в разговоре 100 сообщений и мы суммаризируем каждые 10, к 10-й итерации мы перерабатываем всё заново. Это O(n²) по токенам.
+### Почему «адаптивный system prompt» проигрывает
 
-### Решение: обновляем существующее саммари
+Современные провайдеры кэшируют **префикс** запроса. Кэшированный токен сильно дешевле обычного:
 
-Вместо суммаризации всей истории берём предыдущее саммари и дополняем его новыми сообщениями. Это O(n) по токенам.
+| Провайдер | Скидка за cache hit |
+|-----------|---------------------|
+| OpenAI | ~50% от input-цены |
+| Anthropic | ~90% от input-цены |
+| Z.AI / GLM | до ~80% (зависит от модели) |
 
-```go
-// incrementalSummarize обновляет существующее саммари новыми сообщениями.
-// Вместо пересуммаризации всей истории — дополняет текущее саммари.
-func incrementalSummarize(
-    ctx context.Context,
-    client *openai.Client,
-    currentSummary string,
-    newMessages []openai.ChatCompletionMessage,
-) (string, error) {
-    if len(newMessages) == 0 {
-        return currentSummary, nil
-    }
+Если system prompt меняется между итерациями — кэш сбрасывается **на всём, что после точки изменения**, и вы платите полную цену не только за изменившиеся секции, но и за всю историю сообщений.
 
-    newConversation := formatMessages(newMessages)
+Простая арифметика на типичном Run (system 25K, история к 5-й итерации ~30K, всего 8 итераций):
 
-    var prompt string
-    if currentSummary == "" {
-        // Первая суммаризация
-        prompt = "Суммаризируй этот разговор. Сохрани ключевые факты, решения и открытые вопросы:\n\n" + newConversation
-    } else {
-        // Обновление существующего саммари
-        prompt = fmt.Sprintf(`Обнови саммари разговора с учётом новых сообщений.
+| Стратегия | Input cost за Run | Cache hit ratio |
+|-----------|-------------------|-----------------|
+| Стабильный system | ~$0.04 (Anthropic) | ~85% |
+| «Адаптивный»: убрали 1500 токенов на итерациях 2-8 | ~$0.18 (Anthropic) | ~5% |
 
-Текущее саммари:
-%s
+Экономия 1500 input-токенов оборачивается потерей кэш-хитов на 25-30K префиксных токенов на каждой из 7 последующих итераций. **В 4-5 раз дороже.**
 
-Новые сообщения:
-%s
+### Что делать вместо
 
-Правила:
-- Включи ВСЮ важную информацию из текущего саммари
-- Добавь новые факты и решения из новых сообщений
-- Если новые сообщения противоречат саммари — используй новую информацию
-- Убери устаревшие пункты, если они были закрыты в новых сообщениях
-- Сохрани компактный формат`, currentSummary, newConversation)
-    }
+**1. System prompt стабилен внутри Run.** Все динамические данные — в tool results, в Notes, или в первое user-сообщение фрейма. Подробно — [Глава 12: Live state без мутации system prompt](../12-agent-memory/README.md#live-state-без-мутации-system-prompt).
 
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: "gpt-4o-mini",
-        Messages: []openai.ChatCompletionMessage{
-            {Role: "system", Content: "Ты обновляешь саммари разговора. Будь точным и кратким."},
-            {Role: "user", Content: prompt},
-        },
-        Temperature: 0,
-    })
-    if err != nil {
-        return currentSummary, err // При ошибке сохраняем старое саммари
-    }
-    return resp.Choices[0].Message.Content, nil
-}
-```
+**2. Стабильные включения фиксируйте один раз.** Дата, рабочая директория, режим (`debug` / `prod`) — записываете в system prompt при старте Run и больше не трогаете.
 
-### Использование в LayeredContext
+**3. Хочется «warning» при переполнении — кладите в user, не в system.** Если очень хочется намекнуть модели «начинай закругляться», добавьте короткое предложение в **последнее user-сообщение** очередного фрейма, не мутируйте system. Cache не пострадает.
 
-```go
-func (c *LayeredContext) SummarizeIncremental(ctx context.Context, client *openai.Client) error {
-    if len(c.workingMemory) <= c.maxWorking {
-        return nil
-    }
-
-    // Берём только сообщения, выходящие за рабочую память
-    overflow := c.workingMemory[:len(c.workingMemory)-c.maxWorking]
-
-    // Обновляем саммари инкрементально (не пересуммаризируем всё)
-    updated, err := incrementalSummarize(ctx, client, c.summary, overflow)
-    if err != nil {
-        return err
-    }
-
-    c.summary = updated
-    c.workingMemory = c.workingMemory[len(c.workingMemory)-c.maxWorking:]
-    return nil
-}
-```
-
-**Сравнение затрат:**
-
-| Подход | Токенов на 100-е сообщение | Рост |
-|---|---|---|
-| Полная суммаризация | ~50K (вся история) | O(n²) |
-| Инкрементальная | ~2K (саммари + 10 новых) | O(n) |
-
-## Приоритизация контекста
-
-Когда бюджет токенов ограничен, нужно решить: какие данные важнее. Не всё одинаково ценно — недавние сообщения важнее старых, ошибки важнее успешных результатов.
-
-### Бюджет по слоям
-
-Делим доступные токены между слоями контекста. Фиксированная доля гарантирует, что ни один слой не «съест» весь бюджет:
-
-```go
-// TokenBudget распределяет доступные токены между слоями контекста.
-type TokenBudget struct {
-    Total          int     // Общий бюджет (maxTokens модели - maxOutputTokens)
-    SystemRatio    float64 // Доля для системного промпта (0.10-0.15)
-    FactsRatio     float64 // Доля для фактов (0.10-0.15)
-    SummaryRatio   float64 // Доля для саммари (0.15-0.20)
-    WorkingRatio   float64 // Доля для рабочей памяти (0.50-0.65)
-}
-
-func (b TokenBudget) SystemBudget() int  { return int(float64(b.Total) * b.SystemRatio) }
-func (b TokenBudget) FactsBudget() int   { return int(float64(b.Total) * b.FactsRatio) }
-func (b TokenBudget) SummaryBudget() int { return int(float64(b.Total) * b.SummaryRatio) }
-func (b TokenBudget) WorkingBudget() int { return int(float64(b.Total) * b.WorkingRatio) }
-```
-
-### Динамические пороги бюджета
-
-Статическое распределение бюджета — первый шаг. На практике бюджет отслеживается **динамически** с двумя порогами:
-
-| Порог | Действие | Что инжектируется в system prompt |
-|-------|----------|-----------------------------------|
-| **~75%** | Warning | "Start finishing your current line of work" |
-| **~85%** | Wrap-up | "Stop starting new tool calls. Summarize progress and stop." |
-
-```go
-type BudgetTracker struct {
-    contextSize     int
-    wrapAt          float64 // 0.85
-    wrapRequested   bool
-    lastPromptTokens int
-}
-
-func (b *BudgetTracker) Update(promptTokens int) {
-    b.lastPromptTokens = promptTokens
-    ratio := float64(promptTokens) / float64(b.contextSize)
-    if ratio >= b.wrapAt {
-        b.wrapRequested = true
-    }
-}
-
-func (b *BudgetTracker) Warning() string {
-    ratio := float64(b.lastPromptTokens) / float64(b.contextSize)
-    if ratio >= b.wrapAt {
-        return "Context window is nearly full. Stop starting new tool calls. " +
-               "Summarize your progress and present results."
-    }
-    if ratio >= 0.75 {
-        return "Context window is filling up. Start finishing your current line of work."
-    }
-    return ""
-}
-```
-
-Бюджет **не прерывает цикл принудительно**. Вместо этого предупреждение инжектируется в system prompt, и модель сама решает завершить работу. Это даёт graceful degradation: модель успевает сохранить результаты и передать контекст.
-
-### Скоринг сообщений
-
-Не все сообщения одинаково полезны. Оцениваем важность и отбираем в рамках бюджета:
-
-```go
-// ScoredMessage — сообщение с оценкой важности.
-type ScoredMessage struct {
-    Message    openai.ChatCompletionMessage
-    Score      float64
-    TokenCount int
-}
-
-// scoreMessage оценивает важность сообщения.
-// Высокий скор = сообщение нужно сохранить.
-func scoreMessage(msg openai.ChatCompletionMessage, position, total int) float64 {
-    score := 0.0
-
-    // 1. Свежесть: недавние сообщения важнее (0.0–0.4)
-    recency := float64(position) / float64(total)
-    score += recency * 0.4
-
-    // 2. Роль: ответы ассистента с tool_calls важнее обычного текста
-    if msg.Role == "tool" {
-        score += 0.2 // Результаты вызовов инструментов важны
-    }
-
-    // 3. Содержание: ошибки и важные решения
-    content := strings.ToLower(msg.Content)
-    if strings.Contains(content, "error") || strings.Contains(content, "ошибка") {
-        score += 0.3 // Ошибки важнее обычных сообщений
-    }
-    if strings.Contains(content, "решение") || strings.Contains(content, "выбрали") {
-        score += 0.2 // Решения важно помнить
-    }
-
-    return score
-}
-
-// prioritizeContext собирает контекст с учётом бюджета и приоритетов.
-func prioritizeContext(
-    messages []openai.ChatCompletionMessage,
-    facts []Fact,
-    summary string,
-    budget TokenBudget,
-    counter TokenCounter,
-) []openai.ChatCompletionMessage {
-    var result []openai.ChatCompletionMessage
-
-    // 1. Факты — в рамках бюджета
-    if len(facts) > 0 {
-        factsText := buildFactsText(facts, budget.FactsBudget(), counter)
-        result = append(result, openai.ChatCompletionMessage{
-            Role:    "system",
-            Content: factsText,
-        })
-    }
-
-    // 2. Саммари — обрезаем если не влезает
-    if summary != "" {
-        if counter.Count(summary) > budget.SummaryBudget() {
-            // Саммари слишком длинное — обрезаем по предложениям
-            summary = truncateText(summary, budget.SummaryBudget(), counter)
-        }
-        result = append(result, openai.ChatCompletionMessage{
-            Role:    "system",
-            Content: "Саммари предыдущего разговора:\n" + summary,
-        })
-    }
-
-    // 3. Рабочая память — отбираем по скорингу
-    scored := make([]ScoredMessage, len(messages))
-    for i, msg := range messages {
-        scored[i] = ScoredMessage{
-            Message:    msg,
-            Score:      scoreMessage(msg, i, len(messages)),
-            TokenCount: counter.Count(msg.Content) + 4,
-        }
-    }
-
-    // Последнее сообщение пользователя включаем всегда
-    workingBudget := budget.WorkingBudget()
-    if len(scored) > 0 {
-        last := scored[len(scored)-1]
-        workingBudget -= last.TokenCount
-    }
-
-    // Остальные сообщения — по убыванию скора, пока влезают
-    sort.Slice(scored[:len(scored)-1], func(i, j int) bool {
-        return scored[i].Score > scored[j].Score
-    })
-
-    var selected []ScoredMessage
-    used := 0
-    for _, sm := range scored[:len(scored)-1] {
-        if used+sm.TokenCount > workingBudget {
-            continue
-        }
-        selected = append(selected, sm)
-        used += sm.TokenCount
-    }
-
-    // Восстанавливаем хронологический порядок
-    sort.Slice(selected, func(i, j int) bool {
-        return indexOfMessage(messages, selected[i].Message) <
-            indexOfMessage(messages, selected[j].Message)
-    })
-
-    for _, sm := range selected {
-        result = append(result, sm.Message)
-    }
-
-    // Последнее сообщение — всегда в конце
-    if len(messages) > 0 {
-        result = append(result, messages[len(messages)-1])
-    }
-
-    return result
-}
-```
-
-### Пример бюджета
-
-Для модели с 128K контекстом и `maxOutputTokens = 4096`:
-
-| Слой | Доля | Токены |
-|---|---|---|
-| Системный промпт | 10% | ~12 400 |
-| Факты | 10% | ~12 400 |
-| Саммари | 20% | ~24 800 |
-| Рабочая память | 60% | ~74 300 |
-| **Итого на вход** | 100% | **~123 900** |
-| Ответ модели | — | 4 096 |
-
-## Динамический System Prompt
-
-System prompt занимает токены на **каждой итерации** цикла агента. Если он статичен и длинен, это постоянный налог на бюджет. Решение: адаптировать system prompt к текущему состоянию.
-
-### Экономия на повторных итерациях
-
-На первой итерации агенту нужны подробные инструкции: как работать с файлами, как планировать, как декомпозировать задачу. На последующих итерациях — эти секции можно убрать:
-
-```go
-type PromptSection struct {
-    Name     string
-    Content  string
-    Tags     []string // "always", "first_turn", "has_plan", "workflow:debug"
-    Priority int      // 0 = обязательная, 99 = необязательная
-    Required bool
-}
-
-func buildSystemPrompt(sections []PromptSection, iter int, budget int) string {
-    activeTags := []string{"always"}
-    if iter == 0 {
-        activeTags = append(activeTags, "first_turn")
-    }
-
-    var active []PromptSection
-    for _, s := range sections {
-        if s.matchesTags(activeTags) {
-            active = append(active, s)
-        }
-    }
-
-    // Если не влезает — убираем необязательные по приоритету
-    sort.Slice(active, func(i, j int) bool {
-        return active[i].Priority < active[j].Priority
-    })
-
-    var result strings.Builder
-    used := 0
-    for _, s := range active {
-        tokens := estimateTokens(s.Content)
-        if !s.Required && used+tokens > budget {
-            continue
-        }
-        result.WriteString(s.Content + "\n\n")
-        used += tokens
-    }
-    return result.String()
-}
-```
-
-На итерациях > 0 отключаются секции с тегом `first_turn` (how-to-work, decomposition, file workflows). Экономия: ~1500 токенов на каждой итерации.
+**4. Условные «знания» — лучше через tool, чем через условный prompt.** Если хочется на этапе анализа добавить SOP, а на этапе действия — не показывать, оформите SOP как `tool` (`get_sop("incident_diagnosis")`) и пусть модель сама вызывает. Tool result добавляется в хвост — кэш не страдает.
 
 ### Правило 20-25%
 
-System prompt не должен превышать ~20-25% контекстного окна. Для модели с 128K это ~25-32K токенов. Если system prompt разрастается (Skills, Working Memory, Routing Hints), необязательные секции убираются по приоритету — от высокого к низкому.
+System prompt не должен превышать ~20-25% контекстного окна. Для 128K — ~25-32K токенов. Если разрастается — режьте **базовую версию** на старте, а не «между итерациями». Live state не кладите вообще никогда — это [Ошибка 6 из Главы 12](../12-agent-memory/README.md#ошибка-6-live-state-в-system-prompt).
 
 ## Типовые ошибки
 
-### Ошибка 1: Нет саммаризации
+### Ошибка 1: Динамический system prompt
 
-**Симптом:** Контекст растёт бесконечно, достигая лимитов токенов.
+**Симптом:** Стоимость Run в 4-5 раз выше ожидаемой; cache hit ratio в логах провайдера около 5%.
 
-**Причина:** Никогда не саммаризируются старые разговоры.
-
-**Решение:** Реализуйте периодическую саммаризацию, когда рабочая память превышает порог.
-
-### Ошибка 2: Слишком агрессивная саммаризация
-
-**Симптом:** Важные детали потеряны в саммари, агент делает ошибки.
-
-**Причина:** Саммари слишком сжата, факты не извлечены.
-
-**Решение:** Извлекайте факты перед саммаризацией, сохраняйте их отдельно.
-
-### Ошибка 3: Нет отбора фактов
-
-**Симптом:** Включение нерелевантных фактов тратит токены.
-
-**Причина:** Включение всех фактов независимо от релевантности.
-
-**Решение:** Оценивайте факты по важности, включайте только высокооценённые факты.
-
-### Ошибка 4: Предпочтения включены как факты
-
-**Симптом:** Модель смещает ответ в сторону предпочтений пользователя, даже если фактические данные указывают на другое.
-
-**Причина:** Предпочтения пользователя или гипотезы включены в контекст как факты без различения типов.
+**Причина:** System prompt пересобирается на каждой итерации (включается `current_time`, текущий план, прочитанные файлы, динамические секции по итерации).
 
 **Решение:**
-```go
-// ХОРОШО: Различаем типы
-fact := Fact{
-    Key:   "user_thinks_db_problem",
-    Value: "Пользователь предполагает проблему в БД",
-    Type:  "hypothesis", // Не "fact"!
-}
 
-// При сборке контекста для аналитической задачи:
-if !includePreferences {
-    // Исключаем гипотезы и предпочтения
-    if fact.Type == "fact" || fact.Type == "constraint" {
-        includeInContext(fact)
-    }
-}
+```go
+// BAD: cache miss каждой итерации
+sys := fmt.Sprintf(`You are an agent. Current time: %s. Files read: %v. Iteration: %d`,
+    time.Now(), filesRead, iteration)
+
+// GOOD: стабильный префикс
+sys := `You are an agent. Use tools to read files when needed.`
+// А current_time / filesRead / iteration агенту покажет следующее user-сообщение или tool result.
 ```
 
-**Практика:** Для аналитических задач (инциденты, диагностика) исключайте предпочтения и гипотезы из контекста. Включайте их только для персонализированных ответов (например, рекомендации на основе предпочтений пользователя).
+### Ошибка 2: Live state в system prompt
 
-### Ошибка 5: Повторная конденсация уже сжатого контекста
+**Симптом:** Те же 4-5x перерасхода + при каждом новом tool call cache hit падает до нуля.
 
-**Симптом:** После второй конденсации агент теряет критический контекст — забывает цель задачи, путает файлы, повторяет действия.
+**Причина:** Прогресс задачи (`Read files: a.go, b.go, c.go`) обновляется в system prompt после каждого tool call.
 
-**Причина:** Condense вызывается повторно на уже сжатом контексте. Каждая итерация теряет детали экспоненциально.
+**Решение:** Live state живёт в tool results / в последнем user-сообщении / в Notes — то есть **в хвосте истории**. Префикс не трогаем. Подробный разбор — [Глава 12: Live state без мутации system prompt](../12-agent-memory/README.md#live-state-без-мутации-system-prompt).
 
-**Решение:** Ограничьте condense до **1 раза за Run**. При повторном overflow — завершайте работу с сохранением прогресса:
+### Ошибка 3: Скоринг важности и переупорядочивание
+
+**Симптом:** Провайдер возвращает `400 Bad Request: tool_use without matching tool_result` (или зеркальную ошибку).
+
+**Причина:** «Умный» алгоритм оценил часть `tool` сообщений как «неважные» и выкинул их, оставив `assistant` с висящими `tool_calls`.
+
+**Решение:** Не делайте скоринг сообщений и переупорядочивание. Используйте **condense** — он заменяет всю старую часть на текстовый summary, и проблема разрыва пар `tool_call ↔ tool_result` исчезает по построению.
+
+### Ошибка 4: Повторная конденсация уже сжатого контекста
+
+**Симптом:** После 2-3 condense агент забывает цель задачи, путает файлы, повторяет действия.
+
+**Причина:** Condense вызывается каждый раз при overflow, без лимита.
+
+**Решение:**
 
 ```go
-// ПЛОХО: неограниченная конденсация
+// BAD: бесконечная конденсация
 for {
     resp, err := llm.Chat(ctx, messages)
     if isContextOverflow(err) {
-        messages = condense(ctx, messages) // каждый раз хуже
-        continue
-    }
-}
-
-// ХОРОШО: максимум 1 раз
-condenseCount := 0
-for {
-    resp, err := llm.Chat(ctx, messages)
-    if isContextOverflow(err) && condenseCount == 0 {
         messages = condense(ctx, messages)
-        condenseCount++
         continue
     }
+}
+
+// GOOD: максимум 1 раз за Run, дальше — wrapUp
+condenseDone := false
+for {
+    resp, err := llm.Chat(ctx, messages)
     if isContextOverflow(err) {
-        return wrapUpAndSaveProgress() // не конденсируем повторно
+        if condenseDone {
+            return wrapUpAndSaveProgress()
+        }
+        messages = condense(ctx, messages)
+        condenseDone = true
+        continue
     }
 }
 ```
+
+### Ошибка 5: Подсчёт токенов через `len(content)/3`
+
+**Симптом:** Condense не запускается до самого overflow, или наоборот — запускается, когда контекст занят на 30%.
+
+**Причина:** Используете char-based оценку («3 символа = 1 токен»). Для русского реальный коэффициент — 1.5-2x от этой оценки, для кода — 0.5x. Ошибка ±50%.
+
+**Решение:** Берите `usage.PromptTokens` из ответа провайдера на предыдущий запрос. Это **факт**, посчитанный самим провайдером, и достаётся бесплатно. Подробнее — [Глава 12, Ошибка 7](../12-agent-memory/README.md#ошибка-7-оценка-токенов-через-char3).
+
+### Ошибка 6: Хардкод-словарь моделей в коде
+
+**Симптом:** При смене модели агент работает «как-то не так» — упирается в overflow раньше, чем должен, или поздно начинает condense.
+
+**Причина:** Словарь типа `var ModelLimits = map[string]int{"gpt-4o": 128000, ...}` не обновили под новую модель, и она получила дефолтное значение `4096`.
+
+**Решение:** Берите лимит из каталога моделей вашего SDK (см. раздел [Лимиты моделей](#лимиты-моделей) выше). В одном месте, не размазывайте по коду.
 
 ## Мини-упражнения
 
-### Упражнение 1: Реализуйте саммаризацию
+### Упражнение 1: BeforeNextRequest
 
-Создайте функцию, которая саммаризирует историю разговора:
+Реализуйте функцию, которая решает, нужно ли запускать condense **до** очередного запроса.
 
 ```go
-func summarizeConversation(messages []openai.ChatCompletionMessage) (string, error) {
-    // Используйте LLM для создания саммари
+type Run struct {
+    contextWindow int
+    lastTokens    int
+    condenseDone  bool
+}
+
+func (r *Run) ShouldCondense() bool {
+    // ваш код
 }
 ```
 
 **Ожидаемый результат:**
-- Саммари сохраняет ключевые факты
-- Значительно уменьшает количество токенов
-- Можно восстановить основные моменты
+- Возвращает `true`, если `lastTokens / contextWindow >= 0.80` и condense ещё не был.
+- Возвращает `false` во всех остальных случаях.
+- Никаких счётчиков сообщений, никаких слоёв.
+
+### Упражнение 2: Реактивный condense на overflow
+
+Допишите цикл, чтобы при `ContextOverflowError` он один раз делал condense и повторял запрос, а во второй раз — выходил с `wrapUp`.
+
+```go
+for {
+    resp, err := client.Chat(ctx, mem.Snapshot())
+    // ваш код
+}
+```
+
+**Ожидаемый результат:**
+- Condense вызывается максимум 1 раз за Run.
+- При повторном overflow — `wrapUp`, не повторный condense.
+- При не-overflow ошибках — пробрасывается выше, не «лечится» condense'ом.
+
+### Упражнение 3: Перенос фактов из system в user
+
+Дано: код, где факты из долгой памяти добавлялись отдельным `system`-сообщением и переписывались на каждой итерации. Задача: перенести так, чтобы факты попадали в **первое user-сообщение Run** и больше не менялись (если набор фактов меняется внутри Run — это сигнал, что вам нужен `recall`-tool, а не мутация контекста).
+
+**Ожидаемый результат:**
+- В коде один `system`-message за Run, неизменный.
+- Факты добавляются ровно в первое `user`-сообщение Run.
+- Cache hit ratio в логах провайдера растёт.
 
 ## Критерии сдачи / Чек-лист
 
-**Сдано:**
-- [x] Понимаете слои контекста
-- [x] Можете саммаризировать разговоры
-- [x] Извлекаете и сохраняете факты
-- [x] Управляете контекстом в пределах лимитов токенов
-- [x] Знаете 4 уровня прогрессивного сжатия
-- [x] Понимаете, как работает condensation prompt
+✅ **Сдано:**
+- [x] Понимаете 4 слоя контекста как **ментальную модель**, а не как 4 отдельных `system`-сообщения
+- [x] Берёте `usage.PromptTokens` от провайдера как первичный источник числа токенов
+- [x] Лимиты моделей живут в одном месте (каталог/конфиг), а не разбросаны по коду
+- [x] Сжатие — один порог запуска (threshold или overflow), один лимит (1 раз за Run)
+- [x] Condense — полная замена истории, summary как `user`, хвост из последних 3-5 сообщений нетронут
+- [x] System prompt стабилен внутри Run (live state — вне system, см. [Глава 12](../12-agent-memory/README.md#live-state-без-мутации-system-prompt))
+- [x] Понимаете trade-off: «адаптивный prompt» против prompt cache почти всегда проигрывает по деньгам
+- [x] Знаете, что при повторном overflow делается `wrapUp`, а не повторный condense
 
-**Не сдано:**
-- [ ] Нет саммаризации, контекст растёт бесконечно
-- [ ] Слишком агрессивная саммаризация, потеря фактов
-- [ ] Нет отбора фактов, трата токенов
-- [ ] Повторная конденсация уже сжатого контекста
+❌ **Не сдано:**
+- [ ] Контекст растёт бесконечно — нет condense по threshold
+- [ ] Condense вызывается повторно на уже сжатом контексте (детали теряются экспоненциально)
+- [ ] Динамический system prompt меняется на каждой итерации (cache miss)
+- [ ] Live state (прогресс, прочитанные файлы, текущая дата на каждой итерации) лежит в `system`
+- [ ] Скоринг важности и переупорядочивание сообщений — рвёт цепочки `tool_call ↔ tool_result`
+- [ ] Подсчёт токенов через `len(content)/3` вместо `usage.PromptTokens`
+- [ ] Хардкод-словарь моделей в коде — устаревает быстрее, чем код обновляют
+- [ ] «Слои с долями» (`SystemRatio: 0.10, FactsRatio: 0.10 ...`) — это иллюзия контроля, а не контроль
+
+## Для любопытных
+
+> Этот раздел — для тех, кому всё-таки хочется глубже. Можно пропустить.
+
+### Почему один порог, а не два
+
+В литературе часто встречается каскад «warning at 75% → condense at 80% → wrap-up at 90%». На практике с условием `usage.PromptTokens >= contextWindow * 0.80` один порог покрывает все случаи, потому что:
+
+- К моменту, когда вы достигли 80%, у вас уже **точная** информация о потреблении (из последнего `usage`). Никакой неопределённости, для которой нужен «warning» как отдельный уровень.
+- Warning через мутацию system prompt — антипаттерн (cache miss). Через мутацию assistant — тоже плохая идея (модель видит чужой «голос»). Остаётся вставлять в user — и тогда это уже не отдельный уровень, а просто «добавили строчку в очередное user-сообщение».
+- Wrap-up — это не уровень сжатия, а **исход**. Он не уменьшает контекст, он сохраняет состояние и завершает Run. Логически он стоит **после** condense, не параллельно ему.
+
+### Что насчёт block-памяти и recall
+
+Если у вас агент с REPL-подобным взаимодействием (один сложный запрос → один большой результат → следующий запрос), может быть полезна **блочная память** с tool `recall`: история каталогизируется по «блокам», в активный контекст идут summary, а полное содержимое блока подгружается по запросу модели. Это уже не базовый случай; разбор — в [Главе 12: Block Memory](../12-agent-memory/README.md).
+
+### Когда контекст реально не помещается
+
+Если задача такая большая, что 128K не хватает даже после condense, — это сигнал не «оптимизировать сжатие», а **разбить задачу на под-Run** (см. [Главу 09: Architecture](../09-agent-architecture/README.md)). Каждый под-Run работает в своём контексте, итог сохраняется в долговременную память или в файл, верхний уровень потом собирает результаты. Так делают все продакшен-агенты, способные работать с большими кодовыми базами.
 
 ## Связь с другими главами
 
-- **[Глава 11: State Management](../11-state-management/README.md)** — Состояние задачи используется при сборке контекста
-- **[Глава 12: Системы Памяти Агента](../12-agent-memory/README.md)** — Факты из памяти используются в контексте (хранение/извлечение описано там)
-- **[Глава 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md)** — Бюджеты токенов управляют политиками отбора контекста
+- **[Глава 04: Автономность и циклы](../04-autonomy-and-loops/README.md)** — простой loop, в который встроены `BeforeNextRequest` и реакция на overflow
+- **[Глава 11: State Management](../11-state-management/README.md)** — `wrapUp` сохраняет состояние через checkpoint
+- **[Глава 12: Системы Памяти Агента](../12-agent-memory/README.md)** — линейная память, факты в user, live state без мутации system, recall для блочной памяти
+- **[Глава 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md)** — стабильность префикса, prompt cache, стоимость condense
 
-**ВАЖНО:** Context Engineering фокусируется на **сборке контекста** из различных источников (память, состояние, retrieval). Хранение данных описано в соответствующих главах (Memory, State Management, RAG).
+**Важно:** Context Engineering — это про **сборку контекста для одного запроса**. Хранение знаний между сессиями описано в Memory; постоянные данные (схемы, политики) — в State Management; внешний поиск — в RAG.
 
 ## Что дальше?
 
 После освоения context engineering переходите к:
-- **[14. Экосистема и Фреймворки](../14-ecosystem-and-frameworks/README.md)** — Узнайте о фреймворках для агентов
+- **[14. Экосистема и Фреймворки](../14-ecosystem-and-frameworks/README.md)** — обзор популярных фреймворков для агентов и где они помогают, а где мешают.
 
+---
 
+**Навигация:** [← Глава 12: Память](../12-agent-memory/README.md) | [Оглавление](../README.md) | [Глава 14: Экосистема →](../14-ecosystem-and-frameworks/README.md)

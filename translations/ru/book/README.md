@@ -26,8 +26,8 @@
 - **[09. Анатомия Агента](./09-agent-architecture/README.md)** — Memory, Tools, Planning, Runtime
 - **[10. Planning и Workflow-паттерны](./10-planning-and-workflows/README.md)** — Plan→Execute, Plan-and-Revise, декомпозиция задач, DAG/workflow, условия остановки
 - **[11. State Management](./11-state-management/README.md)** — Идемпотентность инструментов, retries с экспоненциальным backoff, дедлайны, persist state, возобновление задач
-- **[12. Системы Памяти Агента](./12-agent-memory/README.md)** — Кратковременная/долговременная память, episodic/semantic память, забывание/TTL, верификация памяти, storage/retrieval
-- **[13. Context Engineering](./13-context-engineering/README.md)** — Слои контекста, политики отбора фактов, саммаризация, бюджеты токенов, сборка контекста из state+memory+retrieval
+- **[12. Системы Памяти Агента](./12-agent-memory/README.md)** — Два горизонта памяти (рабочая в Run vs долгосрочная между сессиями), линейная история как иммутабельный лог, prompt cache и почему system prompt стабилен, compact vs condense vs recall, опциональная блочная память
+- **[13. Context Engineering](./13-context-engineering/README.md)** — Стабильный системный префикс, единый порог и одна реакция (condense с лимитом 1/Run), `usage.PromptTokens` как первичный источник, ошибки оверинжиниринга (LayeredContext, скоринг сообщений, динамический system prompt)
 - **[14. Экосистема и Фреймворки](./14-ecosystem-and-frameworks/README.md)** — Выбор между собственным runtime и фреймворками, portability, избежание vendor lock-in
 
 ### Часть IV: Практика (кейсы/практики)
@@ -60,7 +60,7 @@
 
 ### Для начинающих (рекомендуемый путь — practice-first)
 
-1. **Начните с [Предисловия](./00-preface/README.md)** — узнайте, что такое агент и как работать с руководством
+1. **Начните с [Предисловия](./00-preface/README.md)** — что такое агент, уравнение `Brain + Tools + Memory + Planning`, и **обязательно** раздел [«Ментальная модель: агент — это новый сотрудник»](./00-preface/README.md#ментальная-модель-агент--это-новый-сотрудник). Без неё security-главы будут читаться как «специальная LLM-машинерия» вместо «здравый смысл, который вы уже знаете».
 2. **Изучите [Физику LLM](./01-llm-fundamentals/README.md)** — фундамент для понимания всего остального
 3. **Освойте [Промптинг](./02-prompt-engineering/README.md)** — это основа работы с агентами
 4. **Соберите работающего агента:**
@@ -75,15 +75,17 @@
     - [Анатомия Агента](./09-agent-architecture/README.md) — компоненты и их взаимодействие
     - [Planning и Workflow-паттерны](./10-planning-and-workflows/README.md) — планирование сложных задач
     - [State Management](./11-state-management/README.md) — надёжность выполнения
-    - [Системы Памяти Агента](./12-agent-memory/README.md) — долговременная память
-    - [Context Engineering](./13-context-engineering/README.md) — управление контекстом
+    - [Системы Памяти Агента](./12-agent-memory/README.md) — линейная память в Run, долгосрочная между сессиями, prompt cache
+    - [Context Engineering](./13-context-engineering/README.md) — стабильный префикс, condense при переполнении, отказ от оверинжиниринга
 7. **Практикуйтесь:** Проходите лабораторные работы параллельно с чтением глав
 
 ### Для опытных программистов
 
 Можете пропустить базовые главы и сразу перейти к:
+- [Предисловие → Ментальная модель: агент — это новый сотрудник](./00-preface/README.md#ментальная-модель-агент--это-новый-сотрудник) — 5 минут, объясняет всю security-часть курса одной идеей
 - [Инструменты и Function Calling](./03-tools-and-function-calling/README.md)
 - [Автономность и Циклы](./04-autonomy-and-loops/README.md)
+- [Системы Памяти Агента](./12-agent-memory/README.md) и [Context Engineering](./13-context-engineering/README.md) — память и контекст без оверинжиниринга
 - [Кейсы](./15-case-studies/README.md) — для понимания реальных применений
 
 ### Быстрый трек: Основные концепции за 10 минут
@@ -97,7 +99,13 @@
     - Memory — это история и долговременное хранилище
     - Planning — это способность разбить задачу на шаги
 
-2. **Как работает цикл агента?**
+2. **Ментальная модель (важнее, чем вам сейчас кажется):**
+    - Агент — это **новый сотрудник на испытательном сроке**, не «новый софт».
+    - Доступы по роли, апрув для опасного, audit log, постепенное расширение доверия — то же самое, что для человека.
+    - Четыре асимметрии (где модель «как с человеком» ломается): скорость в 1000× быстрее, параллелизм, отсутствие чувства последствий, prompt injection как социальная инженерия.
+    - Подробно: [Предисловие → Ментальная модель](./00-preface/README.md#ментальная-модель-агент--это-новый-сотрудник).
+
+3. **Как работает цикл агента?**
     ```
     While (задача не решена):
       1. Отправить историю в LLM
@@ -106,13 +114,15 @@
       4. Если текст → показать пользователю и остановиться
     ```
 
-3. **Ключевые моменты:**
+4. **Ключевые моменты:**
     - LLM не выполняет код. Она генерирует JSON с запросом на выполнение.
     - Runtime (ваш код) выполняет реальные функции Go.
     - LLM не "помнит" прошлое. Она видит его в `messages[]`, который собирает Runtime.
     - Temperature = 0 для детерминированного поведения агентов.
+    - История — иммутабельный лог, system prompt стабилен между итерациями (иначе теряется prompt cache, см. [гл. 12](./12-agent-memory/README.md), [гл. 13](./13-context-engineering/README.md)).
+    - Число токенов берите из `usage.PromptTokens` ответа провайдера, не из своих счётчиков.
 
-4. **Минимальный пример:**
+5. **Минимальный пример:**
     ```go
     // 1. Определяем инструмент
     tools := []openai.Tool{{
@@ -145,10 +155,11 @@
     }
     ```
 
-5. **Что читать дальше:**
+6. **Что читать дальше:**
     - [Глава 03: Инструменты](./03-tools-and-function-calling/README.md) — детальный протокол
     - [Глава 04: Автономность](./04-autonomy-and-loops/README.md) — цикл агента
     - [Глава 09: Анатомия Агента](./09-agent-architecture/README.md) — архитектура
+    - [Глава 12: Память Агента](./12-agent-memory/README.md) и [Глава 13: Context Engineering](./13-context-engineering/README.md) — без оверинжиниринга
 
 ### После завершения основного курса
 
@@ -174,8 +185,8 @@
 | [10. Planning и Workflow-паттерны](./10-planning-and-workflows/README.md) | [Lab 10](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab10-planning-workflows) (Planning & Workflow) |
 | [11. State Management](./11-state-management/README.md) | [Lab 10](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab10-planning-workflows) (Planning & Workflow) — частично |
 | [12. Системы Памяти Агента](./12-agent-memory/README.md), [13. Context Engineering](./13-context-engineering/README.md) | [Lab 11](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab11-memory-context) (Memory & Context Engineering) |
-| [18. Протоколы Инструментов и Tool Servers](./18-tool-protocols-and-servers/README.md) | [Lab 12](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab12-tool-server) (Tool Server Protocol) |
-| [17. Security и Governance](./17-security-and-governance/README.md) | [Lab 13](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab13-tool-retrieval) (Agent Security Hardening) — Опционально |
+| [18. Протоколы Инструментов и Tool Servers](./18-tool-protocols-and-servers/README.md) | [Lab 12](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab12-tool-server) (Tool Server Protocol), [Lab 13](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab13-tool-retrieval) (Tool Retrieval & Pipelines) — Опционально |
+| [17. Security и Governance](./17-security-and-governance/README.md) | — (читается как теория-капстоун; практику безопасности встроена в Lab 02 / Lab 05 / Lab 12) |
 | [22. Prompt и Program Management](./22-prompt-program-management/README.md) | [Lab 01](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab01-basics) (Basics) — частично |
 
 ---

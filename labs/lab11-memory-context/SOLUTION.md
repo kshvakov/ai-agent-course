@@ -1,18 +1,21 @@
-# Lab 11 Solution: Memory and Context Management
+# Solution: Lab 11 — Memory and Context Management
 
-## 📝 Solution Breakdown
+## Walkthrough
 
-### Key Points
+What the lab teaches:
 
-1. **Fact extraction:** Use LLM to extract only important facts (importance >= 5).
+1. **In-Run condense** — once per Run, on `usage.PromptTokens > 80%` or reactively on overflow.
+2. **Long-term memory as tools** — `memory_save`, `memory_recall`, `memory_delete`. No layers in the system prompt.
+3. **Preserving `tool_call ↔ tool_result` pairs** when compressing history.
 
-2. **Summarization:** Preserve important facts in summarization prompt.
+What we **don't** do (and why is spelled out in [Ch. 13](../../book/13-context-engineering/README.md#common-errors)):
 
-3. **Context layers:** Assemble context from System + Facts + Summary + Working Memory.
+- LayeredContext (Facts/Summary/Working).
+- Auto-extraction of "facts" from every message.
+- A dynamic system prompt with state.
+- Message scoring and reordering.
 
-4. **Relevant search:** Extract facts based on current query.
-
-### 🔍 Complete Solution
+## Full solution
 
 ```go
 package main
@@ -20,247 +23,326 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sashabaranov/go-openai"
 )
 
-type MemoryItem struct {
-	Key        string
-	Value      string
-	Importance int
-	Timestamp  int64
+// ---------------------- long-term memory ----------------------
+
+type Entry struct {
+	Key       string    `json:"key"`
+	Value     string    `json:"value"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
-type Memory interface {
-	Store(key string, value any, importance int) error
-	Retrieve(query string, limit int) ([]MemoryItem, error)
-	Forget(key string) error
+type Store interface {
+	Save(ctx context.Context, key, value string) error
+	Recall(ctx context.Context, query string) ([]Entry, error)
+	Delete(ctx context.Context, key string) error
 }
 
-type Fact struct {
-	Key        string `json:"key"`
-	Value      string `json:"value"`
-	Importance int    `json:"importance"`
+type FileStore struct {
+	mu      sync.Mutex
+	path    string
+	entries []Entry
 }
 
-type FileMemory struct {
-	items []MemoryItem
-	file  string
-}
-
-func NewFileMemory(file string) *FileMemory {
-	m := &FileMemory{
-		items: []MemoryItem{},
-		file:  file,
-	}
-	m.load()
-	return m
-}
-
-func (m *FileMemory) load() {
-	data, err := os.ReadFile(m.file)
+func NewFileStore(path string) (*FileStore, error) {
+	s := &FileStore{path: path}
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return
+		if errors.Is(err, os.ErrNotExist) {
+			return s, nil
+		}
+		return nil, err
 	}
-	json.Unmarshal(data, &m.items)
+	if len(data) == 0 {
+		return s, nil
+	}
+	if err := json.Unmarshal(data, &s.entries); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	return s, nil
 }
 
-func (m *FileMemory) save() error {
-	data, err := json.MarshalIndent(m.items, "", "  ")
+func (s *FileStore) Save(_ context.Context, key, value string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	for i := range s.entries {
+		if s.entries[i].Key == key {
+			s.entries[i].Value = value
+			s.entries[i].CreatedAt = now
+			return s.flush()
+		}
+	}
+	s.entries = append(s.entries, Entry{Key: key, Value: value, CreatedAt: now})
+	return s.flush()
+}
+
+func (s *FileStore) Recall(_ context.Context, query string) ([]Entry, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	q := strings.ToLower(query)
+	var hits []Entry
+	for _, e := range s.entries {
+		if q == "" || strings.Contains(strings.ToLower(e.Key+" "+e.Value), q) {
+			hits = append(hits, e)
+			if len(hits) >= 5 {
+				break
+			}
+		}
+	}
+	return hits, nil
+}
+
+func (s *FileStore) Delete(_ context.Context, key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := s.entries[:0]
+	for _, e := range s.entries {
+		if e.Key != key {
+			out = append(out, e)
+		}
+	}
+	s.entries = out
+	return s.flush()
+}
+
+func (s *FileStore) flush() error {
+	data, err := json.MarshalIndent(s.entries, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(m.file, data, 0644)
+	return os.WriteFile(s.path, data, 0o644)
 }
 
-func (m *FileMemory) Store(key string, value any, importance int) error {
-	item := MemoryItem{
-		Key:        key,
-		Value:      fmt.Sprintf("%v", value),
-		Importance: importance,
-		Timestamp:  time.Now().Unix(),
-	}
-	m.items = append(m.items, item)
-	return m.save()
+// ---------------------- Run + condense ----------------------
+
+type Run struct {
+	messages     []openai.ChatCompletionMessage
+	lastTokens   int
+	contextMax   int
+	condenseDone bool
+
+	client *openai.Client
+	model  string
+	tools  []openai.Tool
+	store  Store
 }
 
-func (m *FileMemory) Retrieve(query string, limit int) ([]MemoryItem, error) {
-	var results []MemoryItem
-	queryLower := strings.ToLower(query)
-
-	for _, item := range m.items {
-		if strings.Contains(strings.ToLower(item.Value), queryLower) ||
-			strings.Contains(strings.ToLower(item.Key), queryLower) {
-			results = append(results, item)
-		}
+func NewRun(client *openai.Client, model string, contextMax int, store Store, systemPrompt string, tools []openai.Tool) *Run {
+	return &Run{
+		client:     client,
+		model:      model,
+		contextMax: contextMax,
+		store:      store,
+		tools:      tools,
+		messages: []openai.ChatCompletionMessage{
+			{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
+		},
 	}
+}
 
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Importance > results[j].Importance
+func (r *Run) Step(ctx context.Context, userInput string) (string, error) {
+	r.messages = append(r.messages, openai.ChatCompletionMessage{
+		Role: openai.ChatMessageRoleUser, Content: userInput,
 	})
 
-	if len(results) > limit {
-		results = results[:limit]
-	}
+	for {
+		if r.lastTokens > 0 && float64(r.lastTokens) > float64(r.contextMax)*0.80 {
+			if err := r.condense(ctx); err != nil {
+				return "", err
+			}
+		}
 
-	return results, nil
-}
+		resp, err := r.callLLM(ctx)
+		if err != nil {
+			if !isContextOverflow(err) {
+				return "", err
+			}
+			if cerr := r.condense(ctx); cerr != nil {
+				return "", cerr
+			}
+			resp, err = r.callLLM(ctx)
+			if err != nil {
+				return "", fmt.Errorf("overflow even after condense: %w", err)
+			}
+		}
 
-func (m *FileMemory) Forget(key string) error {
-	var newItems []MemoryItem
-	for _, item := range m.items {
-		if item.Key != key {
-			newItems = append(newItems, item)
+		r.lastTokens = resp.Usage.PromptTokens
+		msg := resp.Choices[0].Message
+		r.messages = append(r.messages, msg)
+
+		if len(msg.ToolCalls) == 0 {
+			return msg.Content, nil
+		}
+
+		for _, tc := range msg.ToolCalls {
+			result := r.dispatchTool(ctx, tc)
+			r.messages = append(r.messages, openai.ChatCompletionMessage{
+				Role:       openai.ChatMessageRoleTool,
+				ToolCallID: tc.ID,
+				Name:       tc.Function.Name,
+				Content:    result,
+			})
 		}
 	}
-	m.items = newItems
-	return m.save()
 }
 
-func extractFacts(ctx context.Context, client *openai.Client, conversation string) ([]Fact, error) {
-	prompt := fmt.Sprintf(`Extract important facts from this conversation.
-
-Conversation:
-%s
-
-Return facts in JSON format:
-{
-  "facts": [
-    {"key": "user_name", "value": "Ivan", "importance": 10},
-    {"key": "company", "value": "TechCorp", "importance": 8}
-  ]
-}
-
-Importance: 1-10, where 10 is very important (user name, preferences),
-1-3 is temporary information (server status). Extract only facts with importance >= 5.`, conversation)
-
-	resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model: "gpt-4o-mini",
-		Messages: []openai.ChatCompletionMessage{
-			{Role: "user", Content: prompt},
-		},
+func (r *Run) callLLM(ctx context.Context) (openai.ChatCompletionResponse, error) {
+	return r.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+		Model:       r.model,
+		Messages:    r.messages,
+		Tools:       r.tools,
 		Temperature: 0,
 	})
+}
+
+func (r *Run) condense(ctx context.Context) error {
+	if r.condenseDone || len(r.messages) < 6 {
+		return nil
+	}
+
+	system := r.messages[0]
+	tail := safeTail(r.messages, 4)
+	head := r.messages[1 : len(r.messages)-len(tail)]
+
+	summary, err := r.summarize(ctx, head)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	var data struct {
-		Facts []Fact `json:"facts"`
-	}
-	if err := json.Unmarshal([]byte(resp.Choices[0].Message.Content), &data); err != nil {
-		return nil, err
-	}
+	next := make([]openai.ChatCompletionMessage, 0, 2+len(tail))
+	next = append(next, system)
+	next = append(next, openai.ChatCompletionMessage{
+		Role:    openai.ChatMessageRoleUser,
+		Content: "Context of previous work:\n\n" + summary,
+	})
+	next = append(next, tail...)
 
-	return data.Facts, nil
+	r.messages = next
+	r.condenseDone = true
+	return nil
 }
 
-func summarizeConversation(ctx context.Context, client *openai.Client, messages []openai.ChatCompletionMessage) (string, error) {
-	var textParts []string
-	for _, msg := range messages {
-		if msg.Role != openai.ChatMessageRoleSystem && msg.Content != "" {
-			textParts = append(textParts, fmt.Sprintf("%s: %s", msg.Role, msg.Content))
-		}
+// safeTail returns >=N trailing messages, expanding the boundary to the left
+// if the first message in the tail is a tool result without its assistant tool_call in the tail.
+func safeTail(msgs []openai.ChatCompletionMessage, n int) []openai.ChatCompletionMessage {
+	if n > len(msgs)-1 {
+		n = len(msgs) - 1
 	}
-	conversationText := strings.Join(textParts, "\n")
+	start := len(msgs) - n
+	for start > 1 && msgs[start].Role == openai.ChatMessageRoleTool {
+		start--
+	}
+	return msgs[start:]
+}
 
-	prompt := fmt.Sprintf(`Create a brief summary of this conversation, keeping only:
-1. Important decisions made
-2. Key facts discovered (user name, preferences)
-3. Current state of the task
+func (r *Run) summarize(ctx context.Context, head []openai.ChatCompletionMessage) (string, error) {
+	var b strings.Builder
+	for _, m := range head {
+		if m.Content == "" {
+			continue
+		}
+		b.WriteString(string(m.Role))
+		b.WriteString(": ")
+		b.WriteString(m.Content)
+		b.WriteString("\n")
+	}
 
-Conversation:
-%s
-
-Summary (maximum 200 words):`, conversationText)
-
-	resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model: "gpt-4o-mini",
-		Messages: []openai.ChatCompletionMessage{
-			{Role: "user", Content: prompt},
-		},
+	resp, err := r.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+		Model:       r.model,
 		Temperature: 0,
+		Messages: []openai.ChatCompletionMessage{
+			{Role: openai.ChatMessageRoleSystem, Content: `You are compressing the agent's working transcript into a brief handoff for the next step.
+Preserve:
+1. The user's original task.
+2. Decisions already made and the reasoning behind them.
+3. Which files / resources have been read and what's relevant in them.
+4. What still needs to be done.
+Drop pleasantries and chatter.`},
+			{Role: openai.ChatMessageRoleUser, Content: b.String()},
+		},
 	})
 	if err != nil {
 		return "", err
 	}
-
 	return resp.Choices[0].Message.Content, nil
 }
 
-func buildLayeredContext(
-	systemPrompt string,
-	memory Memory,
-	summary string,
-	workingMemory []openai.ChatCompletionMessage,
-	query string,
-) []openai.ChatCompletionMessage {
-	messages := []openai.ChatCompletionMessage{
-		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
-	}
+// ---------------------- tools dispatching ----------------------
 
-	// Facts layer
-	facts, _ := memory.Retrieve(query, 5)
-	if len(facts) > 0 {
-		var factTexts []string
-		for _, fact := range facts {
-			factTexts = append(factTexts, fmt.Sprintf("- %s: %s", fact.Key, fact.Value))
+func (r *Run) dispatchTool(ctx context.Context, tc openai.ToolCall) string {
+	switch tc.Function.Name {
+	case "memory_save":
+		var args struct{ Key, Value string }
+		if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+			return "error: " + err.Error()
 		}
-		messages = append(messages, openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleSystem,
-			Content: "Important facts:\n" + strings.Join(factTexts, "\n"),
-		})
+		if err := r.store.Save(ctx, args.Key, args.Value); err != nil {
+			return "error: " + err.Error()
+		}
+		return "ok"
+
+	case "memory_recall":
+		var args struct{ Query string }
+		if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+			return "error: " + err.Error()
+		}
+		hits, err := r.store.Recall(ctx, args.Query)
+		if err != nil {
+			return "error: " + err.Error()
+		}
+		out, _ := json.Marshal(hits)
+		return string(out)
+
+	case "memory_delete":
+		var args struct{ Key string }
+		if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+			return "error: " + err.Error()
+		}
+		if err := r.store.Delete(ctx, args.Key); err != nil {
+			return "error: " + err.Error()
+		}
+		return "ok"
 	}
-
-	// Summary layer
-	if summary != "" {
-		messages = append(messages, openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleSystem,
-			Content: "Summary of previous conversation:\n" + summary,
-		})
-	}
-
-	// Working memory
-	messages = append(messages, workingMemory...)
-
-	return messages
+	return "unknown tool: " + tc.Function.Name
 }
 
-func main() {
-	token := os.Getenv("OPENAI_API_KEY")
-	baseURL := os.Getenv("OPENAI_BASE_URL")
-	if token == "" {
-		token = "dummy"
+func isContextOverflow(err error) bool {
+	if err == nil {
+		return false
 	}
-
-	config := openai.DefaultConfig(token)
-	if baseURL != "" {
-		config.BaseURL = baseURL
-	}
-	client := openai.NewClientWithConfig(config)
-
-	ctx := context.Background()
-
-	memory := NewFileMemory("memory.json")
-
-	conversation := `Hello! My name is Ivan, I work as a DevOps engineer at TechCorp.
-We have a server on Ubuntu 22.04.
-We use Docker for application containerization.`
-
-	facts, err := extractFacts(ctx, client, conversation)
-	if err != nil {
-		panic(err)
-	}
-
-	for _, fact := range facts {
-		memory.Store(fact.Key, fact.Value, fact.Importance)
-	}
-
-	fmt.Printf("Extracted and stored %d facts\n", len(facts))
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "context_length") ||
+		strings.Contains(msg, "maximum context") ||
+		strings.Contains(msg, "context window")
 }
+
+func jsonSchema(s string) json.RawMessage { return json.RawMessage(s) }
 ```
+
+`main` is the same as the `main.go` in the task (a REPL wrapper around `Run.Step` for interactive checks).
+
+## What to look at on review
+
+- `messages[0]` (system) is **not modified** during the Run. No `system + facts + summary` glue.
+- The "compress" decision is made from `r.lastTokens = resp.Usage.PromptTokens` — this value comes from the provider and is precise.
+- `condense` runs at most once per Run. On the reactive branch, after a second overflow — fail, not "let's try again".
+- `safeTail` shifts the boundary to the left if the tail starts with a `tool` message that has no matching `assistant.tool_call`. An alternative is to keep, on every assistant message, a map `ID → tool_results` and cut only at "assistant without pending tool_calls".
+- Memory — three separate tools. The contents do **not** end up in the system prompt. The agent calls `memory_recall` itself when it needs to.
+- In `summary` we feed only `head` (between system and tail). System doesn't go into the summary — it's already first in the new array.
+
+## Hand check
+
+1. Run a long dialogue so that `usage.PromptTokens` crosses 80% of `contextMax` (you can temporarily lower `contextMax` to 4_000 for a fast trigger). Condition: `condense` fired exactly once, `messages[0]` stayed byte-for-byte the same.
+2. Simulate `ContextOverflowError` — verify that the reactive branch does condense + retry and doesn't enter an infinite loop.
+3. Restart the process. In a new session, ask about a fact you saved earlier — the agent should call `memory_recall` itself and answer.
+4. Verify that the system prompt contains no current time, no "current state", and no memory contents. Only role, rules, and the tool descriptions.

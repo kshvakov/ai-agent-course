@@ -19,6 +19,8 @@ In this chapter, we'll focus on protecting the agent from dangerous actions and 
 
 **Solution:** Human-in-the-Loop requires confirmation before critical actions. The agent asks: "Are you sure you want to delete database prod? This action is irreversible. Enter 'yes' to confirm."
 
+> **Junior employee model.** HITL is a senior's approval for a destructive operation. In any sane onboarding process the new hire is told explicitly "this — only with the mentor's confirmation". For an agent, confirmations and clarifications work the same way, no revolution required: critical actions hand control back to a human, and an agent's mistake doesn't turn into a prod incident. See [Preface → Mental Model](../00-preface/README.md#mental-model-an-agent-is-a-new-employee) and [Ch. 17: Security and Governance](../17-security-and-governance/README.md).
+
 ## Two Types of Human-in-the-Loop
 
 ### 1. Clarification — Magic vs Reality

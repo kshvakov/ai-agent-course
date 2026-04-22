@@ -70,6 +70,12 @@ This section contains reference information: glossary of terms, checklists, SOP 
 
 **See also:** [Chapter 01: LLM Physics](../01-llm-fundamentals/README.md#temperature)
 
+**Prompt Cache** — an optimization on the LLM provider side: an identical `messages[]` prefix (system prompt + first messages) is cached and billed at a 50–90% discount. To hit the cache, the prefix must be **byte-for-byte stable** between requests in the same agent run. Any mutation of the system prompt (inserting the time, dynamic facts) or replacement of early messages busts the cache — iterations become several times more expensive and slower. So dynamic state (current time, facts) goes into the **last** user message or into tool results, not into `messages[0]`.
+
+**Rule:** `messages[0]` (system prompt) is append-only and is not mutated within a single run.
+
+**See also:** [Chapter 12: Agent Memory Systems](../12-agent-memory/README.md), [Chapter 13: Context Engineering](../13-context-engineering/README.md)
+
 ### Prompting Techniques
 
 **Chain-of-Thought (CoT)** — prompting technique "think step by step", forcing the model to generate intermediate reasoning before final answer. Critical for agents solving complex multi-step tasks.
@@ -98,29 +104,42 @@ This section contains reference information: glossary of terms, checklists, SOP 
 
 ### Memory and Context
 
-**Memory (Agent Memory)** — system for storing and retrieving information between conversations. Includes short-term memory (current conversation history) and long-term memory (persistent fact storage).
+**Memory (Agent Memory)** — the set of mechanisms that let the agent retain and use information. In this course we split memory **by horizon**, not by "levels":
+
+- **In-Run** — a linear `messages[]` in the LLM context + at most one `condense` if needed. All in RAM, lives until the end of the Run.
+- **Across Runs in one session** — session-level state (plan, files read, last actions) passed between REPL iterations.
+- **Across sessions** — long-term memory the agent manages itself through tools (`memory_save` / `memory_recall` / `memory_delete`); stored in DB / files.
+
+There is no separate "short-term memory" structure — that role is played by `messages[]` itself.
 
 **See also:** [Chapter 12: Agent Memory Systems](../12-agent-memory/README.md)
 
-**Working Memory** — recent conversation turns that are always included in context. Most relevant for current task. Managed through Context Engineering.
+**Working Memory** — in this course this term means **two different things**, don't confuse them:
 
-**See also:** [Chapter 13: Context Engineering](../13-context-engineering/README.md#context-layers)
+1. **The LLM context within a single Run** — just the **linear `messages[]`** (system + dialogue + tool results) up to the next `condense`. No "layers" (Working/Summary/Facts) on top — that's a deprecated pattern, see Ch. 13 and [Lab 11](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab11-memory-context).
+2. **Session-level state** — plan, files read, last actions, that survive between REPL cycles. This isn't the LLM context, it's a structure serialized to disk and reloaded on restart. See Ch. 11.
 
-**Long-term Memory** — persistent storage of facts, preferences, and past decisions. Stored in database/files and persists between conversations. Can use vector database (RAG) for semantic search.
+**See also:** [Chapter 11: State Management](../11-state-management/README.md#working-memory-as-part-of-state), [Chapter 12: Agent Memory Systems](../12-agent-memory/README.md), [Chapter 13: Context Engineering](../13-context-engineering/README.md)
 
-**See also:** [Chapter 12: Agent Memory Systems](../12-agent-memory/README.md#long-term-memory)
+**Long-term Memory** — persistent storage between sessions: facts, preferences, past decisions. **Principle from this course:** the agent manages long-term memory **itself** through tools (`memory_save` / `recall` / `delete`), not via auto-extraction of facts from every message and not via mutation of the system prompt. Stored in DB / files; for a large corpus — vector search (RAG).
 
-**Episodic Memory** — memory of specific events: "User asked about disk space on 2026-01-06". Useful for debugging and learning.
+**See also:** [Chapter 12: Agent Memory Systems](../12-agent-memory/README.md#long-term-memory-across-sessions), [Lab 11](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab11-memory-context)
 
-**See also:** [Chapter 12: Agent Memory Systems](../12-agent-memory/README.md#episodic-memory)
+**Episodic Memory** — memory of specific events: "user asked about disk space on 2026-01-06". For most agents this is just records in `memory_save` with a date — no separate infrastructure needed. Useful for debugging.
 
-**Semantic Memory** — general knowledge extracted from episodes: "User prefers JSON responses". More abstract than episodic memory.
+**See also:** [Chapter 12: Agent Memory Systems](../12-agent-memory/README.md)
 
-**See also:** [Chapter 12: Agent Memory Systems](../12-agent-memory/README.md#semantic-memory)
+**Semantic Memory** — general knowledge about the environment / user ("prefers JSON responses"). In practice — the same long-term memory records, just more general. No need to build a separate "semantic store".
 
-**Context Engineering** — techniques for efficient context management: context layers (working memory, summaries, facts), summarization of old conversations, selection of relevant facts, adaptive context management.
+**See also:** [Chapter 12: Agent Memory Systems](../12-agent-memory/README.md)
+
+**Context Engineering** — techniques for managing context effectively: counting tokens via `usage.PromptTokens`, a single compression threshold (~80% of the context window), one `condense` per run, and protecting `tool_call ↔ tool_result` pairs during truncation.
 
 **See also:** [Chapter 13: Context Engineering](../13-context-engineering/README.md)
+
+**Condense** — an on-demand operation that summarizes the older part of `messages[]` through a separate LLM call to free room in the context window. Triggered by a single threshold (`lastTokens > contextMax * 0.80` or reactively on `ContextOverflowError`). Principles of a correct `condense`: (1) **the summary is inserted as a `user` message** ("Context of previous work: …"), not as `system` — otherwise the prompt cache breaks and the model gets confused; (2) `safeTail` preserves `tool_call ↔ tool_result` pairs — you can't leave a tool_call without its tool_result or vice versa; (3) limit — one `condense` per run, otherwise the agent loops. See also `Compact` and `Recall`.
+
+**See also:** [Chapter 13: Context Engineering](../13-context-engineering/README.md), [Lab 09](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab09-context-optimization), [Lab 11](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab11-memory-context)
 
 **RAG (Retrieval Augmented Generation)** — technique for augmenting agent context with relevant documents from knowledge base via vector search. Documents are split into chunks, converted to vectors (embeddings), similar vectors are searched on query.
 
@@ -150,6 +169,18 @@ This section contains reference information: glossary of terms, checklists, SOP 
 
 ### Security and Reliability
 
+**Junior-Employee Model** — the central mental model of the course: the agent is a **new employee, an intern**. It can do useful work, but you wouldn't hand it a production root, the ability to send emails to customers, or the right to delete files without confirmation on day one. Four asymmetries make it more dangerous than a human intern: (1) **speed** — thousands of actions per minute, no time for "wait, what am I doing"; (2) **parallelism** — N copies in N sessions in parallel; (3) **no consequences** — no career, no fear of being fired, no "common sense"; (4) **prompt injection as social engineering** — any external text (issue, web page, email) can become an "instruction from the boss". From this follow all the rules: HITL by default for irreversible actions, RBAC per tool, sandboxes, audit, dry-run, rate limits.
+
+**See also:** [Preface: Mental Model](../00-preface/README.md), [Chapter 17: Security and Governance](../17-security-and-governance/README.md)
+
+**Blast Radius** — the breadth of damage from a single agent action if it turns out wrong. A read-only `kubectl get pods` has small radius (just CPU); `kubectl delete deployment` in prod — huge (downtime). The rule: **the larger the radius, the higher the requirements** — HITL, dry-run, separate confirmation, narrow RBAC, separate service account. Used in risk classification of tools (Ch. 03, Ch. 17).
+
+**See also:** [Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md), [Chapter 17: Security and Governance](../17-security-and-governance/README.md)
+
+**Recovery State Machine** — the agent's structured response to an error from the LLM or a tool. Instead of "got an error → blew up", we move into the state `Retry / Backoff / Fallback / Escalate`. Examples: tool returned a 5xx → exponential backoff and retry (idempotent only); LLM returned malformed JSON → ask for repair; the same tool errors out 3 times → switch to fallback / report to the user; critical action without confirmation → escalate to HITL. Without an explicit state machine, the agent gets stuck in retry loops or silently corrupts data.
+
+**See also:** [Chapter 04: Agent Loop and ReAct](../04-agent-loop/README.md), [Chapter 08: Evals and Reliability](../08-evals-and-reliability/README.md), [Chapter 19: Observability and Tracing](../19-observability-and-tracing/README.md)
+
 **Grounding** — anchoring agent to real data through Tools/RAG to avoid hallucinations. Agent must use tools to get facts, not invent them.
 
 **See also:** [Chapter 01: LLM Physics](../01-llm-fundamentals/README.md#hallucinations)
@@ -158,9 +189,9 @@ This section contains reference information: glossary of terms, checklists, SOP 
 
 **See also:** [Chapter 05: Safety and Human-in-the-Loop](../05-safety-and-hitl/README.md)
 
-**Prompt Injection** — attack on agent through input manipulation. Attacker tries to "trick" the prompt to make agent perform unwanted action.
+**Prompt Injection** — attack on agent through input manipulation. **Mental model:** treat it as **social engineering against an intern**. Any external text (issue body, web page, email, file from a download) can become an "instruction from the boss" if it lands in the LLM context. Defense: (1) architectural — never give irreversible tools without HITL; (2) wrap external text in `<external_data>...</external_data>` and instruct the model to treat it as data, not as instructions; (3) allowlist of tools per source; (4) output filtering. Don't rely on a blacklist of "bad words" — it's bypassed in 5 minutes.
 
-**See also:** [Chapter 05: Safety and Human-in-the-Loop](../05-safety-and-hitl/README.md#prompt-injection)
+**See also:** [Chapter 05: Safety and Human-in-the-Loop](../05-safety-and-hitl/README.md#prompt-injection), [Chapter 17: Security and Governance](../17-security-and-governance/README.md)
 
 **Defense in Depth** — multi-layered security strategy. Each layer (input validation, runtime checks, output filtering, monitoring) protects against different types of attacks.
 
@@ -395,12 +426,17 @@ The more accurate the `Description`, the better the selection.
 
 ### Q: Agent "forgets" beginning of conversation. What to do?
 
-**A:** This happens when dialogue history exceeds context window size. Solutions:
-1. **Summarization:** Compress old messages through LLM
-2. **Fact selection:** Extract important facts and store separately
-3. **Context layers:** Working memory + summary + facts
+**A:** This happens when dialogue history exceeds the context window. The right solution is **one, simple thing**: `condense`.
 
-**See also:** [Chapter 13: Context Engineering](../13-context-engineering/README.md)
+1. Count tokens via `usage.PromptTokens` from the provider response (not your own counter).
+2. When `lastTokens > contextMax * 0.80` — do **one** `condense`: make a separate LLM call that summarizes the older part of the history into a single block, insert it as a `user` message ("Context of previous work: …"), leave the system prompt unchanged and the tail of history intact — with protection of `tool_call ↔ tool_result` pairs (`safeTail`).
+3. One `condense` per Run; if it doesn't help — the task should be split into sub-Runs.
+
+What you **don't** need: importance scoring of messages, reordering of history, adaptive ladders `prioritize → summarize → truncate`, Working/Summary/Facts layers, a dynamic system prompt. These are classic forms of over-engineering — expensive, fragile, and they kill the prompt cache.
+
+Long-term knowledge that has to survive a `condense` is **not context** anymore, it's long-term memory: the agent **itself** saves it via the `memory_save` tool and reads it back via `memory_recall`.
+
+**See also:** [Chapter 12: Agent Memory Systems](../12-agent-memory/README.md), [Chapter 13: Context Engineering](../13-context-engineering/README.md), [Lab 09](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab09-context-optimization), [Lab 11](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab11-memory-context)
 
 ### Q: Model doesn't call tools. Why?
 

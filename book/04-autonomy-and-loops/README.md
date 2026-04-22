@@ -22,6 +22,8 @@ Without an autonomous loop, an agent works like a chatbot: one request → one r
 
 **Difference:** The agent decides what to do next based on the results of previous actions.
 
+> **Junior employee model.** A loop iteration limit is "time to escalation". If a new hire spends 20 attempts on the same problem and can't solve it — they're expected to call the team lead, not "try one more time". Same with an agent: hit the limit, hand control back to a human, don't try "just a little more on my own". See [Preface → Mental Model](../00-preface/README.md#mental-model-an-agent-is-a-new-employee) and [Ch. 17: Security and Governance](../17-security-and-governance/README.md).
+
 ## Theory in Simple Terms
 
 ### ReAct Loop (Autonomy Cycle)

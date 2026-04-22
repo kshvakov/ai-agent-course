@@ -83,7 +83,7 @@ There you'll find a practical guide to production readiness: observability and t
 
 ## Course Structure
 
-The course consists of a preparatory stage (Lab 00) and 12 main laboratory assignments (Lab 01-12), plus 2 optional labs (Lab 13-14).
+The course consists of a preparatory stage (Lab 00) and 12 main laboratory assignments (Lab 01-12), plus 1 optional lab (Lab 13).
 
 ### 🔬 [Lab 00: Model Benchmark](./labs/lab00-capability-check)
 **Diagnostics.** Before starting, verify whether your model (especially a local one) is suitable for the course. Run a series of tests on JSON, Instruction Following, and Function Calling.
@@ -113,13 +113,13 @@ The course consists of a preparatory stage (Lab 00) and 12 main laboratory assig
 **Supervisor Pattern.** Create a system where a main agent (Orchestrator) manages highly specialized sub-agents (Network Admin, DB Admin).
 
 ### [Lab 09: Context Optimization](./labs/lab09-context-optimization)
-**Context Window Management.** Learn how to count tokens, apply optimization techniques (truncation, summarization), and implement adaptive context management for long-lived agents.
+**Context hygiene.** Count tokens correctly (`usage.PromptTokens` as the primary source, `char/3` only for a pre-send estimate). One threshold (80% of the window), one `condense` per Run, `safeTail` to protect `tool_call ↔ tool_result` pairs. No importance scoring, no ladders of strategies, no reordering of history.
 
 ### [Lab 10: Planning & Workflow](./labs/lab10-planning-workflows)
 **Workflow Patterns.** Implement a simple workflow runtime: plan → steps → retries → state persistence (in-memory/file).
 
 ### [Lab 11: Memory & Context Engineering](./labs/lab11-memory-context)
-**Memory Systems.** Long-term memory store + retrieval + policy (what to store/how to forget) + summarization.
+**Two memory horizons.** Inside a Run — a linear history + a single `condense` when the window fills up. Across sessions — long-term memory that the agent manages **itself** through the tools `memory_save` / `recall` / `delete`. No LayeredContext, no auto-extraction of facts, no mutation of the system prompt.
 
 ### [Lab 12: Tool Server Protocol](./labs/lab12-tool-server)
 **Tool Servers.** Minimal "tool server" (stdio or HTTP) + client in agent runtime + schema versioning.
@@ -137,12 +137,11 @@ The course consists of a preparatory stage (Lab 00) and 12 main laboratory assig
 | **Lab 06** | **Incident (SOP)** | Advanced planning. SOP integration in prompts. | [MANUAL.md](./labs/lab06-incident/MANUAL.md) |
 | **Lab 07** | **RAG** | Working with documentation. Knowledge search before action. | [MANUAL.md](./labs/lab07-rag/MANUAL.md) |
 | **Lab 08** | **Multi-Agent** | Orchestration. Task delegation. Context isolation. | [MANUAL.md](./labs/lab08-multi-agent/MANUAL.md) |
-| **Lab 09** | **Context Optimization** | Token counting, summarization, adaptive context management. | [MANUAL.md](./labs/lab09-context-optimization/MANUAL.md) |
+| **Lab 09** | **Context Optimization** | `usage.PromptTokens`, single compression threshold, `condense` + `safeTail` to protect tool pairs. | [MANUAL.md](./labs/lab09-context-optimization/MANUAL.md) |
 | **Lab 10** | **Planning & Workflow** | Task decomposition, dependency resolution, plan execution with retries. | [MANUAL.md](./labs/lab10-planning-workflows/MANUAL.md) |
-| **Lab 11** | **Memory & Context Engineering** | Long-term memory, fact extraction, context layering. | [MANUAL.md](./labs/lab11-memory-context/MANUAL.md) |
+| **Lab 11** | **Memory & Context Engineering** | Two memory horizons: in-Run `condense` + long-term memory as tools (`memory_save` / `recall` / `delete`). | [MANUAL.md](./labs/lab11-memory-context/MANUAL.md) |
 | **Lab 12** | **Tool Server Protocol** | stdio/HTTP protocols, schema versioning, tool server architecture. | [MANUAL.md](./labs/lab12-tool-server/MANUAL.md) |
-| **Lab 13** | **Agent Security Hardening** (Optional) | Allowlists, risk scoring, prompt injection protection, audit. | [MANUAL.md](./labs/lab13-security-hardening/MANUAL.md) |
-| **Lab 14** | **Evals in CI** (Optional) | Eval runner, golden dataset, CI pipeline integration. | [MANUAL.md](./labs/lab14-evals-in-ci/MANUAL.md) |
+| **Lab 13** | **Tool Retrieval & Pipelines** (Optional) | Dynamic tool selection by relevance, pipelines/multi-step calls, integration with Tool Servers from Lab 12. | [MANUAL.md](./labs/lab13-tool-retrieval/MANUAL.md) |
 
 ## Requirements
 

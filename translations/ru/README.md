@@ -83,7 +83,7 @@
 
 ## Структура курса
 
-Курс состоит из подготовительного этапа (Lab 00) и 12 основных лабораторных работ (Lab 01-12), плюс 2 опциональные лабы (Lab 13-14).
+Курс состоит из подготовительного этапа (Lab 00) и 12 основных лабораторных работ (Lab 01-12), плюс 1 опциональная лаба (Lab 13).
 
 ### 🔬 [Lab 00: Model Benchmark](./labs/lab00-capability-check)
 **Диагностика.** Прежде чем начинать, мы проверим, годится ли ваша модель (особенно локальная) для курса. Мы запустим серию тестов на JSON, Instruction Following и Function Calling.
@@ -113,13 +113,13 @@
 **Supervisor Pattern.** Создадим систему, где главный агент (Orchestrator) управляет узкоспециализированными субагентами (Network Admin, DB Admin).
 
 ### [Lab 09: Оптимизация Контекста (Context Optimization)](./labs/lab09-context-optimization)
-**Управление контекстным окном.** Научимся подсчитывать токены, применять техники оптимизации (обрезка, саммаризация) и реализовать адаптивное управление контекстом для долгоживущих агентов.
+**Гигиена контекста.** Считаем токены правильно (`usage.PromptTokens` как первичный источник, `char/3` только для pre-send оценки). Один порог (80% окна), один `condense` за Run, `safeTail` для защиты пар `tool_call ↔ tool_result`. Никаких скорингов важности, лесенок стратегий и переупорядочивания истории.
 
 ### [Lab 10: Planning & Workflow](./labs/lab10-planning-workflows)
 **Workflow-паттерны.** Реализуем простой workflow-рантайм: план → шаги → ретраи → сохранение состояния (in-memory/файл).
 
 ### [Lab 11: Memory & Context Engineering](./labs/lab11-memory-context)
-**Системы памяти.** Long-term memory store + retrieval + policy (что записывать/как забывать) + саммаризация.
+**Два горизонта памяти.** Внутри Run — линейная история + один `condense` при заполнении окна. Между сессиями — долговременная память, которой агент управляет **сам** через tools `memory_save`/`recall`/`delete`. Без LayeredContext, без авто-извлечения фактов, без мутации system prompt.
 
 ### [Lab 12: Tool Server Protocol](./labs/lab12-tool-server)
 **Tool Servers.** Минимальный "tool server" (stdio или HTTP) + клиент в агент-рантайме + версионирование схем.
@@ -137,12 +137,11 @@
 | **Lab 06** | **Incident (SOP)** | Сложное планирование. Внедрение SOP в промпт. | [MANUAL.md](./labs/lab06-incident/MANUAL.md) |
 | **Lab 07** | **RAG** | Работа с документацией. Поиск знаний перед действием. | [MANUAL.md](./labs/lab07-rag/MANUAL.md) |
 | **Lab 08** | **Multi-Agent** | Оркестрация. Делегирование задач. Изоляция контекста. | [MANUAL.md](./labs/lab08-multi-agent/MANUAL.md) |
-| **Lab 09** | **Context Optimization** | Подсчет токенов, саммаризация, адаптивное управление контекстом. | [MANUAL.md](./labs/lab09-context-optimization/MANUAL.md) |
+| **Lab 09** | **Context Optimization** | `usage.PromptTokens`, один порог сжатия, `condense` + `safeTail` для защиты tool-пар. | [MANUAL.md](./labs/lab09-context-optimization/MANUAL.md) |
 | **Lab 10** | **Planning & Workflow** | Декомпозиция задач, разрешение зависимостей, выполнение плана с повторами. | [MANUAL.md](./labs/lab10-planning-workflows/MANUAL.md) |
-| **Lab 11** | **Memory & Context Engineering** | Долговременная память, извлечение фактов, слои контекста. | [MANUAL.md](./labs/lab11-memory-context/MANUAL.md) |
+| **Lab 11** | **Memory & Context Engineering** | Два горизонта памяти: in-Run `condense` + долговременная память как tools (`memory_save`/`recall`/`delete`). | [MANUAL.md](./labs/lab11-memory-context/MANUAL.md) |
 | **Lab 12** | **Tool Server Protocol** | stdio/HTTP протоколы, версионирование схем, архитектура tool server. | [MANUAL.md](./labs/lab12-tool-server/MANUAL.md) |
-| **Lab 13** | **Agent Security Hardening** (Опционально) | Allowlists, risk scoring, защита от prompt injection, аудит. | [MANUAL.md](./labs/lab13-security-hardening/MANUAL.md) |
-| **Lab 14** | **Evals in CI** (Опционально) | Eval runner, golden dataset, интеграция CI пайплайна. | [MANUAL.md](./labs/lab14-evals-in-ci/MANUAL.md) |
+| **Lab 13** | **Tool Retrieval & Pipelines** (Опционально) | Поиск инструментов в большом каталоге через embeddings, динамическая подача tool-схем в LLM. | [MANUAL.md](./labs/lab13-tool-retrieval/MANUAL.md) |
 
 ## Требования
 

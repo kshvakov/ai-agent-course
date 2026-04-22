@@ -14,6 +14,8 @@ It's more efficient to divide responsibility: create a team of narrow specialist
 
 **Solution:** Multi-Agent system with Supervisor and specialists. Supervisor delegates the task to Network Expert for availability check and DB Expert for version retrieval. Each specialist focuses only on their area.
 
+> **Junior employee model.** Supervisor + specialists is "team lead + team". Each team member has their own set of tools and accesses; nobody gets the rights of "everyone else combined" — that's a basic hiring principle, not LLM-specific. Delegating a subtask to a sub-agent = delegating to a person: you pass along **only the necessary** access and context, and you get back a result, not "all of my tooling". See [Preface → Mental Model](../00-preface/README.md#mental-model-an-agent-is-a-new-employee) and [Ch. 17: Security and Governance](../17-security-and-governance/README.md).
+
 ## Theory in Simple Terms
 
 ### How Does Multi-Agent Work?

@@ -16,6 +16,8 @@ Function Calling is the mechanism that gives the model access to real actions: c
 
 **Solution:** Function Calling allows the model to call real Go functions. The model generates structured JSON with the function name and arguments, your code executes the function and returns the result back to the model.
 
+> **Junior employee model.** An agent's tool list is its "new-hire job description". What you didn't give them, they can't do; what you gave them, they can — and very fast. A minimal set of roles, explicit `ReadOnly` / `Parallel` flags and a risk category for each tool — same as for a human: "access only to what's needed for the job". See [Preface → Mental Model](../00-preface/README.md#mental-model-an-agent-is-a-new-employee) and [Ch. 17: Security and Governance](../17-security-and-governance/README.md).
+
 ## Theory in Simple Terms
 
 ### How Does Function Calling Work?
@@ -306,7 +308,7 @@ graph TB
 
 ```json
 {
-  "model": "gpt-3.5-turbo",
+  "model": "gpt-4o-mini",
   "messages": [
     {
       "role": "system",
@@ -396,7 +398,7 @@ graph TB
 
 ```json
 {
-  "model": "gpt-3.5-turbo",
+  "model": "gpt-4o-mini",
   "messages": [
     {
       "role": "system",
