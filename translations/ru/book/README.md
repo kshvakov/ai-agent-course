@@ -9,14 +9,14 @@
 ### Часть I: Основы
 
 - **[00. Предисловие](./00-preface/README.md)** — Как читать руководство, требования, что такое агент
-- **[01. Физика LLM](./01-llm-fundamentals/README.md)** — Токены, контекст, температура, детерминизм, вероятностная природа
+- **[01. Физика LLM](./01-llm-fundamentals/README.md)** — Токены, контекст, температура и её ограничения, вероятностная природа
 - **[02. Промптинг как Программирование](./02-prompt-engineering/README.md)** — ICL, Few-Shot, CoT, структурирование задач, SOP
 
 ### Часть II: Practice-first (собрать агента)
 
 - **[03. Инструменты и Function Calling](./03-tools-and-function-calling/README.md)** — JSON Schema, валидация, обработка ошибок, контракт tool↔runtime
 - **[04. Автономность и Циклы](./04-autonomy-and-loops/README.md)** — ReAct loop, остановка, анти-циклы, наблюдаемость
-- **[05. Безопасность и Human-in-the-Loop](./05-safety-and-hitl/README.md)** — Confirmation, Clarification, Risk Scoring, Prompt Injection
+- **[05. Безопасность и Human-in-the-Loop](./05-safety-and-hitl/README.md)** — Confirmation, Clarification, категории инструментов, Prompt Injection
 - **[06. RAG и База Знаний](./06-rag/README.md)** — Чанкинг, Retrieval, Grounding, режимы поиска, лимиты
 - **[07. Multi-Agent Systems](./07-multi-agent/README.md)** — Supervisor/Worker, изоляция контекста, маршрутизация задач
 - **[08. Evals и Надежность](./08-evals-and-reliability/README.md)** — Evals, регрессии промптов, метрики качества, тестовые датасеты
@@ -37,13 +37,13 @@
 
 ### Часть V: Инфраструктура/безопасность платформы
 
-- **[17. Security и Governance](./17-security-and-governance/README.md)** — Threat modeling, risk scoring, защита от prompt injection (канон), sandboxing инструментов, allowlists, policy-as-code, RBAC, dry-run режимы, аудит
+- **[17. Security и Governance](./17-security-and-governance/README.md)** — Threat modeling, категоризация инструментов, защита от prompt injection (канон), sandboxing инструментов, allowlists, policy-as-code, RBAC, dry-run режимы, аудит
 - **[18. Протоколы Инструментов и Tool Servers](./18-tool-protocols-and-servers/README.md)** — Контракт tool↔runtime на уровне процесса/сервиса, версионирование схем, authn/authz
 
 ### Часть VI: Прод-готовность
 
 - **[19. Observability и Tracing](./19-observability-and-tracing/README.md)** — Структурированное логирование, трейсинг agent runs и tool calls, метрики, кореляция логов
-- **[20. Cost & Latency Engineering](./20-cost-latency-engineering/README.md)** — Бюджеты токенов, лимиты итераций, кэширование, fallback-модели, батчинг, таймауты
+- **[20. Cost & Latency Engineering](./20-cost-latency-engineering/README.md)** — Бюджеты токенов, лимиты итераций, кэширование, fallback-модели, таймауты
 - **[21. Workflow и State Management в продакшене](./21-workflow-state-management/README.md)** — Очереди и асинхронность, масштабирование, распределённое состояние
 - **[22. Prompt и Program Management](./22-prompt-program-management/README.md)** — Версионирование промптов, промпт-регрессии через evals, конфиги и feature flags, A/B тестинг
 - **[23. Evals в CI/CD](./23-evals-in-cicd/README.md)** — Quality gates в CI/CD, версионирование датасетов, обработка flaky-кейсов, тесты на безопасность
@@ -118,39 +118,41 @@
     - LLM не выполняет код. Она генерирует JSON с запросом на выполнение.
     - Runtime (ваш код) выполняет реальные функции Go.
     - LLM не "помнит" прошлое. Она видит его в `messages[]`, который собирает Runtime.
-    - Temperature = 0 для детерминированного поведения агентов.
+    - Для агентных циклов типична низкая `Temperature` (0.0–0.3); воспроизводимость дают schema, валидация и гарды в коде, а не «детерминизм» температуры.
     - История — иммутабельный лог, system prompt стабилен между итерациями (иначе теряется prompt cache, см. [гл. 12](./12-agent-memory/README.md), [гл. 13](./13-context-engineering/README.md)).
     - Число токенов берите из `usage.PromptTokens` ответа провайдера, не из своих счётчиков.
 
 5. **Минимальный пример:**
     ```go
-    // 1. Определяем инструмент
-    tools := []openai.Tool{{
-        Function: &openai.FunctionDefinition{
-            Name: "check_status",
-            Description: "Check server status",
-        },
+    // 1. Определяем инструменты (схема — JSON Schema параметров)
+    tools := []ToolDef{{
+        Name:        "check_status",
+        Description: "Проверить статус сервера по имени хоста",
+        Parameters:  json.RawMessage(`{"type":"object","properties":{"host":{"type":"string"}},"required":["host"]}`),
     }}
-    
-    // 2. Запрос к модели
-    resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: "gpt-4o-mini",
-        Messages: []openai.ChatCompletionMessage{
+
+    // 2. Запрос к модели (один HTTP-вызов к любому провайдеру с tool calling)
+    resp, err := client.Complete(ctx, Request{
+        Model: "glm-5.3",
+        Messages: []Message{
             {Role: "system", Content: "Ты DevOps инженер"},
-            {Role: "user", Content: "Проверь статус сервера"},
+            {Role: "user", Content: "Проверь статус сервера web-01"},
         },
         Tools: tools,
     })
-    
+    if err != nil {
+        return err // ошибки клиента обрабатывает код, не модель (гл. 04)
+    }
+
     // 3. Проверяем tool_call
     if len(resp.Choices[0].Message.ToolCalls) > 0 {
         // 4. Выполняем инструмент (Runtime)
-        result := checkStatus()
-        // 5. Добавляем результат в историю
-        messages = append(messages, openai.ChatCompletionMessage{
-            Role: "tool",
-            Content: result,
-        })
+        result := checkStatus(resp.Choices[0].Message.ToolCalls[0].Arguments)
+        // 5. Добавляем результат в историю (со ссылкой на ID вызова)
+        messages = append(messages,
+            resp.Choices[0].Message,
+            Message{Role: "tool", ToolCallID: resp.Choices[0].Message.ToolCalls[0].ID, Content: result},
+        )
         // 6. Отправляем обновленную историю обратно в модель
     }
     ```
@@ -186,8 +188,11 @@
 | [11. State Management](./11-state-management/README.md) | [Lab 10](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab10-planning-workflows) (Planning & Workflow) — частично |
 | [12. Системы Памяти Агента](./12-agent-memory/README.md), [13. Context Engineering](./13-context-engineering/README.md) | [Lab 11](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab11-memory-context) (Memory & Context Engineering) |
 | [18. Протоколы Инструментов и Tool Servers](./18-tool-protocols-and-servers/README.md) | [Lab 12](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab12-tool-server) (Tool Server Protocol), [Lab 13](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab13-tool-retrieval) (Tool Retrieval & Pipelines) — Опционально |
-| [17. Security и Governance](./17-security-and-governance/README.md) | — (читается как теория-капстоун; практику безопасности встроена в Lab 02 / Lab 05 / Lab 12) |
+| [17. Security и Governance](./17-security-and-governance/README.md) | — (читается как теория-капстоун; практика безопасности встроена в Lab 02 / Lab 05 / Lab 12) |
+| [19–21, 23–25. Прод-часть](./25-production-readiness-index/README.md) | — (лабы для прод-тем планируются; теория самодостаточна) |
 | [22. Prompt и Program Management](./22-prompt-program-management/README.md) | [Lab 01](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab01-basics) (Basics) — частично |
+
+> **Примечание:** код лабораторных работ пока не ревизован — он остаётся на старом клиенте и старых моделях и будет обновлён отдельным этапом. Примеры в главах ревизованы и надёжнее; лабы выполняйте, сверяясь с каноном глав.
 
 ---
 

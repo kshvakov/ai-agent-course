@@ -67,245 +67,98 @@
 
 ### Соображения портабельности
 
-**Избегайте vendor lock-in через:**
-- **Абстракцию интерфейсов** — Определяйте свои интерфейсы для tools, memory, planning
-- **Минимальную связь с фреймворком** — Используйте фреймворк для оркестрации, но держите бизнес-логику отдельно
-- **Стандартные протоколы** — Предпочитайте стандартные форматы (JSON Schema для tools, OpenTelemetry для observability)
-- **Постепенный путь миграции** — Проектируйте так, чтобы можно было менять компоненты позже
+Vendor lock-in в Go решается знакомым паттерном — **драйверы провайдеров, регистрируемые blank-импортом, как в `database/sql`**. Приложение зависит от маленького фасада (`Client.Chat` / `Client.Stream`), а конкретный провайдер подключается импортом драйвера и выбирается строкой-именем в конфигурации. Сменить провайдера — сменить одну строку, а не переписывать код.
 
-### Работа с JSON Schema в Go
+Что ещё помогает не запереть себя:
+- **Стандартные протоколы** — JSON Schema для tools (гл. 03), MCP/A2A для внешних интеграций (гл. 18), OpenTelemetry для observability
+- **Минимальная связь с фреймворком** — если берёте фреймворк, держите бизнес-логику отдельно от оркестрации
+- **Постепенный путь миграции** — проектируйте так, чтобы компоненты можно было менять позже
 
-При использовании JSON Schema для определений инструментов предпочитайте пакеты Go для валидации и генерации вместо сырого `json.RawMessage`. Это обеспечивает типобезопасность и лучшую обработку ошибок.
+> **В реальном SDK.** Коммерческие Go-SDK для LLM устроены ровно так: восемь драйверов протоколов (Anthropic, OpenAI, Google и другие), openai-compatible драйвер обслуживает сразу несколько провайдеров, а каталог моделей живёт отдельным пакетом. Приложение видит только фасад.
 
-**Пример: Использование `github.com/xeipuuv/gojsonschema` для валидации:**
+### JSON Schema и инструменты
 
-```go
-import (
-    "github.com/xeipuuv/gojsonschema"
-)
+Схема инструмента — часть протокола function calling: LLM получает её в описании tool'а и по ней генерирует аргументы. Формат — стандартный JSON Schema (`type`, `properties`, `required`, `enum`); глава 03 показывает его целиком, здесь повторять не будем.
 
-// Определяем схему инструмента как JSON Schema
-const pingToolSchema = `{
-  "type": "object",
-  "properties": {
-    "host": {
-      "type": "string",
-      "description": "Hostname or IP address to ping"
-    },
-    "count": {
-      "type": "integer",
-      "description": "Number of ping packets",
-      "default": 4,
-      "minimum": 1,
-      "maximum": 10
-    }
-  },
-  "required": ["host"]
-}`
-
-// Валидируем аргументы инструмента против схемы
-func validateToolArgs(schemaJSON string, args map[string]any) error {
-    schemaLoader := gojsonschema.NewStringLoader(schemaJSON)
-    documentLoader := gojsonschema.NewGoLoader(args)
-    
-    result, err := gojsonschema.Validate(schemaLoader, documentLoader)
-    if err != nil {
-        return fmt.Errorf("ошибка валидации схемы: %w", err)
-    }
-    
-    if !result.Valid() {
-        errors := make([]string, 0, len(result.Errors()))
-        for _, desc := range result.Errors() {
-            errors = append(errors, desc.String())
-        }
-        return fmt.Errorf("валидация не прошла: %s", strings.Join(errors, "; "))
-    }
-    
-    return nil
-}
-
-// Использование при выполнении инструмента
-func executePing(args map[string]any) (string, error) {
-    // Валидируем аргументы перед выполнением
-    if err := validateToolArgs(pingToolSchema, args); err != nil {
-        return "", err
-    }
-    
-    host := args["host"].(string)
-    count := 4
-    if c, ok := args["count"].(float64); ok {
-        count = int(c)
-    }
-    
-    // Выполняем ping...
-    return fmt.Sprintf("Пропинговали %s %d раз", host, count), nil
-}
-```
-
-**Пример: Использование `github.com/invopop/jsonschema` для генерации схем:**
+Практическое правило: **не выписывайте схемы руками**. SDK или ваш рантайм генерирует схему из Go-структуры параметров через reflection — структура остаётся единственным источником истины, рассинхрон схемы и кода невозможен:
 
 ```go
-import (
-    "encoding/json"
-    "github.com/invopop/jsonschema"
-)
-
-// Определяем параметры инструмента как Go структуру
-type PingParams struct {
-    Host  string `json:"host" jsonschema:"required,title=Host,description=Hostname or IP address to ping"`
-    Count int    `json:"count" jsonschema:"default=4,minimum=1,maximum=10,title=Count,description=Number of ping packets"`
+type DeployParams struct {
+    Service string `json:"service" jsonschema:"description=Имя сервиса"`
+    Env     string `json:"env"     jsonschema:"enum=staging|production"`
 }
 
-// Генерируем JSON Schema из структуры
-func generateToolSchema(params any) (json.RawMessage, error) {
-    reflector := jsonschema.Reflector{
-        ExpandedStruct: true,
-        DoNotReference: false,
-    }
-    
-    schema := reflector.Reflect(params)
-    schemaJSON, err := json.Marshal(schema)
-    if err != nil {
-        return nil, fmt.Errorf("не удалось замаршалить схему: %w", err)
-    }
-    
-    return json.RawMessage(schemaJSON), nil
-}
-
-// Использование: Генерируем схему для инструмента
-func registerPingTool() {
-    params := PingParams{}
-    schema, err := generateToolSchema(params)
-    if err != nil {
-        panic(err)
-    }
-    
-    tool := Tool{
-        Name:        "ping",
-        Description: "Ping a host to check connectivity",
-        Schema:      schema, // Используем сгенерированную схему вместо сырого JSON
-    }
-    
-    registry.Register("ping", tool)
-}
+// schema := reflector.Reflect(DeployParams{}) → готовый inputSchema для tool'а
 ```
 
-**Преимущества использования пакетов JSON Schema:**
-- **Типобезопасность** — Генерируйте схемы из Go структур
-- **Валидация** — Валидируйте аргументы перед выполнением инструмента
-- **Сообщения об ошибках** — Понятные ошибки валидации
-- **Поддерживаемость** — Единый источник истины (Go структура)
-- **Документация** — Автоматически генерируемые описания схем
+Ручная валидация JSON Schema оправдана только на границе с внешними, недоверенными данными — например, когда аргументы приходят от чужого агента по сети. Для собственных tool'ов достаточно `json.Unmarshal` в Go-структуру: он сам сообщит о несоответствии типов и обязательных полей.
 
 ## Общие паттерны во фреймворках
 
-Большинство фреймворков реализуют похожие паттерны:
+Все фреймворки под капотом реализуют одни и те же механизмы, которые вы уже построили в этом курсе:
 
-### Паттерн 1: Tool Registry
+| Паттерн | Что это | Где в курсе |
+|---------|---------|-------------|
+| **Tool Registry** | Словарь `имя → инструмент` + диспетчеризация вызовов | [Гл. 03](../03-tools-and-function-calling/README.md) |
+| **Agent Loop** | Цикл «LLM → tool call → результат → LLM» до финального ответа | [Гл. 04](../04-autonomy-and-loops/README.md) |
+| **История сообщений** | Линейный список сообщений как память агента | [Гл. 12](../12-agent-memory/README.md) |
 
-```go
-// Абстрактный интерфейс (работает с любым фреймворком или кастомом)
-type ToolRegistry interface {
-    Register(name string, tool Tool) error
-    Get(name string) (Tool, error)
-    List() []string
-}
-
-// Фреймворк может предоставить:
-type FrameworkToolRegistry struct {
-    tools map[string]Tool
-}
-
-func (r *FrameworkToolRegistry) Register(name string, tool Tool) error {
-    r.tools[name] = tool
-    return nil
-}
-```
-
-**Суть:** Определяйте свои интерфейсы. Фреймворк становится деталью реализации.
-
-### Паттерн 2: Agent Loop
-
-```go
-// Абстрактный интерфейс agent loop
-type AgentLoop interface {
-    Run(ctx context.Context, input string) (string, error)
-    AddTool(tool Tool) error
-    SetMemory(memory Memory) error
-}
-
-// Ваш код использует интерфейс, а не фреймворк напрямую
-func processRequest(agent AgentLoop, userInput string) (string, error) {
-    return agent.Run(context.Background(), userInput)
-}
-```
-
-**Суть:** Dependency injection позволяет менять реализации.
-
-### Паттерн 3: Memory Abstraction
-
-```go
-// Абстрактный интерфейс памяти
-type Memory interface {
-    Store(key string, value any) error
-    Retrieve(key string) (any, error)
-    Search(query string) ([]any, error)
-}
-
-// Память фреймворка реализует ваш интерфейс
-type FrameworkMemory struct {
-    // Реализация, специфичная для фреймворка
-}
-
-func (m *FrameworkMemory) Store(key string, value any) error {
-    // Адаптируем API фреймворка к вашему интерфейсу
-}
-```
-
-**Суть:** Ваши интерфейсы определяют контракт. Фреймворки предоставляют реализации.
+Отдельное предостережение — **абстракция памяти** (`Memory` с методами `Store`/`Retrieve`/`Search`), которую фреймворки нередко предлагают ради «портабельности». На практике это антипаттерн: память агента — это линейная история сообщений плюс `condense` при переполнении окна ([гл. 12](../12-agent-memory/README.md)). Универсальный интерфейс памяти решает проблему смены фреймворка, которой у вас нет, и не решает проблему переполнения контекста, которая у вас есть. Если фреймворк навязывает такую абстракцию — проверьте его модель памяти до внедрения, а не после.
 
 ## Фреймворки и экосистема
 
 ### Обзор реальных фреймворков
 
-На практике большинство команд выбирает один из популярных фреймворков. Вот основные игроки:
+> **Дисклеймер:** агентные фреймворки эволюционируют быстро — мажорные релизы выходят раз в несколько месяцев, API ломается, сильные/слабые стороны меняются. Сводка ниже — ориентир на момент написания. Перед выбором проверяйте свежую документацию, последние релизы и реальные production-кейсы (issue tracker, downgrade-репорты).
 
-**LangGraph (Python, LangChain).** Фреймворк для создания агентов на основе графов состояний. Каждый шаг агента — узел графа, переходы определяются условиями. Подходит для сложных workflow с ветвлениями и циклами.
+**LangGraph (Python, LangChain).** Агенты на основе графов состояний: каждый шаг — узел графа, переходы определяются условиями. Подходит для сложных workflow с ветвлениями и циклами.
 
-**CrewAI (Python).** Фреймворк для мульти-агентных систем. Агенты объединяются в «команды» (crews) с ролями и задачами. Удобен для сценариев, где несколько агентов сотрудничают над общей целью.
+**CrewAI (Python).** Мульти-агентные системы: агенты объединяются в «команды» (crews) с ролями и задачами. Удобен для сценариев, где несколько агентов сотрудничают над общей целью.
 
-**AutoGen (Microsoft, Python).** Фреймворк для мульти-агентных систем с упором на диалог между агентами. Агенты общаются через сообщения, поддерживает human-in-the-loop.
+**AutoGen (Microsoft, Python).** Мульти-агентные системы с упором на диалог между агентами. В v0.4 переписан с нуля (новое ядро + фреймворк AgentChat поверх него) — материалам и туториалам времён до v0.4 доверяйте с осторожностью: это фактически другой фреймворк.
 
-**Semantic Kernel (Microsoft, .NET/Python).** Фреймворк-оркестратор, который интегрирует LLM с существующим кодом через «плагины». Ориентирован на enterprise-сценарии. Поддерживает .NET и Python.
+**Semantic Kernel (Microsoft, .NET/Python).** Оркестратор, интегрирующий LLM с существующим кодом через «плагины». Ориентирован на enterprise и экосистему Microsoft.
+
+**OpenAI Agents SDK (Python/JS).** Лёгкий SDK: агент как цикл с инструментами, handoff'ы между агентами, guardrails.
+
+**Google ADK (Python/Java).** Agent Development Kit от Google, тесно связан с Vertex AI.
+
+**pydantic-ai (Python).** Типизированные агенты: схемы инструментов генерируются из pydantic-моделей — та же идея, что генерация из Go-структуры в [гл. 03](../03-tools-and-function-calling/README.md).
+
+**Vercel AI SDK (TypeScript).** Агентные примитивы для веб-стека.
+
+Список не полный: рынок меняется быстрее книг — проверяйте актуальность на момент чтения.
 
 ### Сравнительная таблица
-
-> **Дисклеймер:** агентные фреймворки эволюционируют быстро — мажорные релизы выходят раз в несколько месяцев, API ломается, сильные/слабые стороны меняются. Сводка ниже — ориентир на момент написания. Перед выбором проверяйте свежую документацию, последние релизы и реальные production-кейсы (issue tracker, downgrade-репорты).
 
 | Фреймворк | Язык | Сильные стороны | Слабые стороны |
 |-----------|------|----------------|---------------|
 | **LangGraph** | Python | Граф-based workflow, гибкие состояния, стриминг | Сложный API, крутая кривая обучения |
 | **CrewAI** | Python | Простая мульти-агентная координация, роли | Менее гибкий для нестандартных паттернов |
-| **AutoGen** | Python | Диалоговые мульти-агентные системы, Microsoft backing | Тяжеловесный, сложная отладка |
+| **AutoGen** | Python | Диалоговые мульти-агентные системы, Microsoft backing | Тяжеловесный, сложная отладка; v0.4 — фактически новый фреймворк |
 | **Semantic Kernel** | .NET, Python | Enterprise-ready, интеграция с Azure | Ориентирован на экосистему Microsoft |
+
+### А в Go?
+
+Доминирующего агентного фреймворка в Go нет — и это нормально. Рабочий выбор большинства Go-команд: маленькие библиотеки-фасады для LLM-провайдеров (паттерн драйверов описан выше) плюс собственный цикл агента на 300–500 строк, который вы пишете в [главе 04](../04-autonomy-and-loops/README.md). Это скучное и проверяемое решение: весь код агента — ваш, отладка обычная, зависимостей минимум. Фреймворк оправдан, когда вам нужны именно его готовые паттерны оркестрации, а не «чтобы не писать цикл руками».
 
 ### Экосистема MCP
 
-MCP (Model Context Protocol) — открытый протокол для подключения инструментов к LLM. Экосистема MCP активно растёт: появляются каталоги MCP-серверов для баз данных, файловых систем, API, браузеров и других интеграций.
-
-Преимущество MCP — один протокол для всех инструментов. Агент подключает MCP-сервер и получает доступ к его инструментам без написания кастомного кода интеграции. Подробнее — в [Главе 18: Протоколы Инструментов и Tool Servers](../18-tool-protocols-and-servers/README.md).
+MCP (Model Context Protocol) — открытый протокол подключения инструментов к LLM-агентам: один протокол, и любой MCP-сервер работает с любым MCP-клиентом. Экосистема готовых серверов (базы данных, файловые системы, API, браузеры) активно растёт. Разбор протокола — в [Главе 18: Протоколы Инструментов и Tool Servers](../18-tool-protocols-and-servers/README.md).
 
 ### Экосистема A2A
 
-A2A (Agent-to-Agent) — протокол от Google для взаимодействия агентов друг с другом. Каждый агент публикует «карточку» (Agent Card) с описанием своих возможностей. Другие агенты находят его и отправляют задачи через стандартный HTTP API.
+A2A (Agent-to-Agent) — открытый протокол взаимодействия агентов друг с другом: каждый агент публикует discovery-документ со своими возможностями, остальные находят его и делегируют задачи через стандартный HTTP API. Подробности — в [Главе 18](../18-tool-protocols-and-servers/README.md).
 
-A2A решает проблему интероперабельности: агенты от разных команд и на разных фреймворках взаимодействуют через единый протокол. Подробнее — в [Главе 18: Протоколы Инструментов и Tool Servers](../18-tool-protocols-and-servers/README.md).
+### Skills
+
+Отдельный слой экосистемы — навыки (Skills, [agentskills.io](https://agentskills.io/)): пакеты знаний в формате `SKILL.md` с progressive disclosure — агент подгружает инструкцию, только когда задача её касается. Поддерживаются Cursor, Claude Code, VS Code и др. Подробно — в [Главе 09: Анатомия Агента](../09-agent-architecture/README.md#skills-навыки).
 
 ### Почему этот курс учит с нуля
 
 Этот курс строит агента с нуля по нескольким причинам:
 
-1. **Понимание фундамента.** Фреймворк скрывает детали за абстракциями. Когда что-то ломается, вы не знаете, где искать. Написав agent loop, tool registry, memory store своими руками, вы понимаете каждый компонент.
+1. **Понимание фундамента.** Фреймворк скрывает детали за абстракциями. Когда что-то ломается, вы не знаете, где искать. Написав agent loop, tool registry и историю сообщений своими руками, вы понимаете каждый компонент.
 
 2. **Осознанный выбор.** После реализации с нуля вы точно знаете, какие проблемы решает фреймворк. Решение «использовать LangGraph» или «написать кастом» становится обоснованным, а не случайным.
 
@@ -375,76 +228,29 @@ func (a *FrameworkAdapter) Execute(input string) (string, error) {
 
 ## Мини-упражнения
 
-### Упражнение 1: Определите интерфейс Tool с JSON Schema
+### Упражнение 1: Интерфейс Tool
 
-Создайте абстрактный интерфейс `Tool`, который работает независимо от любого фреймворка, используя JSON Schema для валидации:
+Определите интерфейс `Tool`, не зависящий от фреймворка. Схема генерируется из Go-структуры параметров — рукописный JSON не нужен:
 
 ```go
-import (
-    "context"
-    "encoding/json"
-    "github.com/invopop/jsonschema"
-    "github.com/xeipuuv/gojsonschema"
-)
-
 type Tool interface {
     Name() string
     Description() string
+    Schema() json.RawMessage // сгенерирована из структуры параметров (reflection)
     Execute(ctx context.Context, args map[string]any) (any, error)
-    Schema() json.RawMessage
-    ValidateArgs(args map[string]any) error
 }
 
-// Пример реализации с валидацией JSON Schema
-type PingTool struct {
-    schema json.RawMessage
+type PingParams struct {
+    Host string `json:"host" jsonschema:"description=Hostname or IP"`
 }
 
-func (t *PingTool) Name() string {
-    return "ping"
-}
-
-func (t *PingTool) Description() string {
-    return "Ping a host to check connectivity"
-}
-
-func (t *PingTool) Schema() json.RawMessage {
-    return t.schema
-}
-
-func (t *PingTool) ValidateArgs(args map[string]any) error {
-    // Используем gojsonschema для валидации
-    schemaLoader := gojsonschema.NewBytesLoader(t.schema)
-    documentLoader := gojsonschema.NewGoLoader(args)
-    
-    result, err := gojsonschema.Validate(schemaLoader, documentLoader)
-    if err != nil {
-        return err
-    }
-    
-    if !result.Valid() {
-        return fmt.Errorf("валидация не прошла: %v", result.Errors())
-    }
-    
-    return nil
-}
-
-func (t *PingTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-    // Валидируем перед выполнением
-    if err := t.ValidateArgs(args); err != nil {
-        return nil, err
-    }
-    
-    // Выполняем инструмент...
-    return "pong", nil
-}
+// Схема — из структуры; в Execute аргументы распаковываются в неё же через json.Unmarshal
 ```
 
 **Ожидаемый результат:**
-- Интерфейс не зависит от фреймворка
-- Может быть реализован любым адаптером фреймворка
-- Предоставляет всю необходимую информацию для выполнения инструмента
-- Включает валидацию JSON Schema
+- Интерфейс не зависит от фреймворка; адаптер фреймворка может его реализовать
+- Схема — из Go-структуры, а не рукописный JSON (единый источник истины)
+- Валидация аргументов — через `json.Unmarshal` в структуру параметров
 
 ### Упражнение 2: Адаптер фреймворка
 
@@ -490,9 +296,9 @@ func (a *FrameworkToolAdapter) Execute(ctx context.Context, args map[string]any)
 
 **Сдано:**
 - [x] Понимаете, когда использовать фреймворки vs кастомный runtime.
-- [x] Знаете, как избежать vendor lock-in через свои интерфейсы (Tool, Memory, AgentLoop).
+- [x] Знаете, как избежать vendor lock-in: фасад провайдера в стиле `database/sql` и свои интерфейсы (Tool).
 - [x] Можете оценить фреймворк против ваших требований и спокойно отнестись к громким обещаниям про «революционные» паттерны.
-- [x] Понимаете общие паттерны, которые повторяются во всех фреймворках (Tool Registry, Agent Loop, Memory).
+- [x] Понимаете общие паттерны, которые повторяются во всех фреймворках (Tool Registry, Agent Loop, история сообщений).
 - [x] При выборе фреймворка проверяете свежесть данных (релизы, issues, реальные production-отзывы).
 
 **Не сдано:**

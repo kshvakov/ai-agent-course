@@ -36,26 +36,49 @@ Function Calling — это механизм, который даёт модел
 
 Разберём **полный цикл** на примере инструмента `ping`:
 
+Для примеров в этой главе используем нейтральные типы поверх нативного tool-calling API (OpenAI-совместимого). Это ровно то, что уходит в HTTP-запрос и приходит из ответа, — без привязки к конкретному SDK:
+
+```go
+// Описание инструмента — уходит в поле "tools" запроса.
+type ToolDef struct {
+    Name        string
+    Description string
+    Parameters  json.RawMessage // JSON Schema аргументов
+}
+
+// Сообщение истории. Role: "system" | "user" | "assistant" | "tool".
+type Message struct {
+    Role       string
+    Content    string
+    ToolCallID string    // для role="tool": связывает результат с вызовом
+    ToolCalls  []ToolCall // для role="assistant": сгенерированные вызовы
+}
+
+// Один вызов инструмента, сгенерированный моделью.
+type ToolCall struct {
+    ID        string
+    Name      string
+    Arguments string // JSON-строка
+}
+```
+
 #### Шаг 1: Определение инструмента (Tool Schema)
 
 ```go
-tools := []openai.Tool{
+tools := []ToolDef{
     {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "ping",
-            Description: "Ping a host to check connectivity",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "host": {
-                        "type": "string",
-                        "description": "Hostname or IP address to ping"
-                    }
-                },
-                "required": ["host"]
-            }`),
-        },
+        Name:        "ping",
+        Description: "Ping a host to check connectivity",
+        Parameters: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "host": {
+                    "type": "string",
+                    "description": "Hostname or IP address to ping"
+                }
+            },
+            "required": ["host"]
+        }`),
     },
 }
 ```
@@ -65,21 +88,25 @@ tools := []openai.Tool{
 #### Шаг 2: Запрос к модели
 
 ```go
-messages := []openai.ChatCompletionMessage{
+messages := []Message{
     {Role: "system", Content: "You are a network admin. Use tools to check connectivity."},
     {Role: "user", Content: "Проверь доступность google.com"},
 }
 
-req := openai.ChatCompletionRequest{
-    Model:    "gpt-4o-mini",
-    Messages: messages,
-    Tools:    tools,  // Модель видит описание инструментов!
-    Temperature: 0,
+client, err := NewClient(...) // провайдер из конфига (гл. 04)
+
+req := Request{
+    Model:       "glm-5.3",
+    Messages:    messages,
+    Tools:       tools,  // Модель видит описание инструментов!
+    Temperature: 0.2, // качество: меньше разброс в выборе инструментов
 }
 
-resp, _ := client.CreateChatCompletion(ctx, req)
+resp, err := client.Complete(ctx, req) // ошибка обрабатывается циклом (гл. 04)
 msg := resp.Choices[0].Message
 ```
+
+`client.Complete` — метод нейтрального клиента; полный канон типов — в [главе 04](../04-autonomy-and-loops/README.md).
 
 **Что происходит:** Модель видит:
 - System prompt (роль и инструкции)
@@ -92,14 +119,11 @@ msg := resp.Choices[0].Message
 
 ```go
 // msg.ToolCalls содержит:
-[]openai.ToolCall{
+[]ToolCall{
     {
-        ID: "call_abc123",
-        Type: "function",
-        Function: openai.FunctionCall{
-            Name:      "ping",
-            Arguments: `{"host": "google.com"}`,
-        },
+        ID:        "call_abc123",
+        Name:      "ping",
+        Arguments: `{"host": "google.com"}`,
     },
 }
 ```
@@ -111,24 +135,18 @@ msg := resp.Choices[0].Message
 Расширим пример и добавим несколько инструментов:
 
 ```go
-tools := []openai.Tool{
+tools := []ToolDef{
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "ping",
-            Description: "Ping a host to check network connectivity. Use this when user asks about network reachability or connectivity.",
-        },
+        Name:        "ping",
+        Description: "Ping a host to check network connectivity. Use this when user asks about network reachability or connectivity.",
     },
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "check_http",
-            Description: "Check HTTP status code of a website. Use this when user asks about website availability or HTTP errors.",
-        },
+        Name:        "check_http",
+        Description: "Check HTTP status code of a website. Use this when user asks about website availability or HTTP errors.",
     },
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "traceroute",
-            Description: "Trace the network path to a host. Use this when user asks about network routing or path analysis.",
-        },
+        Name:        "traceroute",
+        Description: "Trace the network path to a host. Use this when user asks about network routing or path analysis.",
     },
 }
 
@@ -190,15 +208,15 @@ userInput := "Проверь, отвечает ли сайт google.com"
 
 ```go
 // Проверяем, что инструмент существует
-if msg.ToolCalls[0].Function.Name != "ping" {
-    return fmt.Errorf("unknown tool: %s", msg.ToolCalls[0].Function.Name)
+if msg.ToolCalls[0].Name != "ping" {
+    return fmt.Errorf("unknown tool: %s", msg.ToolCalls[0].Name)
 }
 
 // Валидируем JSON аргументов
 var args struct {
     Host string `json:"host"`
 }
-if err := json.Unmarshal([]byte(msg.ToolCalls[0].Function.Arguments), &args); err != nil {
+if err := json.Unmarshal([]byte(msg.ToolCalls[0].Arguments), &args); err != nil {
     return fmt.Errorf("invalid JSON: %v", err)
 }
 
@@ -231,18 +249,18 @@ result := executePing(args.Host)  // "PING google.com: 64 bytes from ..."
 
 ```go
 // Добавляем результат в историю как сообщение с ролью "tool"
-messages = append(messages, openai.ChatCompletionMessage{
-    Role:       openai.ChatMessageRoleTool,
+messages = append(messages, Message{
+    Role:       "tool",
     Content:    result,  // "PING google.com: 64 bytes from ..."
     ToolCallID: msg.ToolCalls[0].ID,  // Связываем с вызовом
 })
 
 // Отправляем обновленную историю в модель снова
-resp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    "gpt-4o-mini",
+resp2, err := client.Complete(ctx, Request{
+    Model:    "glm-5.3",
     Messages: messages,  // Теперь включает результат инструмента!
     Tools:    tools,
-})
+}) // ошибка обрабатывается циклом (гл. 04)
 ```
 
 **Что происходит:** Модель видит результат выполнения инструмента и может:
@@ -270,7 +288,7 @@ if len(finalMsg.ToolCalls) == 0 {
 
 ```mermaid
 graph TB
-    A["System Prompt (в коде/конфиге)"] --> D[ChatCompletionRequest]
+    A["System Prompt (в коде/конфиге)"] --> D[Request: model + messages + tools]
     B["Tools Registry (в коде runtime)"] --> D
     C["User Input (от пользователя)"] --> D
     D --> E[LLM API]
@@ -308,7 +326,7 @@ graph TB
 
 ```json
 {
-  "model": "gpt-4o-mini",
+  "model": "glm-5.3",
   "messages": [
     {
       "role": "system",
@@ -398,7 +416,7 @@ graph TB
 
 ```json
 {
-  "model": "gpt-4o-mini",
+  "model": "glm-5.3",
   "messages": [
     {
       "role": "system",
@@ -548,7 +566,7 @@ graph TB
 - Модель видит весь контекст (system + user + tool call + tool result)
 - Генерирует финальный ответ: `"nginx работает нормально, сервис ONLINE"`
 
-**Примечание:** Для реализации на Go см. примеры в [Lab 02: Tools](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab02-tools) и [Lab 04: Autonomy](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab04-autonomy)
+**Примечание:** Для реализации на Go см. примеры в [Lab 02: Tools](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab02-tools) и [Lab 04: Autonomy](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab04-autonomy). Лабы пока не ревизованы (остаются на старом стеке) — используйте их как наводку, канон протокола — в этой главе.
 
 ### Ключевые моменты для разработчика
 
@@ -594,18 +612,14 @@ graph TB
 **Пример выбора между похожими инструментами:**
 
 ```go
-tools := []openai.Tool{
+tools := []ToolDef{
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "check_service_status",
-            Description: "Check if a systemd service is running. Use this for Linux services like nginx, mysql, etc.",
-        },
+        Name:        "check_service_status",
+        Description: "Check if a systemd service is running. Use this for Linux services like nginx, mysql, etc.",
     },
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "check_http_status",
-            Description: "Check HTTP response code of a web service. Use this for checking if a website or API is responding.",
-        },
+        Name:        "check_http_status",
+        Description: "Check HTTP response code of a web service. Use this for checking if a website or API is responding.",
     },
 }
 
@@ -616,135 +630,57 @@ tools := []openai.Tool{
 // Модель выбирает: check_http_status (сайт - это HTTP сервис)
 ```
 
-**Обрати внимание:** Если описания инструментов слишком похожи или неясны, модель может выбрать неправильный инструмент. Поэтому `Description` должен быть **конкретным и различимым**.
-
-**Пример определения инструмента:**
-
-```go
-tools := []openai.Tool{
-    {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "ping",
-            Description: "Ping a host to check connectivity",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "host": {
-                        "type": "string",
-                        "description": "Hostname or IP address to ping"
-                    }
-                },
-                "required": ["host"]
-            }`),
-        },
-    },
-}
-```
+**Обрати внимание:** Если описания инструментов слишком похожи или неясны, модель может выбрать неправильный инструмент. Поэтому `Description` должен быть **конкретным и различимым**. Полное определение инструмента со схемой аргументов — в «Шаге 1» выше; полный разбор JSON-протокола — в разделе «Сквозной протокол».
 
 **Главное:** `Description` — это самое важное поле! LLM ориентируется именно по нему, решая, какой инструмент вызвать.
 
+## Цена инструментов в контексте
+
+Блок `tools` — это не разовая настройка: он отправляется **в каждом запросе** цикла и оплачивается токенами каждый раз. Ориентир: 4 компактных инструмента — это уже ~742 токена, и это только схема, до system prompt и истории.
+
+Практические следствия:
+
+- **`Description` — самое важное поле, но и самая дорогая строка.** Каждое слово в нём платится в каждом ходе. Пишите плотно: что делает инструмент, когда его выбирать, что возвращает. Вычёркивайте всё, что не помогает модели выбрать.
+- **Проверяйте бюджет до добавления каждого tool'а.** Новый инструмент должен оправдывать свои токены: если модель вызывает его раз в сто задач, возможно, ему не место в постоянном наборе (см. раздел «Много инструментов ≠ нужен их каталог» в [Главе 06: RAG](../06-rag/README.md)).
+- **Число и размер описаний — вопрос дизайна №1.** Больше 20 инструментов с длинными описаниями — сигнал пересмотреть дизайн: возможно, вам нужны не tool-обёртки, а скилы и `exec` с progressive disclosure (см. [Главу 09: Архитектура агента](../09-agent-architecture/README.md) и [Главу 06: RAG](../06-rag/README.md)).
+
+> **Как это устроено в реальном SDK.** Описания не пишут руками: инструмент объявляется типизированным конструктором, и JSON Schema генерируется из Go-структуры ввода — рассинхрона схемы и кода просто не бывает. Результат исполнения — объект с двумя версиями контента: полная для UI и аудита, отфильтрованная для модели.
+
 ## Примеры инструментов в разных доменах
 
-### DevOps
+Инструменты разных доменов устроены одинаково — меняется только `Description` и схема аргументов. Сводка типичных примеров:
+
+| Домен | Инструмент | Суть описания | Особенность |
+|-------|------------|---------------|-------------|
+| DevOps | `check_service_status` | Check if a systemd service is running | read-only |
+| DevOps | `restart_service` | Restart a systemd service | даунтайм — требует подтверждения |
+| DevOps | `read_logs` | Read the last N lines of service logs | read-only |
+| Support | `search_kb` | Search knowledge base for solutions | read-only |
+| Support | `draft_reply` | Draft a reply to the ticket | черновик, не отправка |
+| Data | `sql_select` | Execute a SELECT query on the database | только SELECT на стороне кода, не на словах |
+| Data | `describe_table` | Get table schema and column information | read-only |
+| Security | `query_siem` | Query security events | read-only |
+| Security | `isolate_host` | Isolate a host from the network | деструктивный — требует подтверждения |
+
+Два примера, где формулировка `Description` решает всё:
 
 ```go
-// Проверка статуса сервиса
+// DevOps: деструктивная операция — описание объясняет последствия
 {
-    Name: "check_service_status",
-    Description: "Check if a systemd service is running",
-    Parameters: {"service_name": "string"}
+    Name:        "restart_service",
+    Description: "Restart a systemd service. This interrupts the service and may cause downtime for users; the tool returns the new service status.",
+    Parameters:  `{"service_name": "string"}`,
 }
 
-// Перезапуск сервиса
+// Security: опасный инструмент — описание говорит, что он делает и почему требует подтверждения
 {
-    Name: "restart_service",
-    Description: "Restart a systemd service. WARNING: This will cause downtime.",
-    Parameters: {"service_name": "string"}
-}
-
-// Чтение логов
-{
-    Name: "read_logs",
-    Description: "Read the last N lines of service logs",
-    Parameters: {"service": "string", "lines": "number"}
+    Name:        "isolate_host",
+    Description: "Cut a host off from the network to contain an active security incident. This severs all connections on the host; execution requires confirmation through the agent's Confirm mechanism.",
+    Parameters:  `{"host": "string"}`,
 }
 ```
 
-### Support
-
-```go
-// Получение тикета
-{
-    Name: "get_ticket",
-    Description: "Get ticket details by ID",
-    Parameters: {"ticket_id": "string"}
-}
-
-// Поиск в базе знаний
-{
-    Name: "search_kb",
-    Description: "Search knowledge base for solutions",
-    Parameters: {"query": "string"}
-}
-
-// Черновик ответа
-{
-    Name: "draft_reply",
-    Description: "Draft a reply to the ticket",
-    Parameters: {"ticket_id": "string", "message": "string"}
-}
-```
-
-### Data Analytics
-
-```go
-// SQL запрос (read-only!)
-{
-    Name: "sql_select",
-    Description: "Execute a SELECT query on the database. ONLY SELECT queries allowed.",
-    Parameters: {"query": "string"}
-}
-
-// Описание таблицы
-{
-    Name: "describe_table",
-    Description: "Get table schema and column information",
-    Parameters: {"table_name": "string"}
-}
-
-// Проверка качества данных
-{
-    Name: "check_data_quality",
-    Description: "Check for nulls, duplicates, outliers in a table",
-    Parameters: {"table_name": "string"}
-}
-```
-
-### Security
-
-```go
-// Запрос к SIEM
-{
-    Name: "query_siem",
-    Description: "Query security information and event management system",
-    Parameters: {"query": "string", "time_range": "string"}
-}
-
-// Изоляция хоста (требует подтверждения!)
-{
-    Name: "isolate_host",
-    Description: "CRITICAL: Isolate a host from the network. Requires confirmation.",
-    Parameters: {"host": "string"}
-}
-
-// Проверка IP репутации
-{
-    Name: "check_ip_reputation",
-    Description: "Check if an IP address is known malicious",
-    Parameters: {"ip": "string"}
-}
-```
+Обратите внимание: подтверждение для `isolate_host` обеспечивает **код runtime** (Confirm-коллбек и обязательный аргумент `confirmed_by`), а не просьба в Description. Подробный разбор — в [Главе 05: Safety и HITL](../05-safety-and-hitl/README.md), а полная коллекция инструментов по доменам — в [Главе 15: Кейсы](../15-case-studies/README.md).
 
 ## Обработка ошибок инструментов
 
@@ -758,9 +694,9 @@ result := ping("nonexistent-host")
 // result = "Error: Name or service not known"
 
 // Добавляем ошибку в историю
-messages = append(messages, ChatCompletionMessage{
-    Role:    "tool",
-    Content: result,  // Модель увидит ошибку!
+messages = append(messages, Message{
+    Role:       "tool",
+    Content:    result,  // Модель увидит ошибку!
     ToolCallID: call.ID,
 })
 
@@ -794,9 +730,15 @@ func executeTool(name string, args json.RawMessage) (string, error) {
             return "", fmt.Errorf("service_name is required")
         }
         
-        // Проверка безопасности
-        if params.ServiceName == "critical-db" {
-            return "", fmt.Errorf("Cannot restart critical service without confirmation")
+        // Проверка безопасности: allowlist, не denylist.
+        // Явно перечисляем то, что разрешено перезапускать; всё остальное — отказ.
+        var allowedServices = map[string]bool{
+            "nginx":    true,
+            "redis":    true,
+            "worker":   true,
+        }
+        if !allowedServices[params.ServiceName] {
+            return "", fmt.Errorf("service %q is not in the restart allowlist; restart is permitted only for explicitly allowed services", params.ServiceName)
         }
         
         return restartService(params.ServiceName), nil
@@ -812,25 +754,24 @@ func executeTool(name string, args json.RawMessage) (string, error) {
 - синтаксически невалидный JSON (пропущена `}`, кавычки и т.д.),
 - валидный JSON, но **не проходящий** вашу JSON Schema (не те поля/типы).
 
-Если это случилось, не выполняйте инструмент в таком виде. Вместо этого добавьте **repair-шаг**: отдельный вызов LLM (или отдельный режим/модель), который получает:
-
-- имя инструмента,
-- JSON Schema аргументов,
-- исходные аргументы (как строку),
-
-и возвращает **только исправленный JSON**, без объяснений.
-
-Скелет логики:
+Первую категорию чините детерминированно — **устойчивым парсером вроде `jsonrepair`**, до отказа модели. Типовые поломки (хвостовые запятые, одинарные кавычки, незакрытые скобки, обёртка в ```json-фенс) парсер устраняет без вызова LLM:
 
 ```go
-if !json.Valid([]byte(call.Function.Arguments)) {
-    // 1) repairArgs := repairWithLLM(call.Function.Arguments, toolSchema)
-    // 2) повторить валидацию (json.Valid + schema)
-    // 3) если всё ок — выполнять, иначе вернуть понятную ошибку и не выполнять tool
+args := call.Arguments
+if !json.Valid([]byte(args)) {
+    repaired, err := jsonrepair.Repair(args) // детерминированный repair
+    if err != nil {
+        // починить не удалось — возвращаем понятную ошибку как результат для модели
+        return "Error: invalid arguments JSON, re-send as valid JSON matching the schema", nil
+    }
+    args = repaired
 }
+// дальше — обычная валидация: json.Unmarshal + проверка схемы
 ```
 
-Ключевое правило: repair-шаг **не меняет намерение**, он чинит формат под схему.
+Если JSON синтаксически цел, но не проходит схему, — можно один раз вернуть модели ошибку с текстом схемы и попросить повторить вызов. Ключевое правило: repair **не меняет намерение**, он чинит формат.
+
+> **Как это устроено в реальном SDK.** Бывает, что модель «протекает»: выдаёт вызов инструмента текстом прямо в `content`, вместо поля `tool_calls`. У зрелых SDK есть recovery-парсеры, которые распознают такие протёкшие вызовы в тексте и достраивают их до полноценных tool calls. Это запасной путь на случай сбоев модели, а не штатный режим работы — рассчитывать на него в дизайне не нужно.
 
 ## Tool Descriptions в .md файлах
 
@@ -884,142 +825,58 @@ func (t *ReadTool) Description() string { return description }
 
 **Правило:** System prompt содержит **правила поведения и workflow**, но **не описания инструментов**. Описания — только через Tool API.
 
-## Стратегия выбора модели для разных этапов
+## Fallbacks вместо маршрутизации
 
-### Зачем нужны разные модели?
+### Когда разные модели НЕ нужны
 
-В примерах выше мы использовали одну модель (`GPT3Dot5Turbo`) для всех этапов: и для выбора инструмента, и для анализа результатов. В учебном примере это нормально. В продакшене — нет.
+Это ядро раздела, начнём с него:
 
-Разные этапы работы агента требуют разных способностей:
+- **Прототип / MVP:** одна модель проще. Оптимизируйте потом.
+- **Мало вызовов:** если агент делает 1-2 вызова в день — экономия не оправдает сложность.
+- **Критичная согласованность:** некоторые задачи требуют, чтобы одна модель "помнила" свои рассуждения между итерациями. Смена модели может нарушить цепочку рассуждений.
 
-| Этап | Что делает модель | Нужная способность | Подходящая модель |
-|------|-------------------|-------------------|-------------------|
-| Tool Selection | Сопоставляет запрос с описаниями инструментов | Следование инструкциям, structured output | Быстрая и дешёвая (GPT-4o-mini, Claude Haiku) |
-| Argument Generation | Заполняет JSON Schema аргументов | JSON generation, следование схеме | Быстрая и дешёвая |
-| Result Analysis | Анализирует результат инструмента, формулирует ответ | Рассуждение, синтез информации | Мощная (GPT-4o, Claude Sonnet) |
-| Complex Planning | Решает, какие инструменты вызвать и в каком порядке | Планирование, multi-step reasoning | Мощная |
+Для основного цикла агента берите **одну** модель (GLM-5.3 или Fable 5.1) и не усложняйте.
 
-**Суть:** Tool selection — это простая задача классификации. Анализ результатов — это задача рассуждения. Платить за GPT-4o на этапе "выбрать ping из трёх инструментов" — расточительство.
+### Почему маршрутизация по стадиям — over-engineering
 
-### Как это работает — Магия vs Реальность
+Идея «на tool selection — дешёвую модель, на анализ результатов — мощную» звучит разумно, но на практике ломает агент:
 
-**Магия (как обычно объясняют):**
-> "Используйте лучшую модель для всего. Она справится."
+1. **Она убивает prompt cache.** У каждой модели свой кэш промптов. Переключение моделей внутри одного Run сбрасывает кэшируемый префикс (system prompt + tools + история) — а именно он даёт основную экономию в длинных циклах. Экономия на «дешёвой итерации» оборачивается полной оплатой префикса заново.
+2. **Она усложняет тестирование.** Поведение агента начинает зависеть от того, какая модель обработала какую итерацию. Воспроизвести баг становится намного труднее.
+3. **Этап нельзя предсказать.** Заранее неизвестно, вызовет ли модель инструмент или ответит текстом, — «маршрутизатор» всё равно угадывает.
 
-**Реальность (как на самом деле):**
+### Правильная форма: primary + явные fallback'и
 
-Агент делает 5-15 вызовов LLM за одну задачу. Если каждый вызов стоит $0.01 (GPT-4o) вместо $0.0002 (GPT-4o-mini), разница — 50x за задачу. При 10 000 задач в день это $1 000 vs $20.
-
-Практика: используем дешёвую модель там, где задача простая, мощную — где нужно думать.
-
-### Реализация: ModelRouter
+Вместо маршрутизации по стадиям — одна primary-модель и **явный список резервных**. При transient-ошибке (таймаут, 429/5xx) или переполнении контекста запрос повторяется к резервной модели:
 
 ```go
-// ModelSelector выбирает модель в зависимости от этапа работы агента.
-type ModelSelector struct {
-    ToolCallModel   string // Модель для выбора инструмента и генерации аргументов
-    AnalysisModel   string // Модель для анализа результатов и финального ответа
-    ComplexModel    string // Модель для сложных задач (планирование, multi-tool)
+type ModelConfig struct {
+    Primary  string   // основная модель цикла
+    Fallbacks []string // резервные, по порядку
 }
 
-func NewModelSelector() *ModelSelector {
-    return &ModelSelector{
-        ToolCallModel: "gpt-4o-mini",      // Быстрая, дешёвая, хорошо следует инструкциям
-        AnalysisModel: "gpt-4o",            // Мощная, хорошо рассуждает
-        ComplexModel:  "gpt-4o",            // Для сложного планирования
-    }
-}
-
-// SelectModel определяет, какую модель использовать на текущей итерации.
-// needsToolCall: ожидаем ли мы вызов инструмента на этом шаге.
-// toolCount: сколько инструментов доступно (влияет на сложность выбора).
-func (ms *ModelSelector) SelectModel(needsToolCall bool, toolCount int) string {
-    if !needsToolCall {
-        // Этап анализа результатов — нужна мощная модель
-        return ms.AnalysisModel
-    }
-    if toolCount > 20 {
-        // Много инструментов — сложный выбор, нужна мощная модель
-        return ms.ComplexModel
-    }
-    // Обычный tool call — хватит дешёвой модели
-    return ms.ToolCallModel
+cfg := ModelConfig{
+    Primary:   "glm-5.3",
+    Fallbacks: []string{"fable-5.1"}, // другая модель, тот же tool-calling протокол
 }
 ```
 
-### Как определить этап?
+Правила:
 
-Runtime знает, на каком этапе находится агент. Правило простое:
+- каждый fallback срабатывает **не более одного раза за Run** — иначе агент зациклится на повторных ошибках;
+- fallback — это про доступность (transient-ошибки, переполнение контекста), а не про «экономию на простой итерации»;
+- все модели в цепочке должны поддерживать один и тот же протокол tools, чтобы messages[] переносились без конвертации.
 
-```go
-func isToolCallExpected(messages []openai.ChatCompletionMessage) bool {
-    if len(messages) == 0 {
-        return true // Первый вызов — скорее всего нужен tool call
-    }
-    lastMsg := messages[len(messages)-1]
+### Где место дешёвой модели
 
-    // Если последнее сообщение — результат инструмента,
-    // модель будет анализировать результат.
-    // Но она МОЖЕТ вызвать ещё один инструмент.
-    if lastMsg.Role == openai.ChatMessageRoleTool {
-        return true // Может быть и tool call, и финальный ответ
-    }
-    return true
-}
-```
+Дешёвая модель (GLM-5.3 Flash) нужна не в основном цикле, а на **служебных узлах вне его** — там, где нет длинного кэшируемого префикса и задача действительно простая:
 
-**Важный нюанс:** На практике мы не всегда знаем заранее, вызовет ли модель инструмент или ответит текстом. Поэтому часто используют более простую стратегию — **переключение после N tool calls**:
+- классификация входящего запроса,
+- structured output для извлечения полей.
 
-```go
-// Простая стратегия: первые N итераций — дешёвая модель,
-// финальная итерация (когда tool calls закончились) — мощная.
-func (ms *ModelSelector) SelectByIteration(iteration int, lastResponseHadToolCalls bool) string {
-    if lastResponseHadToolCalls {
-        // Ещё выполняем инструменты — дешёвая модель
-        return ms.ToolCallModel
-    }
-    // Инструменты закончились — переключаемся на мощную для финального ответа
-    return ms.AnalysisModel
-}
-```
+Condense — исключение: суммаризация идёт на той же модели с тем же кэшируемым префиксом, чтобы head читался из прогретого кэша ([гл. 20](../20-cost-latency-engineering/README.md), [гл. 13](../13-context-engineering/README.md)).
 
-### Использование в Agent Loop
-
-```go
-selector := NewModelSelector()
-lastHadToolCalls := true // Первая итерация — ожидаем tool call
-
-for i := 0; i < maxIterations; i++ {
-    model := selector.SelectByIteration(i, lastHadToolCalls)
-
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    model,  // Разная модель на разных этапах!
-        Messages: messages,
-        Tools:    tools,
-    })
-    if err != nil {
-        return fmt.Errorf("LLM call failed: %w", err)
-    }
-
-    msg := resp.Choices[0].Message
-    messages = append(messages, msg)
-    lastHadToolCalls = len(msg.ToolCalls) > 0
-
-    if !lastHadToolCalls {
-        fmt.Printf("[model=%s] Final: %s\n", model, msg.Content)
-        break
-    }
-
-    fmt.Printf("[model=%s] Tool calls: %d\n", model, len(msg.ToolCalls))
-    // ... выполнение инструментов ...
-}
-```
-
-### Когда НЕ нужны разные модели
-
-- **Прототип / MVP:** Одна модель проще. Оптимизируйте потом.
-- **Мало вызовов:** Если агент делает 1-2 вызова в день — экономия не оправдает сложность.
-- **Критичная согласованность:** Некоторые задачи требуют, чтобы одна модель "помнила" свои рассуждения между итерациями. Смена модели может нарушить цепочку рассуждений.
+Основной цикл — GLM-5.3 или Fable 5.1; служебные узлы — GLM-5.3 Flash.
 
 Подробнее о стоимости и оптимизации см. [Главу 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md).
 
@@ -1032,7 +889,7 @@ for i := 0; i < maxIterations; i++ {
 **Причина:** 
 - Модель не обучена на function calling
 - Плохое описание инструмента (`Description` неясное)
-- `Temperature > 0` (слишком случайно)
+- Слишком высокая `Temperature` — хуже следование инструкциям при выборе инструмента
 
 **Решение:**
 ```go
@@ -1042,8 +899,8 @@ for i := 0; i < maxIterations; i++ {
 // ХОРОШО: Улучшите Description
 Description: "Check the status of a server by hostname. Use this when user asks about server status or availability."
 
-// ХОРОШО: Temperature = 0
-Temperature: 0,  // Детерминированное поведение
+// ХОРОШО: Низкая Temperature — качество, меньше разброс в выборе инструментов
+Temperature: 0.2,
 ```
 
 ### Ошибка 2: Сломанный JSON в аргументах
@@ -1055,12 +912,12 @@ Temperature: 0,  // Детерминированное поведение
 **Решение:**
 ```go
 // ХОРОШО: Валидация JSON перед парсингом
-if !json.Valid([]byte(call.Function.Arguments)) {
+if !json.Valid([]byte(call.Arguments)) {
     return "Error: Invalid JSON", nil
 }
 
-// ХОРОШО: Temperature = 0 для детерминированного JSON
-Temperature: 0,
+// ХОРОШО: Низкая Temperature — меньше ошибок в генерации JSON
+Temperature: 0.2,
 ```
 
 ### Ошибка 3: Галлюцинации инструментов
@@ -1076,12 +933,12 @@ allowedFunctions := map[string]bool{
     "get_server_status": true,
     "ping":              true,
 }
-if !allowedFunctions[call.Function.Name] {
+if !allowedFunctions[call.Name] {
     return "Error: Unknown function", nil
 }
 ```
 
-**Примечание:** Если у вас большое пространство инструментов (сотни или тысячи), используйте **tool retrieval** — динамически выбирайте только релевантные инструменты перед планированием. Подробнее см. [Главу 06: RAG](../06-rag/README.md#rag-для-пространства-действий-tool-retrieval).
+**Примечание:** Если у вас большое пространство инструментов (сотни или тысячи), сначала пересмотрите дизайн: скилы + exec вместо каталога обёрток (см. [Главу 06: RAG](../06-rag/README.md)). **Tool retrieval** — динамический выбор релевантных инструментов перед планированием — вынужденная мера, когда tool'ы реально разные и их много.
 
 ### Ошибка 4: Плохое описание инструмента
 
@@ -1122,16 +979,13 @@ readTool := Tool{Description: "Read a file. Returns content with line numbers."}
 Создайте инструмент `check_disk_usage`, который проверяет использование диска:
 
 ```go
-tools := []openai.Tool{
+tools := []ToolDef{
     {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "check_disk_usage",
-            Description: "...",  // Ваш код здесь
-            Parameters:  json.RawMessage(`{
-                // Ваш код здесь
-            }`),
-        },
+        Name:        "check_disk_usage",
+        Description: "...",  // Ваш код здесь
+        Parameters:  json.RawMessage(`{
+            // Ваш код здесь
+        }`),
     },
 }
 ```
@@ -1146,7 +1000,7 @@ tools := []openai.Tool{
 Реализуйте функцию валидации аргументов для инструмента:
 
 ```go
-func validateToolCall(call openai.ToolCall) error {
+func validateToolCall(call ToolCall) error {
     // Проверьте имя инструмента
     // Проверьте валидность JSON
     // Проверьте обязательные поля
@@ -1183,142 +1037,72 @@ func validateToolCall(call openai.ToolCall) error {
 - **Цикл:** Как результаты инструментов возвращаются в модель, см. [Главу 04: Автономность](../04-autonomy-and-loops/README.md)
 - **MCP:** Стандартный протокол подключения инструментов к агентам — [Model Context Protocol](https://modelcontextprotocol.io/). Подробности в [Главе 18: Протоколы Инструментов](../18-tool-protocols-and-servers/README.md)
 
-## Полный пример: от начала до конца
+## Полный пример: компактный рабочий цикл
 
-Вот минимальный рабочий пример агента с одним инструментом:
+Полный разбор JSON-протокола (запросы, ответы, эволюция `messages[]`) уже дан выше в разделе «Сквозной протокол» — здесь только компактный рабочий цикл на нейтральных типах из начала главы:
 
 ```go
-package main
+// Цикл агента с одним инструментом. client — нейтральный клиент (гл. 04):
+// Complete — вызов вашего LLM-провайдера
+// (OpenAI-совместимый tool-calling endpoint).
+func runAgent(ctx context.Context, client Client) error {
+    tools := []ToolDef{{
+        Name:        "check_status",
+        Description: "Check the status of a server by hostname. Use this when user asks about server status.",
+        Parameters:  json.RawMessage(`{"type":"object","properties":{"hostname":{"type":"string","description":"Server hostname"}},"required":["hostname"]}`),
+    }}
 
-import (
-    "context"
-    "encoding/json"
-    "fmt"
-    "os"
-    
-    "github.com/sashabaranov/go-openai"
-)
-
-func main() {
-    // 1. Инициализация клиента
-    config := openai.DefaultConfig(os.Getenv("OPENAI_API_KEY"))
-    if baseURL := os.Getenv("OPENAI_BASE_URL"); baseURL != "" {
-        config.BaseURL = baseURL // Для локальных моделей
-    }
-    client := openai.NewClientWithConfig(config)
-    
-    // 2. Определение инструмента
-    tools := []openai.Tool{
-        {
-            Type: openai.ToolTypeFunction,
-            Function: &openai.FunctionDefinition{
-                Name:        "check_status",
-                Description: "Check the status of a server by hostname. Use this when user asks about server status.",
-                Parameters: json.RawMessage(`{
-                    "type": "object",
-                    "properties": {
-                        "hostname": {
-                            "type": "string",
-                            "description": "Server hostname"
-                        }
-                    },
-                    "required": ["hostname"]
-                }`),
-            },
-        },
-    }
-    
-    // 3. Запуск агента
-    ctx := context.Background()
-    userInput := "Проверь статус сервера web-01"
-    
-    messages := []openai.ChatCompletionMessage{
+    messages := []Message{
         {Role: "system", Content: "Ты DevOps инженер. Используй инструменты для проверки сервисов."},
-        {Role: "user", Content: userInput},
+        {Role: "user", Content: "Проверь статус сервера web-01"},
     }
-    
-    // 4. Цикл агента
+
     for i := 0; i < 10; i++ {
-        resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-            Model:       "gpt-4o-mini",
+        resp, err := client.Complete(ctx, Request{
+            Model:       "glm-5.3",
             Messages:    messages,
             Tools:       tools,
-            Temperature: 0, // Детерминированное поведение
+            Temperature: 0.2, // качество: меньше разброс в выборе инструментов
         })
         if err != nil {
-            fmt.Printf("Error: %v\n", err)
-            return
+            return fmt.Errorf("LLM call failed: %w", err)
         }
-        
+
         msg := resp.Choices[0].Message
         messages = append(messages, msg)
-        
-        // 5. Проверка: это tool_call или финальный ответ?
-        if len(msg.ToolCalls) == 0 {
-            // Финальный ответ
-            fmt.Printf("Agent: %s\n", msg.Content)
-            break
+
+        if len(msg.ToolCalls) == 0 { // финальный ответ
+            fmt.Println("Agent:", msg.Content)
+            return nil
         }
-        
-        // 6. Выполнение инструмента (Runtime)
-        for _, toolCall := range msg.ToolCalls {
-            if toolCall.Function.Name != "check_status" {
-                result := fmt.Sprintf("Error: Unknown tool %s", toolCall.Function.Name)
-                messages = append(messages, openai.ChatCompletionMessage{
-                    Role:       openai.ChatMessageRoleTool,
-                    Content:    result,
-                    ToolCallID: toolCall.ID,
-                })
-                continue
-            }
-            
-            // Парсим аргументы
-            var args struct {
-                Hostname string `json:"hostname"`
-            }
-            if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
-                result := fmt.Sprintf("Error: Invalid JSON: %v", err)
-                messages = append(messages, openai.ChatCompletionMessage{
-                    Role:       openai.ChatMessageRoleTool,
-                    Content:    result,
-                    ToolCallID: toolCall.ID,
-                })
-                continue
-            }
-            
-            // Выполняем реальную функцию
-            result := checkStatus(args.Hostname)
-            
-            // Добавляем результат в историю
-            messages = append(messages, openai.ChatCompletionMessage{
-                Role:       openai.ChatMessageRoleTool,
+
+        for _, call := range msg.ToolCalls { // runtime: валидация и выполнение
+            result := executeTool(call) // ошибка — тоже результат для модели
+            messages = append(messages, Message{
+                Role:       "tool",
                 Content:    result,
-                ToolCallID: toolCall.ID,
+                ToolCallID: call.ID,
             })
         }
     }
+    return fmt.Errorf("iteration limit reached")
 }
 
-// Реальная функция, которую вызывает Runtime
-func checkStatus(hostname string) string {
-    // В реальном приложении здесь был бы вызов API или команда
-    return fmt.Sprintf("Server %s is ONLINE", hostname)
+func executeTool(call ToolCall) string {
+    if call.Name != "check_status" {
+        return fmt.Sprintf("Error: unknown tool %s", call.Name)
+    }
+    var args struct {
+        Hostname string `json:"hostname"`
+    }
+    if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+        return fmt.Sprintf("Error: invalid arguments: %v", err)
+    }
+    return fmt.Sprintf("Server %s is ONLINE", args.Hostname) // в реальности — API или команда
 }
 ```
 
-**Что происходит:**
-1. Агент получает запрос "Проверь статус сервера web-01"
-2. Модель видит инструмент `check_status` и генерирует tool_call
-3. Runtime парсит tool_call, валидирует и выполняет `checkStatus("web-01")`
-4. Результат добавляется в историю
-5. Модель видит результат и формулирует финальный ответ
-
-**Запуск:**
-```bash
-export OPENAI_API_KEY="your-key"
-export OPENAI_BASE_URL="http://localhost:1234/v1"  # Для локальных моделей
-go run main.go
-```
+**Запуск:** `go run main.go` — ключ и endpoint вашего LLM-провайдера задаются переменными окружения.
 
 ## Что дальше?
 

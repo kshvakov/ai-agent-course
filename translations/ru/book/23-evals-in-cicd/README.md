@@ -56,55 +56,63 @@ type EvalCase struct {
 }
 ```
 
-### Шаг 2: Запись траектории выполнения
+### Шаг 2: Траектория выполнения — это RunResult
 
-Для оценки на всех уровнях нужно записывать полный путь агента:
+Вторую структуру траектории придумывать не нужно. Агентный цикл уже возвращает **RunResult** ([гл. 04](../04-autonomy-and-loops/README.md)): итерации, tool-вызовы с аргументами и результатами, usage. [Глава 08](../08-evals-and-reliability/README.md) строит на нём базовые evals, [глава 19](../19-observability-and-tracing/README.md) трассирует те же события. Eval-раннер просто читает готовую траекторию:
 
 ```go
-type AgentTrajectory struct {
-    RunID    string          `json:"run_id"`
-    Steps    []TrajectoryStep `json:"steps"`
-    Duration time.Duration   `json:"duration"`
-    Tokens   int             `json:"tokens"`
+// Eval-обёртка над каноническим RunResult (гл. 04): прод-поля
+// (Iterations, Usage, Output) плюс eval-специфика — RunID для корреляции
+// с трейсом (гл. 19), латентность прогона и запись tool-вызовов
+type RunResult struct {
+    RunID      string        `json:"run_id"`
+    Iterations int           `json:"iterations"`
+    ToolCalls  []ToolCallRec `json:"tool_calls"`
+    Usage      Usage         `json:"usage"` // prompt/completion токены
+    LatencyMs  float64       `json:"latency_ms"`
+    Output     string        `json:"output"`
+    Err        error         `json:"-"` // заполняется из RunResult.Err (гл. 04)
 }
 
-type TrajectoryStep struct {
+type ToolCallRec struct {
     Iteration int    `json:"iteration"`
-    Type      string `json:"type"` // "tool_call", "tool_result", "final_answer"
-    ToolName  string `json:"tool_name,omitempty"`
-    ToolArgs  string `json:"tool_args,omitempty"`
-    Result    string `json:"result,omitempty"`
+    ToolName  string `json:"tool_name"`
+    ToolArgs  string `json:"tool_args"`
+    Result    string `json:"result"`
 }
 
-// Запись траектории в agent loop
-func runAgentWithTracing(input string, tools []openai.Tool) (string, AgentTrajectory) {
-    var trajectory AgentTrajectory
-    trajectory.RunID = generateRunID()
+// runEvalCase запускает агента тем же Run'ом, что и прод, и заполняет
+// eval-обёртку из канонного RunResult; запись вызовов и латентность —
+// из событий Config.On (ToolEndEvent — гл. 09) и замера времени
+func runEvalCase(ctx context.Context, input string) (string, RunResult) {
+    start := time.Now()
 
-    for i := 0; i < maxIterations; i++ {
-        resp, _ := client.CreateChatCompletion(ctx, req)
-        msg := resp.Choices[0].Message
-
-        if len(msg.ToolCalls) == 0 {
-            trajectory.Steps = append(trajectory.Steps, TrajectoryStep{
-                Iteration: i, Type: "final_answer", Result: msg.Content,
-            })
-            return msg.Content, trajectory
-        }
-
-        for _, tc := range msg.ToolCalls {
-            trajectory.Steps = append(trajectory.Steps, TrajectoryStep{
-                Iteration: i, Type: "tool_call",
-                ToolName: tc.Function.Name, ToolArgs: tc.Function.Arguments,
-            })
-            result := executeTool(tc)
-            trajectory.Steps = append(trajectory.Steps, TrajectoryStep{
-                Iteration: i, Type: "tool_result",
-                ToolName: tc.Function.Name, Result: result,
-            })
+    cfg := evalConfig(input)
+    var rec RunResult
+    rec.RunID = "eval-" + time.Now().UTC().Format("20060102T150405.000000000") // корреляция с трейсом (гл. 19)
+    cfg.On = func(ev Event) {
+        if end, ok := ev.(ToolEndEvent); ok {
+            recTool := ToolCallRec{
+                ToolName: end.Call.Name, ToolArgs: end.Call.Arguments,
+                Iteration: len(rec.ToolCalls) + 1,
+            }
+            // Упавший инструмент — не паника: ошибка попадает в запись вызова
+            if end.Err != nil || end.Res == nil {
+                recTool.Result = "tool error"
+            } else {
+                recTool.Result = end.Res.Content
+            }
+            rec.ToolCalls = append(rec.ToolCalls, recTool)
         }
     }
-    return "", trajectory
+
+    res := Run(ctx, cfg)
+    rec.Output, rec.Iterations = res.Output, res.Iterations
+    rec.Usage = res.Usage
+    rec.Err = res.Err // терминальная ошибка хода: упавший прогон не выглядит успешным
+    rec.LatencyMs = float64(time.Since(start).Milliseconds())
+
+    return rec.Output, rec
 }
 ```
 
@@ -132,25 +140,32 @@ type EvalResult struct {
     TopicScore   float64 `json:"topic_score"`
 }
 
-func evaluateCase(c EvalCase, answer string, traj AgentTrajectory) EvalResult {
+func evaluateCase(c EvalCase, answer string, res RunResult) EvalResult {
     result := EvalResult{CaseID: c.ID}
+
+    // Терминальная ошибка хода (гл. 04) — случай упал, любые оценки не считаются
+    if res.Err != nil {
+        result.TaskPass, result.ToolPass, result.TrajectoryPass = false, false, false
+        result.TaskScore = 0
+        return result
+    }
 
     // --- Task Level ---
     result.TaskPass = checkTaskCompletion(c, answer)
     result.TaskScore = scoreAnswer(c.ExpectedOutput, answer)
 
     // --- Tool Level ---
-    usedTools := extractToolNames(traj)
+    usedTools := extractToolNames(res)
     result.ToolAccuracy = toolSelectionAccuracy(c.ExpectedTools, usedTools)
     result.ToolPass = result.ToolAccuracy >= 0.8 && !containsForbidden(usedTools, c.ForbiddenTools)
 
     // --- Trajectory Level ---
-    result.StepCount = len(traj.Steps)
-    result.HasLoops = detectLoops(traj)
+    result.StepCount = res.Iterations
+    result.HasLoops = detectLoops(res)
     result.TrajectoryPass = result.StepCount <= c.MaxSteps && !result.HasLoops
 
     // --- Topic Level ---
-    result.TopicPass, result.TopicScore = evaluateTopic(c.Topic, answer, traj)
+    result.TopicPass, result.TopicScore = evaluateTopic(c.Topic, answer, res)
 
     return result
 }
@@ -190,13 +205,11 @@ func containsForbidden(used, forbidden []string) bool {
 **Trajectory Level — детекция циклов:**
 
 ```go
-func detectLoops(traj AgentTrajectory) bool {
+func detectLoops(res RunResult) bool {
     // Если одна и та же последовательность tool calls повторяется 3+ раз — это цикл
     var calls []string
-    for _, step := range traj.Steps {
-        if step.Type == "tool_call" {
-            calls = append(calls, step.ToolName+":"+step.ToolArgs)
-        }
+    for _, tc := range res.ToolCalls {
+        calls = append(calls, tc.ToolName+":"+tc.ToolArgs)
     }
 
     windowSize := 3
@@ -228,16 +241,16 @@ type TurnCase struct {
     MustContain    []string `json:"must_contain,omitempty"`
 }
 
-func evaluateMultiTurn(mtc MultiTurnCase, client *openai.Client) (float64, error) {
-    var messages []openai.ChatCompletionMessage
+func evaluateMultiTurn(mtc MultiTurnCase, client *llm.Client) (float64, error) {
+    var messages []llm.Message
     passedTurns := 0
 
     for _, turn := range mtc.Turns {
-        messages = append(messages, openai.ChatCompletionMessage{
-            Role: openai.ChatMessageRoleUser, Content: turn.UserInput,
+        messages = append(messages, llm.Message{
+            Role: "user", Content: turn.UserInput,
         })
 
-        resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+        resp, err := client.Complete(ctx, llm.Request{
             Model:    model,
             Messages: messages,
             Tools:    tools,
@@ -259,8 +272,8 @@ func evaluateMultiTurn(mtc MultiTurnCase, client *openai.Client) (float64, error
         // Выполняем tool calls если есть
         for _, tc := range msg.ToolCalls {
             result := executeTool(tc)
-            messages = append(messages, openai.ChatCompletionMessage{
-                Role: openai.ChatMessageRoleTool, Content: result, ToolCallID: tc.ID,
+            messages = append(messages, llm.Message{
+                Role: "tool", Content: result, ToolCallID: tc.ID,
             })
         }
     }
@@ -285,7 +298,7 @@ type RAGASMetrics struct {
 }
 
 func evaluateRAGAS(query, answer string, retrievedDocs, groundTruthDocs []string,
-    client *openai.Client) RAGASMetrics {
+    client *llm.Client) RAGASMetrics {
 
     metrics := RAGASMetrics{}
 
@@ -335,15 +348,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version: '1.22'
+          go-version-file: go.mod
 
       - name: Run four-level evals
         run: go run cmd/evals/main.go --output=results.json
 
       - name: Check quality gates
         run: |
+          # Пороги НЕ универсальные константы: каждый порог калибруется
+          # на baseline — прогоните текущую (эталонную) версию агента
+          # N>=3-5 раз и поставьте порог чуть ниже медианы.
+          # Значения ниже — пример калибровки, не «production-стандарт».
+          TASK_THRESHOLD=0.90        # калиброван на своём baseline task-эвалов
+          TOOL_THRESHOLD=0.85        # свой baseline для tool-эвалов
+          TRAJECTORY_THRESHOLD=0.75  # траектория варьируется сильнее всего
+
           # Парсим результаты
           TASK_PASS=$(jq '.task_pass_rate' results.json)
           TOOL_ACCURACY=$(jq '.tool_accuracy' results.json)
@@ -355,18 +376,18 @@ jobs:
           echo "Trajectory Pass Rate: $TRAJECTORY_PASS"
           echo "Topic Score: $TOPIC_SCORE"
 
-          # Quality gates по каждому уровню
+          # Quality gates по каждому уровню — каждый со своим порогом
           FAILED=0
-          if (( $(echo "$TASK_PASS < 0.95" | bc -l) )); then
-            echo "FAIL: Task pass rate $TASK_PASS < 0.95"
+          if (( $(echo "$TASK_PASS < $TASK_THRESHOLD" | bc -l) )); then
+            echo "FAIL: Task pass rate $TASK_PASS < $TASK_THRESHOLD"
             FAILED=1
           fi
-          if (( $(echo "$TOOL_ACCURACY < 0.90" | bc -l) )); then
-            echo "FAIL: Tool accuracy $TOOL_ACCURACY < 0.90"
+          if (( $(echo "$TOOL_ACCURACY < $TOOL_THRESHOLD" | bc -l) )); then
+            echo "FAIL: Tool accuracy $TOOL_ACCURACY < $TOOL_THRESHOLD"
             FAILED=1
           fi
-          if (( $(echo "$TRAJECTORY_PASS < 0.85" | bc -l) )); then
-            echo "FAIL: Trajectory pass rate $TRAJECTORY_PASS < 0.85"
+          if (( $(echo "$TRAJECTORY_PASS < $TRAJECTORY_THRESHOLD" | bc -l) )); then
+            echo "FAIL: Trajectory pass rate $TRAJECTORY_PASS < $TRAJECTORY_THRESHOLD"
             FAILED=1
           fi
 
@@ -384,14 +405,15 @@ stages:
 
 agent-evals:
   stage: evals
-  image: golang:1.22
+  image: golang:1
   script:
     - go run cmd/evals/main.go --output=results.json
     - |
       TASK_PASS=$(jq '.task_pass_rate' results.json)
       TOOL_ACCURACY=$(jq '.tool_accuracy' results.json)
       echo "Task: $TASK_PASS, Tool: $TOOL_ACCURACY"
-      if (( $(echo "$TASK_PASS < 0.95" | bc -l) )); then
+      # Порог калибруется на baseline (N>=3 прогонов эталонной версии)
+      if (( $(echo "$TASK_PASS < $TASK_THRESHOLD" | bc -l) )); then
         echo "Quality gate failed"
         exit 1
       fi
@@ -401,6 +423,40 @@ agent-evals:
     paths:
       - results.json
 ```
+
+#### Cost/latency-гейт — рядом с quality-гейтом
+
+Качество — не единственная ось регрессии. Правка промпта может не уронить pass rate, но удвоить токены на прогон или латентность. Поэтому рядом с quality-гейтом стоит **cost/latency-гейт**: те же прогоны, но вместо pass rate проверяем токены, цену и латентность против baseline ([гл. 20](../20-cost-latency-engineering/README.md)):
+
+```go
+// Cost/latency-гейт: усредняем по N>=3 прогонам (один прогон недостоверен)
+// и сравниваем с baseline, снятым на эталонной версии агента
+type CostBaseline struct {
+    AvgTokensPerRun float64       // из RunResult.Usage, не ручной подсчёт
+    AvgLatencyMs    float64
+}
+
+func checkCostGate(runs []RunResult, base CostBaseline) error {
+    var tokens, latency float64
+    for _, r := range runs {
+        tokens += float64(r.Usage.PromptTokens + r.Usage.CompletionTokens)
+        latency += r.LatencyMs
+    }
+    if tokens/float64(len(runs)) > base.AvgTokensPerRun*1.2 {
+        return fmt.Errorf("token regression: %.0f vs baseline %.0f", tokens/float64(len(runs)), base.AvgTokensPerRun)
+    }
+    if latency/float64(len(runs)) > base.AvgLatencyMs*1.3 {
+        return fmt.Errorf("latency regression: %.0fms vs baseline %.0fms", latency/float64(len(runs)), base.AvgLatencyMs)
+    }
+    return nil
+}
+```
+
+Baseline переснимается при сознательном изменении тарифа/модели, а не подгоняется под каждый PR.
+
+#### Живые evals: smoke-набор на реальной системе
+
+CI гоняет evals на заглушках — этого мало. При правке промптов или скилов прогоните **smoke-набор ключевых сценариев на реальной прод-системе** — вручную или «по кнопке» (отдельный режим с подтверждением опасных действий, [гл. 05](../05-safety-and-hitl/README.md)). Это обязательная часть процесса, а не «когда-нибудь потом»: CI-прогон может быть зелёным, а на проде — другой раннинг модели, другие данные, другая латентность. Как строить живые evals — [глава 08](../08-evals-and-reliability/README.md); метрики живых прогонов идут в тот же дашборд, что и CI ([гл. 19](../19-observability-and-tracing/README.md)).
 
 ### Шаг 7: Continuous Evaluation (в проде)
 
@@ -415,12 +471,15 @@ func continuousEval(interval time.Duration) {
         recentRuns := getRecentRuns(100)
         results := evaluateRuns(recentRuns)
 
-        // Проверяем пороги
-        if results.TaskPassRate < 0.90 {
-            alert("Task pass rate dropped to %.2f", results.TaskPassRate)
+        // Пороги — отклонение от baseline той же модели,
+        // не универсальные константы
+        if results.TaskPassRate < baseline.TaskPassRate-0.05 {
+            alert("Task pass rate dropped to %.2f (baseline %.2f)",
+                results.TaskPassRate, baseline.TaskPassRate)
         }
-        if results.ToolAccuracy < 0.85 {
-            alert("Tool accuracy dropped to %.2f", results.ToolAccuracy)
+        if results.ToolAccuracy < baseline.ToolAccuracy-0.05 {
+            alert("Tool accuracy dropped to %.2f (baseline %.2f)",
+                results.ToolAccuracy, baseline.ToolAccuracy)
         }
 
         // Записываем метрики для дашборда
@@ -454,6 +513,7 @@ type EvalDataset struct {
 package main
 
 import (
+    "context"
     "encoding/json"
     "fmt"
     "os"
@@ -467,12 +527,13 @@ type EvalSummary struct {
 }
 
 func main() {
+    ctx := context.Background()
     dataset := loadDataset("testdata/evals/latest.json")
     var results []EvalResult
 
     for _, c := range dataset.Cases {
-        answer, traj := runAgentWithTracing(c.Input, tools)
-        result := evaluateCase(c, answer, traj)
+        answer, res := runEvalCase(ctx, c.Input)
+        result := evaluateCase(c, answer, res)
         results = append(results, result)
     }
 
@@ -484,8 +545,10 @@ func main() {
     fmt.Printf("Task: %.2f, Tool: %.2f, Trajectory: %.2f\n",
         summary.TaskPassRate, summary.ToolAccuracy, summary.TrajectoryPassRate)
 
-    // Quality gate
-    if summary.TaskPassRate < 0.95 || summary.ToolAccuracy < 0.90 {
+    // Quality gates: пороги читаем из конфига, калибруются на baseline
+    // текущей версии (N>=3-5 прогонов), это не универсальные константы
+    gates := loadGates("gates.yaml")
+    if summary.TaskPassRate < gates.TaskThreshold || summary.ToolAccuracy < gates.ToolThreshold {
         fmt.Println("FAILED: Quality gates not met")
         os.Exit(1)
     }
@@ -522,29 +585,30 @@ result := evaluateCase(c, answer, trajectory)
 // ПЛОХО: Запускаем агента, проверяем только ответ
 answer := runAgent(input)
 
-// ХОРОШО: Записываем траекторию
-answer, trajectory := runAgentWithTracing(input, tools)
+// ХОРОШО: Запускаем через Run — RunResult уже несёт траекторию
+answer, res := runEvalCase(ctx, input)
 // Теперь видим каждый шаг: какой tool, какие args, какой результат
 ```
 
-### Ошибка 3: Жёсткие пороги для всех уровней
+### Ошибка 3: Универсальные пороги «как production-стандарт»
 
-**Симптом:** CI/CD постоянно падает из-за flaky evals на Trajectory Level.
+**Симптом:** CI/CD постоянно падает из-за flaky evals на Trajectory Level. Или наоборот — гейт зелёный, а в проде качество хуже, чем было.
 
-**Причина:** Одинаковые строгие пороги для всех уровней. Trajectory Level нестабилен — модель может выбрать разные пути к одному результату.
+**Причина:** Пороги взяты «из головы» (0.95 для всего) или скопированы из чужого проекта. У вас другая модель, другой домен, другая вариативность. Trajectory Level нестабилен по своей природе — модель может выбрать разные пути к одному результату.
 
-**Решение:**
+**Решение:** Каждый уровень eval калибруется на своём baseline: прогоните текущую (эталонную) версию агента N≥3–5 раз, возьмите медиану каждого показателя и поставьте порог чуть ниже неё. Один прогон для baseline недостоверен — nondeterminism модели даст случайный сдвиг.
 ```go
-// ПЛОХО: Одинаковый порог 0.95 для всех
-taskThreshold := 0.95
-toolThreshold := 0.95
-trajectoryThreshold := 0.95 // Слишком строго для trajectory!
+// ПЛОХО: один порог «0.95 как стандарт» для всех уровней
+threshold := 0.95 // откуда это число? ниоткуда
 
-// ХОРОШО: Разные пороги для разных уровней
-taskThreshold := 0.95       // Задача должна выполняться
-toolThreshold := 0.90       // Правильный выбор инструментов
-trajectoryThreshold := 0.80 // Путь может варьироваться
+// ХОРОШО: порог каждого уровня — от своего baseline
+// (медиана N>=3 прогонов эталонной версии минус допуск)
+taskThreshold       := baseline.TaskPassRate - 0.05
+toolThreshold       := baseline.ToolAccuracy - 0.05
+trajectoryThreshold := baseline.TrajectoryPassRate - 0.10 // путь варьируется сильнее
 ```
+
+Baseline переснимается при осознанном улучшении агента — и тогда порог растёт вместе с качеством, а не остаётся константой.
 
 ### Ошибка 4: Нет RAGAS-метрик для RAG-агентов
 
@@ -592,7 +656,7 @@ testCase := EvalCase{
 Реализуйте функцию `detectLoops` для Trajectory Level:
 
 ```go
-func detectLoops(trajectory AgentTrajectory) bool {
+func detectLoops(res RunResult) bool {
     // Ваш код: проверьте, повторяются ли tool calls
 }
 ```
@@ -615,8 +679,11 @@ multiTurnCase := MultiTurnCase{
 **Сдано:**
 - [x] Evals интегрированы в CI/CD pipeline
 - [x] Quality gates блокируют деплой при ухудшении метрик
+- [x] Пороги калибруются на baseline (N≥3 прогонов), не универсальные константы
+- [x] Cost/latency-гейт работает рядом с quality-гейтом
 - [x] Есть оценка на четырёх уровнях (Task, Tool, Trajectory, Topic)
-- [x] Записывается траектория выполнения для анализа
+- [x] Записывается траектория выполнения (RunResult) для анализа
+- [x] Есть smoke-набор живых evals на реальной системе (гл. 08)
 - [x] Для RAG-агентов есть RAGAS-метрики
 - [x] Eval-датасеты версионируются
 
@@ -628,9 +695,10 @@ multiTurnCase := MultiTurnCase{
 
 ## Связь с другими главами
 
-- **[Глава 08: Evals и Надежность](../08-evals-and-reliability/README.md)** — базовые концепции evals
+- **[Глава 08: Evals и Надежность](../08-evals-and-reliability/README.md)** — базовые концепции evals, живые evals на проде
 - **[Глава 06: RAG](../06-rag/README.md)** — RAGAS-метрики для RAG-агентов
-- **[Глава 19: Observability и Tracing](../19-observability-and-tracing/README.md)** — трассировка для связи с evals
+- **[Глава 19: Observability и Tracing](../19-observability-and-tracing/README.md)** — трассировка RunResult для связи с evals
+- **[Глава 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md)** — baseline для cost/latency-гейта
 - **[Глава 22: Prompt и Program Management](../22-prompt-program-management/README.md)** — тестирование промптов
 
 ## Что дальше?

@@ -59,18 +59,33 @@ Agent = Brain (LLM) + Tools (Hands) + Memory (Context) + Planning (Process)
 **Пример:**
 ```go
 // Это Runtime — код, который вы пишете
-func runAgent(ctx context.Context, client *openai.Client, userInput string) {
-    messages := []openai.ChatCompletionMessage{...}
-    
+type Message struct {
+    Role       string     // "system" | "user" | "assistant" | "tool"
+    Content    string
+    ToolCalls  []ToolCall // заполнено, если модель решила вызвать инструмент
+    ToolCallID string     // ID вызова (только для role="tool")
+}
+
+func runAgent(ctx context.Context, chat func(context.Context, []Message) (Message, error), userInput string) {
+    messages := []Message{
+        {Role: "system", Content: systemPrompt},
+        {Role: "user", Content: userInput},
+    }
+
     for i := 0; i < maxIterations; i++ {
-        resp, _ := client.CreateChatCompletion(ctx, ...)
-        msg := resp.Choices[0].Message
-        
-        if len(msg.ToolCalls) > 0 {
-            // Runtime выполняет инструмент
-            result := executeTool(msg.ToolCalls[0])
-            // Runtime добавляет результат в историю
-            messages = append(messages, ...)
+        msg, err := chat(ctx, messages) // один HTTP-запрос к провайдеру
+        if err != nil {
+            log.Fatal(err)
+        }
+        messages = append(messages, msg)
+
+        if len(msg.ToolCalls) == 0 {
+            return // модель ответила текстом — задача решена
+        }
+        for _, call := range msg.ToolCalls {
+            result := executeTool(call) // реальная Go-функция
+            // tool-результат связывается с вызовом через ToolCallID
+            messages = append(messages, Message{Role: "tool", ToolCallID: call.ID, Content: result})
         }
     }
 }
@@ -175,20 +190,21 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) {
 
 ## Требования
 
-- **Go 1.21+** — для выполнения лабораторных работ
-- **Локальная LLM** (рекомендуется) или OpenAI API Key
-  - Установите [LM Studio](https://lmstudio.ai/) или [Ollama](https://ollama.com/)
-  - Запустите локальный сервер (обычно на порту 1234 или 11434)
+- **Go 1.24+** — для выполнения лабораторных работ
+- **Доступ к любой LLM с поддержкой tool calling** — облачные модели (GLM-5.3, GLM-5.3 Flash, Fable 5.1, Opus 5.5) или локальные
+  - Для локальной модели: [LM Studio](https://lmstudio.ai/), [Ollama](https://ollama.com/) или vLLM — всё, что даёт OpenAI-совместимый endpoint
 - **Базовые знания программирования** — курс рассчитан на программистов
 - **Понимание основ DevOps** (желательно, но не обязательно)
 
+> **Примечание:** код в главах ревизован и использует нейтральный Go поверх протокола native tool-calling. **Лабораторные работы пока не ревизованы** — их код остаётся на старом клиенте и старых моделях и будет обновлён отдельным этапом; примеры глав надёжнее лаб.
+
 ## Настройка окружения
 
-Для работы с локальной моделью (например, в LM Studio):
+Примеры курса работают с любым OpenAI-совместимым endpoint — локальным или облачным:
 
 ```bash
-export OPENAI_BASE_URL="http://localhost:1234/v1"
-export OPENAI_API_KEY="any-string" # Локальным моделям ключ обычно не важен
+export OPENAI_BASE_URL="http://localhost:1234/v1" # или URL облачного провайдера
+export OPENAI_API_KEY="any-string"                # локальным моделям ключ обычно не важен
 ```
 
 ## Что дальше?

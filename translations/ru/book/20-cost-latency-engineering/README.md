@@ -13,21 +13,21 @@ Cost & Latency Engineering — это контроль бюджета и про�
 
 **Ситуация:** Агент для DevOps работает в проде неделю. Счёт за LLM API — $5000 за месяц вместо ожидаемых $500.
 
-**Проблема:** Агент использует GPT-4 для всех запросов, даже для простых проверок статуса. Нет лимитов на токены, нет кэширования, нет fallback на более дешёвые модели. Один запрос "проверь статус сервера" использует 50,000 токенов из-за большого контекста.
+**Проблема:** Агент использует самую дорогую модель для всех запросов, даже для простых проверок статуса. Нет лимитов на токены, system-префикс меняется между итерациями (кэш провайдера не работает), нет лимита итераций. Один запрос "проверь статус сервера" использует 50,000 токенов из-за большого контекста.
 
-**Решение:** Бюджеты токенов, лимиты итераций, кэширование, маршрутизация моделей по сложности задачи. Теперь простые запросы используют дешёвую модель (GPT-4o-mini), сложные — мощную (GPT-4o). Счёт снизился до $600 в месяц.
+**Решение:** Бюджеты токенов, лимиты итераций, неизменяемый system-префикс под prompt cache провайдера, дешёвая модель на служебных узлах вне цикла. Теперь служебные запросы идут на лёгкую модель (GLM-5.3 Flash), основной цикл — на одну модель (GLM-5.3 или Fable 5.1). Счёт снизился до $600 в месяц.
 
-> **Примечание:** Цены на LLM API меняются часто. Актуальные тарифы проверяйте на сайтах провайдеров. Цены в этой главе приведены для иллюстрации порядка величин.
+> **Примечание:** Цены на LLM API меняются часто. Актуальные тарифы проверяйте на сайтах провайдеров и держите в конфиге. В этой главе конкретных цен нет — только формулы, в которые подставляются ваши актуальные тарифы.
 
 ## Теория простыми словами
 
 ### Что такое Cost Engineering?
 
 Cost Engineering — это контроль и оптимизация стоимости использования LLM API. Основные рычаги:
-1. **Выбор модели** — мощные модели (GPT-4o) дороже лёгких (GPT-4o-mini) в разы
-2. **Количество токенов** — чем больше контекст, тем дороже
-3. **Количество запросов** — каждый вызов LLM стоит денег
-4. **Кэширование** — одинаковые запросы можно не повторять
+1. **Выбор модели** — мощные модели (Fable 5.1, Opus 5.5) дороже лёгких (GLM-5.3 Flash) в разы; лёгкая — для служебных узлов вне цикла
+2. **Количество токенов** — чем больше контекст, тем дороже; блок `tools[]` оплачивается в каждом запросе
+3. **Prompt cache провайдера** — неизменяемый system-префикс (system + блок tools) кэшируется провайдером и тарифицируется в разы дешевле
+4. **Количество запросов** — каждый вызов LLM стоит денег
 
 ### Что такое Latency Engineering?
 
@@ -41,12 +41,12 @@ Latency Engineering — это контроль времени ответа. О�
 
 ### Шаг 1: Бюджеты токенов
 
-Установите лимит токенов на запрос:
+Установите лимит платных токенов на ход (накопительно, с учётом кэш-скидки — см. ниже):
 
 ```go
 const (
-    MaxTokensPerRequest = 10000
-    MaxIterations      = 10
+    MaxTokensPerTurn = 10000
+    MaxIterations    = 10
 )
 
 type TokenBudget struct {
@@ -64,20 +64,28 @@ func checkTokenBudget(budget TokenBudget) error {
 
 ### Шаг 2: Лимиты итераций
 
-Ограничьте количество итераций ReAct loop (см. [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab04-autonomy/main.go)):
+Ограничьте количество итераций ReAct loop — канон цикла и лимитов в [главе 04](../04-autonomy-and-loops/README.md); лаба [`lab04-autonomy`](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab04-autonomy) пока не ревизована и будет обновлена отдельным этапом. Примеры используют нейтральный клиент из главы 04: `client.Complete(ctx, Request{...})`:
 
 ```go
-func runAgent(ctx context.Context, client *openai.Client, userInput string) (string, error) {
+func runAgent(ctx context.Context, client Client, userInput string) (string, error) {
     maxIterations := 10
-    tokenBudget := TokenBudget{Limit: MaxTokensPerRequest}
-    
+    tokenBudget := TokenBudget{Limit: MaxTokensPerTurn}
+
+    messages := []Message{
+        {Role: "system", Content: systemPrompt}, // неизменяемый префикс — под кэш
+        {Role: "user", Content: userInput},
+    }
+    toolDefs := []ToolDef{/* инструменты хода (гл. 03) */}
+
     for i := 0; i < maxIterations; i++ {
-        resp, err := client.CreateChatCompletion(ctx, req)
+        resp, err := client.Complete(ctx, Request{Messages: messages, Tools: toolDefs})
         if err != nil {
-            return "", err
+            return "", err // транзиентные ошибки ретраит сам клиент (гл. 04)
         }
         
-        tokenBudget.Used += resp.Usage.TotalTokens
+        // Бюджет — из Usage провайдера, по платным токенам, а не по TotalTokens:
+        // кэш-префикс дешевле генерации и вычитается из prompt (гл. 04, 13)
+        tokenBudget.Used += resp.Usage.PromptTokens - resp.Usage.CacheReadTokens + resp.Usage.CompletionTokens
         
         // Проверяем бюджет
         if err := checkTokenBudget(tokenBudget); err != nil {
@@ -103,104 +111,68 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) (str
 
 Это часто дешевле и надёжнее, чем саммаризация: вы не теряете данные, просто переносите их из контекста в хранилище.
 
-### Шаг 3: Кэширование результатов LLM
+### Шаг 3: Prompt cache — главный рычаг экономии
 
-Кэшируйте результаты для одинаковых запросов:
+Классическая идея «закэшировать ответы LLM» — `map[hash(messages)] → answer` — для агентов **не работает**. Ключ почти всегда уникален: на каждой итерации история растёт (добавился ответ модели, добавились результаты инструментов), значит хэш меняется, значит попаданий в кэш нет. Ровно тот же вывод мы сделали для кэша контекста в [главе 13](../13-context-engineering/README.md).
+
+Реальный рычаг — **prompt cache провайдера**. Провайдер кэширует **неизменяемый префикс** запроса: system-сообщение + блок `tools[]`. Правила:
+
+- **Префикс не меняется** между итерациями и запросами: один и тот же system-промпт, один и тот же список tools. Всё динамическое — в конце истории (`user`, `tool`-сообщения).
+- **История только дополняется**: запрос N+1 начинается с того же префикса + вся история запроса N. Провайдер не пересчитывает совпавший префикс.
+- **Попадание видно по метрикам**: `cache-read > 0` в `Usage` ответа (названия полей у провайдеров отличаются — `cache_read` / `cached_tokens` / `CacheRead`, — суть одна).
+- **Кэш привязан к модели**: смена модели между запросами ломает кэш — у каждой модели он свой.
 
 ```go
-import (
-    "crypto/sha256"
-    "encoding/hex"
-    "sync"
-    "time"
-)
-
-type CacheEntry struct {
-    Result   string
-    ExpiresAt time.Time
+// Попадание в prompt cache видно прямо в Usage ответа:
+resp, err := client.Complete(ctx, Request{Messages: messages, Tools: toolDefs})
+if err != nil {
+    return "", err
 }
+// resp.Usage.PromptTokens      — все prompt-токены (включая кэш)
+// resp.Usage.CacheReadTokens   — сколько из них пришло из кэша провайдера
+hitRate := float64(resp.Usage.CacheReadTokens) / float64(resp.Usage.PromptTokens)
+```
 
-var cache = sync.Map{} // map[string]*CacheEntry
+Экономия двойная:
 
-func getCacheKey(messages []openai.ChatCompletionMessage) string {
-    // Создаём ключ из содержимого сообщений
-    data := ""
-    for _, msg := range messages {
-        data += msg.Role + ":" + msg.Content
+1. **Стоимость**: кэш-чтение тарифицируется в разы дешевле полных prompt-токенов (коэффициенты — в конфиге, см. [главу 19](../19-observability-and-tracing/README.md): таблица цен per-модель).
+2. **Латентность**: кэшированный префикс не пересчитывается — время до первого токена заметно падает. Prompt cache — это одновременно и оптимизация **latency**, а не только денег.
+
+Что убивает кэш на корню: «умный» system-промпт с датой/именем пользователя внутри, переупорядочивание tools между итерациями, ротация моделей внутри одного цикла.
+
+### Шаг 4: Выбор модели — один раз, на границе
+
+Модель выбирается **до старта цикла** и не меняется внутри него. Критерии — класс задачи и требования к качеству, а решение принимает код на границе системы: явные сценарии в конфиге, отдельный классификатор (см. «Дешёвая модель на служебных узлах» ниже) или человек.
+
+```go
+// selectModel вызывается один раз — до agent loop, не внутри него.
+// Критерии приходят снаружи (конфиг сценария / классификатор), а не из
+// эвристик по подстрокам пользовательского ввода: substring-магия хрупка
+// и не переживает смену формулировок.
+func selectModel(profile TaskProfile) string {
+    switch profile {
+    case ProfileAuxiliary: // служебные узлы вне цикла
+        return "glm-5.3-flash"
+    default: // основной цикл — одна модель на весь ход
+        return "glm-5.3"
     }
-    hash := sha256.Sum256([]byte(data))
-    return hex.EncodeToString(hash[:])
-}
-
-func getCachedResult(key string) (string, bool) {
-    entry, ok := cache.Load(key)
-    if !ok {
-        return "", false
-    }
-    e := entry.(*CacheEntry)
-    if time.Now().After(e.ExpiresAt) {
-        cache.Delete(key)
-        return "", false
-    }
-    return e.Result, true
-}
-
-func setCachedResult(key string, result string, ttl time.Duration) {
-    cache.Store(key, &CacheEntry{
-        Result:    result,
-        ExpiresAt: time.Now().Add(ttl),
-    })
 }
 ```
 
-### Шаг 4: Маршрутизация моделей по сложности
-
-Используйте более дешёвые модели для простых задач (см. [`labs/lab09-context-optimization/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab09-context-optimization/main.go)):
-
-```go
-func selectModel(taskComplexity string) string {
-    switch taskComplexity {
-    case "simple":
-        return "gpt-4o-mini" // Дешевле и быстрее
-    case "complex":
-        return "gpt-4o" // Лучше качество, но дороже
-    default:
-        return "gpt-4o-mini"
-    }
-}
-
-func assessTaskComplexity(userInput string) string {
-    // Простые задачи: проверка статуса, чтение логов
-    simpleKeywords := []string{"check", "status", "read", "get", "list"}
-    for _, keyword := range simpleKeywords {
-        if strings.Contains(strings.ToLower(userInput), keyword) {
-            return "simple"
-        }
-    }
-    // Сложные задачи: анализ, планирование, решение проблем
-    return "complex"
-}
-```
+Внутри цикла модель фиксирована: смена модели между итерациями ломает prompt cache (у каждой модели свой кэш) и обнуляет всю экономию из Шага 3.
 
 ### Шаг 5: Fallback-модели
 
-Реализуйте цепочку fallback при ошибках или превышении бюджета:
+Fallback-цепочка нужна для **отказоустойчивости**, а не для экономии: «если основная модель недоступна — ход продолжается на резервной, а не падает». Переключение — только при transient-ошибках и не по соображениям цены. Механизм — [гл. 03 → Fallbacks вместо маршрутизации](../03-tools-and-function-calling/README.md#fallbacks-вместо-маршрутизации) и [гл. 04](../04-autonomy-and-loops/README.md):
 
 ```go
-func createChatCompletionWithFallback(ctx context.Context, client *openai.Client, req openai.ChatCompletionRequest) (*openai.ChatCompletionResponse, error) {
-    models := []string{"gpt-4o", "gpt-4o-mini"}
-    
-    for _, model := range models {
-        req.Model = model
-        resp, err := client.CreateChatCompletion(ctx, req)
-        if err == nil {
-            return resp, nil
-        }
-        // Если ошибка, пробуем следующую модель
-    }
-    
-    return nil, fmt.Errorf("all models failed")
+// Fallback-и живут в конфигурации клиента (Resolve), цикл о них не знает.
+cfg := ModelConfig{ // форма гл. 03: primary + явные fallback'и
+    Primary:   "glm-5.3",
+    Fallbacks: []string{"fable-5.1"}, // только доступность, не «экономия»
 }
+// Клиент сам повторяет запрос к резервной модели при transient-ошибке;
+// счётчик переключений попадает в RunResult (гл. 04) и в метрики failovers (гл. 19).
 ```
 
 ### Шаг 6: Таймауты
@@ -211,28 +183,39 @@ func createChatCompletionWithFallback(ctx context.Context, client *openai.Client
 import "context"
 import "time"
 
-func runAgentWithTimeout(ctx context.Context, client *openai.Client, userInput string) (string, error) {
+func runAgentWithTimeout(ctx context.Context, client Client, userInput string) (string, error) {
     // Timeout для всего agent run (5 минут)
     ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
     defer cancel()
-    
+
+    maxIterations := 10 // терминальная граница хода (гл. 04)
+
+    messages := []Message{
+        {Role: "system", Content: systemPrompt},
+        {Role: "user", Content: userInput},
+    }
+    toolDefs := []ToolDef{/* инструменты хода (гл. 03) */}
+
     // ... agent loop ...
     
     for i := 0; i < maxIterations; i++ {
         // Timeout для каждого вызова LLM (30 секунд)
         callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
-        resp, err := client.CreateChatCompletion(callCtx, req)
+        resp, err := client.Complete(callCtx, Request{Messages: messages, Tools: toolDefs})
         callCancel()
-        
+
         if err != nil {
-            if err == context.DeadlineExceeded {
+            if errors.Is(err, context.DeadlineExceeded) {
                 return "", fmt.Errorf("LLM call timeout")
             }
             return "", err
         }
-        
+
         // ... остальной код ...
     }
+
+    // Исчерпание лимита итераций — терминальная граница (гл. 04)
+    return "", fmt.Errorf("agent exceeded max iterations (%d)", maxIterations)
 }
 ```
 
@@ -240,17 +223,22 @@ func runAgentWithTimeout(ctx context.Context, client *openai.Client, userInput s
 
 ### Точка интеграции 1: Agent Loop
 
-В [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab04-autonomy/main.go) добавьте проверку бюджета и лимит итераций:
+В своём рантайме из главы 04 добавьте проверку бюджета и лимит итераций (лаба lab04-autonomy пока не ревизована и будет обновлена отдельным этапом):
 
 ```go
 const MaxIterations = 10
-const MaxTokensPerRequest = 10000
+const MaxTokensPerTurn = 10000
 
-// В цикле:
+// В цикле: бюджет — накопительный, на весь ход (гл. 04), не на один запрос
+var usedPaidTokens int
 for i := 0; i < MaxIterations; i++ {
-    resp, err := client.CreateChatCompletion(ctx, req)
-    // Проверяем токены
-    if resp.Usage.TotalTokens > MaxTokensPerRequest {
+    resp, err := client.Complete(ctx, Request{Messages: messages, Tools: toolDefs})
+    if err != nil {
+        return "", err // до чтения Usage: resp == nil при ошибке
+    }
+    // Копим платные токены (кэш-префикс дешевле, гл. 04/13) и сверяем с лимитом хода
+    usedPaidTokens += resp.Usage.PromptTokens - resp.Usage.CacheReadTokens + resp.Usage.CompletionTokens
+    if usedPaidTokens > MaxTokensPerTurn {
         return "", fmt.Errorf("token limit exceeded")
     }
     // ... остальной код ...
@@ -259,42 +247,40 @@ for i := 0; i < MaxIterations; i++ {
 
 ### Точка интеграции 2: Context Optimization
 
-В [`labs/lab09-context-optimization/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab09-context-optimization/main.go) уже есть подсчёт токенов. Добавьте проверку бюджета:
+В своём рантайме добавьте condense по порогу окна (гл. 12/13), не по бюджету хода (лаба lab09-context-optimization пока не ревизована):
 
 ```go
-func adaptiveContextManagement(ctx context.Context, client *openai.Client, messages []openai.ChatCompletionMessage, maxTokens int) []openai.ChatCompletionMessage {
-    usedTokens := countTokensInMessages(messages)
-    
-    // Если превышен бюджет, применяем агрессивную оптимизацию
-    if usedTokens > MaxTokensPerRequest {
-        return compressOldMessages(ctx, client, messages, maxTokens)
+func adaptiveContextManagement(ctx context.Context, client Client, lastResp *Response, messages []Message, condenseAt float64) []Message {
+    // Триггер сжатия — порог контекстного окна (гл. 12/13), не бюджет хода:
+    // budget (MaxTokensPerTurn) — про деньги, condenseAt — про место в окне.
+    // Порог считается по usage.PromptTokens последнего ответа провайдера (гл. 12);
+    // пред-оценка «~3 символа на токен» — только fallback, пока ответа нет
+    var usedTokens int
+    if lastResp != nil {
+        usedTokens = lastResp.Usage.PromptTokens // первичный источник — провайдер
+    } else {
+        usedTokens = estimateTokens(messages) // fallback до первого ответа (гл. 12)
     }
-    
+    window := contextWindowTokens() // размер окна модели (гл. 01)
+
+    if float64(usedTokens)/float64(window) >= condenseAt { // типовое ~0.85
+        return compressOldMessages(ctx, client, messages)
+    }
+
     // ... остальная логика ...
 }
 ```
 
 ## Мини-пример кода
 
-Полный пример с контролем стоимости на базе [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab04-autonomy/main.go):
+Компактный пример с контролем стоимости на базе цикла из главы 04 — бюджеты, лимит итераций, таймауты, одна модель в цикле (клиент — нейтральный, из [главы 04](../04-autonomy-and-loops/README.md); шаги 1–2 и 6 выше, собранные в один листинг):
 
 ```go
-package main
-
-import (
-    "context"
-    "fmt"
-    "os"
-    "time"
-
-    "github.com/sashabaranov/go-openai"
-)
-
 const (
-    MaxTokensPerRequest = 10000
-    MaxIterations      = 10
-    LLMTimeout         = 30 * time.Second
-    AgentTimeout       = 5 * time.Minute
+    MaxTokensPerTurn    = 10000
+    MaxIterations       = 10
+    LLMTimeout          = 30 * time.Second
+    AgentTimeout        = 5 * time.Minute
 )
 
 type TokenBudget struct {
@@ -309,254 +295,116 @@ func checkTokenBudget(budget TokenBudget) error {
     return nil
 }
 
-func selectModel(taskComplexity string) string {
-    if taskComplexity == "simple" {
-        return "gpt-4o-mini"
-    }
-    return "gpt-4o"
-}
-
-func checkDisk() string { return "Disk Usage: 95% (CRITICAL). Large folder: /var/log" }
-func cleanLogs() string { return "Logs cleaned. Freed 20GB." }
-
-func main() {
-    token := os.Getenv("OPENAI_API_KEY")
-    baseURL := os.Getenv("OPENAI_BASE_URL")
-    if token == "" {
-        token = "dummy"
-    }
-
-    config := openai.DefaultConfig(token)
-    if baseURL != "" {
-        config.BaseURL = baseURL
-    }
-    client := openai.NewClientWithConfig(config)
-
-    ctx, cancel := context.WithTimeout(context.Background(), AgentTimeout)
+// runAgentWithBudgets — цикл из главы 04 с бюджетом, лимитом итераций и таймаутами.
+func runAgentWithBudgets(ctx context.Context, client Client, userInput string) (string, error) {
+    ctx, cancel := context.WithTimeout(ctx, AgentTimeout) // дедлайн всего хода
     defer cancel()
 
-    userInput := "У меня кончилось место. Разберись."
-    
-    // Определяем сложность задачи
-    model := selectModel("simple") // Для простых задач используем GPT-3.5
-    
-    tokenBudget := TokenBudget{Limit: MaxTokensPerRequest}
+    // Одна primary-модель на весь цикл (задана на клиенте, гл. 04) —
+    // prompt cache работает, переключение только через fallback-цепочку.
 
-    tools := []openai.Tool{
-        {
-            Type: openai.ToolTypeFunction,
-            Function: &openai.FunctionDefinition{
-                Name:        "check_disk",
-                Description: "Check current disk usage",
-            },
-        },
-        {
-            Type: openai.ToolTypeFunction,
-            Function: &openai.FunctionDefinition{
-                Name:        "clean_logs",
-                Description: "Delete old logs to free space",
-            },
-        },
+    tokenBudget := TokenBudget{Limit: MaxTokensPerTurn}
+
+    messages := []Message{
+        {Role: "system", Content: systemPrompt}, // неизменяемый префикс — под кэш провайдера
+        {Role: "user", Content: userInput},
     }
-
-    messages := []openai.ChatCompletionMessage{
-        {Role: openai.ChatMessageRoleSystem, Content: "You are an autonomous DevOps agent."},
-        {Role: openai.ChatMessageRoleUser, Content: userInput},
-    }
-
-    fmt.Println("Starting Agent Loop...")
+    toolDefs := []ToolDef{/* инструменты хода (гл. 03) */}
 
     for i := 0; i < MaxIterations; i++ {
         // Проверяем бюджет перед запросом
         if err := checkTokenBudget(tokenBudget); err != nil {
-            fmt.Printf("Budget exceeded: %v\n", err)
-            break
-        }
-
-        req := openai.ChatCompletionRequest{
-            Model:    model,
-            Messages: messages,
-            Tools:    tools,
+            log.Printf("budget exceeded: %v", err)
+            return "", fmt.Errorf("token budget exceeded: %w", err) // терминально (гл. 04)
         }
 
         // Timeout для каждого вызова LLM
         callCtx, callCancel := context.WithTimeout(ctx, LLMTimeout)
-        resp, err := client.CreateChatCompletion(callCtx, req)
+        resp, err := client.Complete(callCtx, Request{Messages: messages, Tools: toolDefs})
         callCancel()
 
         if err != nil {
-            if err == context.DeadlineExceeded {
-                fmt.Printf("LLM call timeout\n")
-                break
+            if errors.Is(err, context.DeadlineExceeded) {
+                log.Printf("LLM call timeout")
+                return "", err
             }
-            panic(fmt.Sprintf("API Error: %v", err))
-        }
-
-        msg := resp.Choices[0].Message
-        messages = append(messages, msg)
-
-        // Обновляем бюджет
-        tokenBudget.Used += resp.Usage.TotalTokens
-        fmt.Printf("Tokens used: %d / %d\n", tokenBudget.Used, tokenBudget.Limit)
-
-        if len(msg.ToolCalls) == 0 {
-            fmt.Println("AI:", msg.Content)
-            break
-        }
-
-        for _, toolCall := range msg.ToolCalls {
-            fmt.Printf("Executing tool: %s\n", toolCall.Function.Name)
-
-            var result string
-            if toolCall.Function.Name == "check_disk" {
-                result = checkDisk()
-            } else if toolCall.Function.Name == "clean_logs" {
-                result = cleanLogs()
-            }
-
-            fmt.Println("Tool Output:", result)
-
-            messages = append(messages, openai.ChatCompletionMessage{
-                Role:       openai.ChatMessageRoleTool,
-                Content:    result,
-                ToolCallID: toolCall.ID,
-            })
-        }
-    }
-}
-```
-
-## Multi-model в одном Agent Run
-
-В [Шаге 4](#шаг-4-маршрутизация-моделей-по-сложности) мы выбирали модель один раз на весь запрос: простая задача — дешёвая модель, сложная — дорогая. Но внутри одного agent run разные **стадии** требуют разного уровня интеллекта.
-
-Подумайте: чтобы выбрать инструмент из списка, модели не нужно глубокое понимание задачи. Это как выбор отвёртки из ящика — механическое действие. А вот чтобы проанализировать результат инструмента и сформулировать ответ — нужно думать.
-
-### Три стадии итерации
-
-Каждая итерация цикла агента (см. [Глава 04: Автономность и Циклы](../04-autonomy-and-loops/README.md)) состоит из трёх стадий:
-
-| Стадия | Что происходит | Нужна мощная модель? | Пример модели |
-|--------|---------------|---------------------|---------------|
-| 1. Выбор инструмента | LLM решает, какой tool вызвать | Нет — список tools фиксирован | GPT-4o-mini (~$0.15/1M input) |
-| 2. Анализ результата | LLM интерпретирует ответ инструмента | Да — нужно понимание контекста | GPT-4o (~$2.50/1M input) |
-| 3. Финальный ответ | LLM формулирует ответ пользователю | Да — качество ответа критично | GPT-4o (~$2.50/1M input) |
-
-### Экономика: считаем конкретно
-
-Допустим, агент выполняет задачу за 8 итераций. Каждый вызов LLM использует ~2000 токенов.
-
-**Одна модель на все стадии (GPT-4o):**
-- 8 итераций × 2 вызова (tool selection + analysis) = 16 вызовов
-- 16 × ~$0.01 = **~$0.16 за задачу**
-
-**Multi-model подход:**
-- 8 вызовов tool selection × ~$0.0002 (GPT-4o-mini) = $0.0016
-- 7 вызовов анализа результатов × ~$0.01 (GPT-4o) = $0.07
-- 1 финальный ответ × ~$0.01 (GPT-4o) = $0.01
-- Итого: **~$0.08 за задачу**
-
-Экономия ~50% без потери качества. На 10,000 запросов в месяц это разница между $1,600 и $800.
-
-### Реализация: ModelRouter
-
-```go
-// Stage определяет стадию итерации агента
-type Stage int
-
-const (
-    StageToolSelection Stage = iota // Выбор инструмента
-    StageResultAnalysis             // Анализ результата инструмента
-    StageFinalAnswer                // Генерация финального ответа
-)
-
-// ModelRouter выбирает модель в зависимости от стадии итерации.
-// Дешёвая модель справляется с выбором tool из фиксированного списка,
-// мощная модель нужна для анализа и генерации ответа.
-type ModelRouter struct {
-    CheapModel    string // Для механических решений (tool selection)
-    PowerfulModel string // Для анализа и генерации ответа
-}
-
-func NewModelRouter() *ModelRouter {
-    return &ModelRouter{
-        CheapModel:    "gpt-4o-mini",
-        PowerfulModel: "gpt-4o",
-    }
-}
-
-func (r *ModelRouter) SelectModel(stage Stage) string {
-    switch stage {
-    case StageToolSelection:
-        return r.CheapModel
-    case StageResultAnalysis, StageFinalAnswer:
-        return r.PowerfulModel
-    default:
-        return r.PowerfulModel
-    }
-}
-```
-
-Интеграция в agent loop:
-
-```go
-func runAgentMultiModel(ctx context.Context, client *openai.Client, messages []openai.ChatCompletionMessage, tools []openai.Tool) (string, error) {
-    router := NewModelRouter()
-
-    for i := 0; i < MaxIterations; i++ {
-        // Стадия 1: выбор инструмента — дешёвая модель
-        req := openai.ChatCompletionRequest{
-            Model:    router.SelectModel(StageToolSelection),
-            Messages: messages,
-            Tools:    tools,
-        }
-        resp, err := client.CreateChatCompletion(ctx, req)
-        if err != nil {
+            log.Printf("API error: %v", err)
             return "", err
         }
 
         msg := resp.Choices[0].Message
         messages = append(messages, msg)
 
-        // Если tool calls нет — это финальный ответ,
-        // но он сгенерирован дешёвой моделью. Перегенерируем мощной.
+        // Обновляем бюджет — по платным токенам, не по TotalTokens (гл. 04, 13).
+        // Упрощение-нижняя оценка: кэш-чтение не бесплатное, а тарифицируется
+        // со скидкой — точный учёт коэффициентом из конфига цен (гл. 19).
+        tokenBudget.Used += resp.Usage.PromptTokens - resp.Usage.CacheReadTokens + resp.Usage.CompletionTokens
+        log.Printf("tokens: %d/%d (cache_read=%d)",
+            tokenBudget.Used, tokenBudget.Limit, resp.Usage.CacheReadTokens)
+
         if len(msg.ToolCalls) == 0 {
-            return regenerateWithPowerfulModel(ctx, client, router, messages)
+            return msg.Content, nil
         }
 
-        // Выполняем инструменты
-        toolResults := executeTools(msg.ToolCalls)
-        messages = append(messages, toolResults...)
-
-        // Стадия 2: анализ результата — мощная модель
-        // Следующая итерация цикла решит: нужен ещё tool call или финальный ответ.
-        // Если нужен ещё tool call, мы снова переключимся на дешёвую модель.
+        for _, toolCall := range msg.ToolCalls {
+            result, err := executeTool(ctx, toolCall)
+            if err != nil {
+                result = "error: " + err.Error()
+            }
+            messages = append(messages, Message{
+                Role: "tool", Content: result, ToolCallID: toolCall.ID,
+            })
+        }
     }
-
-    return "", fmt.Errorf("max iterations exceeded")
-}
-
-// regenerateWithPowerfulModel перегенерирует финальный ответ мощной моделью.
-// Дешёвая модель хорошо выбирает tools, но финальный ответ
-// должен быть качественным.
-func regenerateWithPowerfulModel(ctx context.Context, client *openai.Client, router *ModelRouter, messages []openai.ChatCompletionMessage) (string, error) {
-    // Убираем последний ответ дешёвой модели
-    messages = messages[:len(messages)-1]
-
-    req := openai.ChatCompletionRequest{
-        Model:    router.SelectModel(StageFinalAnswer),
-        Messages: messages,
-        // Без tools — просим только текстовый ответ
-    }
-    resp, err := client.CreateChatCompletion(ctx, req)
-    if err != nil {
-        return "", err
-    }
-    return resp.Choices[0].Message.Content, nil
+    // Исчерпание лимита итераций — терминальная граница (гл. 04), не тихий возврат
+    log.Printf("agent exceeded max iterations (%d), tokens: %d/%d", MaxIterations, tokenBudget.Used, tokenBudget.Limit)
+    return "", fmt.Errorf("agent exceeded max iterations (%d)", MaxIterations)
 }
 ```
 
-> **Связь с другими главами:** Механизм Function Calling, который мы используем на стадии tool selection, описан в [Главе 03: Инструменты и Function Calling](../03-tools-and-function-calling/README.md). Сам цикл агента — в [Главе 04: Автономность и Циклы](../04-autonomy-and-loops/README.md).
+## Дешёвая модель на служебных узлах
+
+Идея «выбирать модель по сложности на каждой итерации» выглядит заманчиво, но внутри основного цикла она не работает: **смена модели между запросами ломает prompt cache** (у каждой модели свой кэш, Шаг 3), и «экономия 50%» из маркетинговых примеров не учитывает ни потерю кэша, ни рост latency на пересчёт префикса. Кроме того, дешёвая модель, выбирающая инструменты в середине хода, может увести рассуждение не туда — и тогда «сэкономленный» вызов оборачивается лишними итерациями.
+
+Правильное место для дешёвой модели — **служебные узлы вне основного цикла**:
+
+| Узел | Что делает | Модель |
+|------|-----------|--------|
+| Классификация входа | простой/сложный запрос, роутинг сценария | GLM-5.3 Flash |
+| Structured output | извлечение полей, парсинг ответа в структуру | GLM-5.3 Flash |
+| **Основной цикл** | ReAct-ход: выбор инструментов, анализ, ответ | **одна модель**: GLM-5.3 или Fable 5.1 |
+
+**Condense — исключение, не служебный узел.** Запрос суммаризации несёт **тот же кэшируемый префикс** (system + tools) и идёт на ту же модель, что и основной цикл: head читается из прогретого кэша, а не платится по полной ([гл. 13](../13-context-engineering/README.md)). Дешёвая модель здесь — ложная экономия: свой промпт и «урезанная» история обнуляют cache-hit по всей старой истории, и condense становится дороже, чем вызов основной модели.
+
+```go
+// condense — по канону гл. 12/13: та же модель, тот же кэшируемый префикс
+// (system + tools), вход — вся старая история (head), максимум 1 раз за Run.
+func condense(ctx context.Context, ep Client, msgs []Message) ([]Message, error) {
+    // 1. Разделить на head (старое) и tail (последние 2 user-шага)
+    // 2. Собрать summary head: запрос несёт тот же префикс system + tools
+    //    — head читается из прогретого кэша (гл. 13)
+    // 3. Вернуть [summary as user message] + tail
+}
+```
+
+Ключевые свойства служебных узлов: фиксированный формат выхода, короткий вход (нет растущей истории), ошибка обрабатывается fallback-ом на основную модель — качество деградирует мягко, а не падает.
+
+**Fallback-цепочки — отдельная история:** они нужны для отказоустойчивости (основная модель недоступна — ход продолжается на запасной), а не для экономии. Механизм — [гл. 03](../03-tools-and-function-calling/README.md) и [гл. 04](../04-autonomy-and-loops/README.md).
+
+> **Связь с другими главами:** Function Calling и устройство tools — [Глава 03: Инструменты и Function Calling](../03-tools-and-function-calling/README.md). Сам цикл агента — [Глава 04: Автономность и Циклы](../04-autonomy-and-loops/README.md).
+
+## Бюджет контекста = деньги
+
+Каждый запрос агента оплачивает не только историю, но и **блок `tools[]` целиком** — он уходит в каждом вызове. Четыре инструмента с развёрнутыми описаниями — это порядка ~700+ токенов в каждом запросе; на 10 итерациях и тысячах ходов в день счёт растёт быстрее, чем кажется.
+
+Что с этим делать:
+
+- **Пишите короткие описания инструментов**: имя, что делает, когда звать, ограничения. «Документация» на 500 токенов в description — это постоянный налог.
+- **Не таскайте весь каталог**: давайте агенту список tools под задачу (узкий ToolRegistry), а не «всё, что есть». Связка — [гл. 03: Инструменты и Function Calling](../03-tools-and-function-calling/README.md).
+- **Скилы вместо каталогов**: вместо 50 инструментов с длинными описаниями — несколько мета-инструментов («найди подходящий скил», «выполни скил»), которые подгружают инструкции по требованию. Тот же префикс, но оплата — по факту использования.
+- **Следите за метрикой**: доля `cache_read / prompt` в Usage (гл. 19) показывает, что префикс действительно кэшируется, а не оплачивается заново.
+
+Подробный разбор управления контекстом — [Глава 13: Context Engineering](../13-context-engineering/README.md).
 
 ## Streaming для снижения Perceived Latency
 
@@ -577,82 +425,30 @@ Streaming не ускоряет генерацию. Модель тратит с
 ### Streaming в agent loop
 
 ```go
-func streamAgentResponse(ctx context.Context, client *openai.Client, messages []openai.ChatCompletionMessage) error {
-    req := openai.ChatCompletionRequest{
-        Model:    "gpt-4o",
-        Messages: messages,
-        Stream:   true, // Включаем streaming
-    }
-
-    stream, err := client.CreateChatCompletionStream(ctx, req)
+func streamAgentResponse(ctx context.Context, client Client, messages []Message) error {
+    stream, err := client.Stream(ctx, Request{Messages: messages}) // нейтральный стриминг-вызов
     if err != nil {
         return fmt.Errorf("stream error: %w", err)
     }
     defer stream.Close()
 
     for {
-        chunk, err := stream.Recv()
+        delta, err := stream.Recv()
         if errors.Is(err, io.EOF) {
-            fmt.Println() // Перевод строки после ответа
+            fmt.Println()
             return nil
         }
         if err != nil {
             return fmt.Errorf("stream recv error: %w", err)
         }
-
-        // Каждый chunk содержит один или несколько токенов
-        if len(chunk.Choices) > 0 {
-            token := chunk.Choices[0].Delta.Content
-            fmt.Print(token) // Выводим токен сразу, без буферизации
-        }
+        fmt.Print(delta.Text) // Выводим фрагмент сразу, без буферизации
     }
 }
 ```
 
 ### Streaming через SSE для веб-клиентов
 
-Если агент работает как HTTP-сервер, streaming передаётся клиенту через SSE:
-
-```go
-func handleStream(w http.ResponseWriter, r *http.Request) {
-    // Проверяем поддержку streaming
-    flusher, ok := w.(http.Flusher)
-    if !ok {
-        http.Error(w, "streaming not supported", http.StatusInternalServerError)
-        return
-    }
-
-    w.Header().Set("Content-Type", "text/event-stream")
-    w.Header().Set("Cache-Control", "no-cache")
-    w.Header().Set("Connection", "keep-alive")
-
-    ctx := r.Context()
-    stream, err := client.CreateChatCompletionStream(ctx, req)
-    if err != nil {
-        return
-    }
-    defer stream.Close()
-
-    for {
-        chunk, err := stream.Recv()
-        if errors.Is(err, io.EOF) {
-            fmt.Fprintf(w, "data: [DONE]\n\n")
-            flusher.Flush()
-            return
-        }
-        if err != nil {
-            return
-        }
-
-        if len(chunk.Choices) > 0 {
-            token := chunk.Choices[0].Delta.Content
-            // SSE формат: "data: ...\n\n"
-            fmt.Fprintf(w, "data: %s\n\n", token)
-            flusher.Flush() // Отправляем сразу, без буферизации
-        }
-    }
-}
-```
+Если агент работает как HTTP-сервер, стриминг передаётся клиенту через Server-Sent Events: соединение не закрывается, сервер пишет строки `data: ...` и вызывает `flusher.Flush()` после каждого фрагмента. Полный разбор SSE-транспорта (заголовки, `[DONE]`, реконнекты, WebSocket против SSE) — в [Главе 21: Workflow и State Management](../21-workflow-state-management/README.md).
 
 ### Когда streaming не помогает
 
@@ -686,20 +482,20 @@ type ToolResult struct {
 
 // executeToolsParallel запускает все tool calls одновременно.
 // Каждый инструмент выполняется в отдельной горутине.
-func executeToolsParallel(ctx context.Context, toolCalls []openai.ToolCall) []openai.ChatCompletionMessage {
+func executeToolsParallel(ctx context.Context, toolCalls []ToolCall) []Message {
     results := make([]ToolResult, len(toolCalls))
 
     var wg sync.WaitGroup
     for i, tc := range toolCalls {
         wg.Add(1)
-        go func(idx int, call openai.ToolCall) {
+        go func(idx int, call ToolCall) {
             defer wg.Done()
 
             // Таймаут на каждый инструмент отдельно
             toolCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
             defer cancel()
 
-            content, err := executeTool(toolCtx, call.Function.Name, call.Function.Arguments)
+            content, err := executeTool(toolCtx, call)
             results[idx] = ToolResult{
                 ToolCallID: call.ID,
                 Content:    content,
@@ -710,14 +506,14 @@ func executeToolsParallel(ctx context.Context, toolCalls []openai.ToolCall) []op
     wg.Wait()
 
     // Собираем результаты в формате messages
-    var messages []openai.ChatCompletionMessage
+    var messages []Message
     for _, r := range results {
         content := r.Content
         if r.Err != nil {
             content = fmt.Sprintf("error: %v", r.Err)
         }
-        messages = append(messages, openai.ChatCompletionMessage{
-            Role:       openai.ChatMessageRoleTool,
+        messages = append(messages, Message{
+            Role:       "tool",
             Content:    content,
             ToolCallID: r.ToolCallID,
         })
@@ -730,7 +526,7 @@ func executeToolsParallel(ctx context.Context, toolCalls []openai.ToolCall) []op
 
 ```go
 for i := 0; i < MaxIterations; i++ {
-    resp, err := client.CreateChatCompletion(ctx, req)
+    resp, err := client.Complete(ctx, Request{Messages: messages, Tools: toolDefs})
     if err != nil {
         return "", err
     }
@@ -764,107 +560,38 @@ for i := 0; i < MaxIterations; i++ {
 
 ## Типовые ошибки
 
-### Ошибка 1: Нет лимитов на токены
+Короткая сводка (подробные разборы — ниже):
 
-**Симптом:** Счёт за LLM API растёт неконтролируемо. Один запрос может использовать 100,000 токенов.
+| # | Ошибка | Симптом | Решение |
+|---|--------|---------|---------|
+| 1 | Нет лимитов на токены | Счёт растёт неконтролируемо, запрос по 100k токенов | TokenBudget по Usage провайдера |
+| 2 | Нет лимита итераций | Агент зацикливается, 50+ итераций | `MaxIterations` — терминальная граница (гл. 04) |
+| 3 | Одна дорогая модель на всё | Служебные вызовы стоят дороже, чем нужно | GLM-5.3 Flash на служебных узлах вне цикла |
+| 4 | Смена модели внутри цикла | Prompt cache ломается, префикс оплачивается заново | Одна модель в цикле (разбор ниже) |
+| 5 | Свой result-cache вместо prompt cache | Попаданий нет, экономии нет | Неизменяемый system-префикс (Шаг 3, разбор ниже) |
+| 6 | Нет таймаутов | Агент зависает на 10+ минут | Timeout на ход и на каждый вызов LLM |
 
-**Причина:** Не проверяется использование токенов перед отправкой запроса.
+### Разбор 1: смена модели внутри цикла
 
-**Решение:**
-```go
-// ПЛОХО
-resp, _ := client.CreateChatCompletion(ctx, req)
-// Нет проверки токенов
+**Симптом:** доля `cache_read / prompt` в Usage почти нулевая, хотя system-промпт не меняется; latency каждого вызова заметно выше первого.
 
-// ХОРОШО
-tokenBudget.Used += resp.Usage.TotalTokens
-if err := checkTokenBudget(tokenBudget); err != nil {
-    return "", err
-}
-```
+**Причина:** модель чередуется между итерациями («дешёвая выбирает инструмент, дорогая отвечает»). У каждой модели свой prompt cache — при переключении префикс не переиспользуется и оплачивается по полной ставке. «Экономия 50%» из примеров про stage-роутинг не учитывает ни это, ни потерю качества рассуждения при смене модели посреди хода.
 
-### Ошибка 2: Нет лимита итераций
+**Решение:** одна модель на весь цикл; лёгкая модель (GLM-5.3 Flash) — только на служебных узлах вне цикла, где истории почти нет и кэш основного хода не задействован.
 
-**Симптом:** Агент зацикливается и делает 50+ итераций, тратя тысячи токенов.
+### Разбор 2: свой result-cache вместо prompt cache
 
-**Причина:** Нет ограничения на количество итераций ReAct loop.
+**Симптом:** реализован `map[hash(messages)] → answer`, но hit rate около нуля, экономии нет.
 
-**Решение:**
-```go
-// ПЛОХО
-for {
-    // Бесконечный цикл
-}
+**Причина:** ключ кэша уникален почти всегда — история диалога растёт на каждой итерации (ответ модели, результаты инструментов), хэш меняется, попаданий не бывает.
 
-// ХОРОШО
-for i := 0; i < MaxIterations; i++ {
-    // Ограниченное количество итераций
-}
-```
-
-### Ошибка 3: Использование GPT-4 для всех задач
-
-**Симптом:** Простые запросы стоят в 15 раз дороже, чем нужно.
-
-**Причина:** Всегда используется самая дорогая модель.
-
-**Решение:**
-```go
-// ПЛОХО
-req.Model = "gpt-4o" // Всегда GPT-4
-
-// ХОРОШО
-model := selectModel(assessTaskComplexity(userInput))
-req.Model = model
-```
-
-### Ошибка 4: Нет кэширования
-
-**Симптом:** Одинаковые запросы выполняются повторно, тратя токены.
-
-**Причина:** Нет кэша для результатов LLM.
-
-**Решение:**
-```go
-// ПЛОХО
-resp, _ := client.CreateChatCompletion(ctx, req)
-// Каждый раз новый запрос
-
-// ХОРОШО
-key := getCacheKey(messages)
-if result, ok := getCachedResult(key); ok {
-    return result, nil
-}
-resp, _ := client.CreateChatCompletion(ctx, req)
-setCachedResult(key, resp.Choices[0].Message.Content, 1*time.Hour)
-```
-
-### Ошибка 5: Нет таймаутов
-
-**Симптом:** Агент зависает на 10+ минут, пользователь ждёт.
-
-**Причина:** Нет timeout для вызовов LLM или инструментов.
-
-**Решение:**
-```go
-// ПЛОХО
-resp, _ := client.CreateChatCompletion(ctx, req)
-// Может зависнуть навсегда
-
-// ХОРОШО
-ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-defer cancel()
-resp, err := client.CreateChatCompletion(ctx, req)
-if err == context.DeadlineExceeded {
-    return "", fmt.Errorf("timeout")
-}
-```
+**Решение:** кэшируйте не ответы, а **префикс** — system-сообщение + блок `tools[]` держите неизменным, историю только дополняйте. Тогда работает кэш провайдера: попадание видно по `CacheReadTokens > 0` в Usage (Шаг 3). Свой map для кэша ответов имеет смысл только для действительно идентичных запросов без истории (например, кэш эмбеддингов в RAG, гл. 06) — для агентского цикла он мёртв.
 
 ## Мини-упражнения
 
 ### Упражнение 1: Реализуйте проверку бюджета токенов
 
-Добавьте проверку бюджета в [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab04-autonomy/main.go):
+Добавьте проверку бюджета в свой рантайм из главы 04 (лаба lab04-autonomy пока не ревизована):
 
 ```go
 func checkTokenBudget(used int, limit int) error {
@@ -877,56 +604,52 @@ func checkTokenBudget(used int, limit int) error {
 - Функция возвращает ошибку, если использовано токенов больше лимита
 - Функция возвращает nil, если лимит не превышен
 
-### Упражнение 2: Реализуйте маршрутизацию моделей
+### Упражнение 2: Condense по канону гл. 12/13
 
-Создайте функцию выбора модели по сложности задачи:
+Реализуйте condense-суммаризацию по канону: та же модель, тот же кэшируемый префикс, максимум 1 раз за Run:
 
 ```go
-func selectModelByComplexity(userInput string) string {
+func condense(ctx context.Context, ep Client, msgs []Message) ([]Message, error) {
     // Ваш код здесь
-    // Верните GPT-3.5 для простых задач, GPT-4 для сложных
+    // 1. Разделить на head/tail  2. Summary: запрос с тем же префиксом
+    // system + tools (гл. 13)  3. [summary as user message] + tail
 }
 ```
 
 **Ожидаемый результат:**
-- Простые задачи (check, status, read) → GPT-3.5
-- Сложные задачи (analyze, fix, plan) → GPT-4
+- Запрос суммаризации несёт тот же кэшируемый префикс — head читается из прогретого кэша
+- Максимум 1 сжатие за Run; ошибка суммаризации — ход продолжается с несжатой историей (гл. 13)
 
-### Упражнение 3: Реализуйте кэширование
+### Упражнение 3: Метрики prompt cache
 
-Добавьте простое in-memory кэширование результатов LLM:
+Считайте hit rate кэша провайдера по Usage из ответов:
 
 ```go
-var cache = make(map[string]CacheEntry)
-
-func getCachedResult(key string) (string, bool) {
+func cacheHitRate(usages []Usage) float64 {
     // Ваш код здесь
-}
-
-func setCachedResult(key string, result string, ttl time.Duration) {
-    // Ваш код здесь
+    // Сумма CacheReadTokens / сумма PromptTokens по всем вызовам
 }
 ```
 
 **Ожидаемый результат:**
-- Одинаковые запросы возвращаются из кэша
-- Кэш имеет TTL (время жизни)
+- По неизменяемому system-префиксу hit rate заметно выше нуля
+- При смене модели между запросами hit rate падает к нулю
 
 ## Критерии сдачи / Чек-лист
 
 **Сдано (готовность к прод):**
-- [x] Реализованы бюджеты токенов с проверкой перед каждым запросом
+- [x] Реализованы бюджеты токенов по Usage провайдера (prompt/completion) с проверкой перед каждым запросом
 - [x] Установлен лимит итераций ReAct loop
-- [x] Реализована маршрутизация моделей по сложности задачи
-- [x] Реализовано кэширование результатов LLM
+- [x] Неизменяемый system-префикс (system + tools) — работает prompt cache провайдера, метрики cache_read отслеживаются
+- [x] Дешёвая модель (GLM-5.3 Flash) на служебных узлах вне цикла; в цикле — одна модель
+- [x] Fallback-цепочка настроена для отказоустойчивости, а не для экономии
 - [x] Установлены таймауты для вызовов LLM и agent run
-- [x] Отслеживается использование токенов и предупреждается при превышении
 
 **Не сдано:**
 - [ ] Нет лимитов на токены
 - [ ] Нет лимита итераций
-- [ ] Всегда используется самая дорогая модель
-- [ ] Нет кэширования
+- [ ] System-префикс меняется между итерациями / модель меняется внутри цикла
+- [ ] Бюджет считается по TotalTokens или собственным оценкам вместо Usage провайдера
 - [ ] Нет таймаутов
 
 ## Связь с другими главами

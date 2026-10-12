@@ -68,37 +68,51 @@
 
 ## Как это работает (пошагово)
 
-### Шаг 1: Линейная память
+### Шаг 1: Линейная история
 
 ```go
-type Memory struct {
+type History struct {
+    mu       sync.Mutex
     messages []llm.Message
 }
 
-func (m *Memory) Append(msg llm.Message) {
-    m.messages = append(m.messages, msg)
+func (h *History) Append(msg llm.Message) {
+    h.mu.Lock()
+    defer h.mu.Unlock()
+    h.messages = append(h.messages, msg)
 }
 
-func (m *Memory) Snapshot() []llm.Message {
-    out := make([]llm.Message, len(m.messages))
-    copy(out, m.messages)
+// Messages возвращает копию истории — её отдаём в запрос к LLM.
+func (h *History) Messages() []llm.Message {
+    h.mu.Lock()
+    defer h.mu.Unlock()
+    out := make([]llm.Message, len(h.messages))
+    copy(out, h.messages)
     return out
 }
 
-func (m *Memory) Reset(msgs []llm.Message) {
-    m.messages = msgs
+// Replace — единственный способ изменить уже записанное.
+// Нужен только для condense — больше нигде историю не переписываем.
+func (h *History) Replace(msgs []llm.Message) {
+    h.mu.Lock()
+    defer h.mu.Unlock()
+    h.messages = append(h.messages[:0], msgs...)
 }
+
+// Snapshot/Restore — чекпоинт, аудит, откат неудачного condense.
+func (h *History) Snapshot() []llm.Message  { return h.Messages() }
+func (h *History) Restore(snap []llm.Message) { h.Replace(snap) }
 ```
 
-Всё. `Reset` нужен только для condense — больше нигде историю не переписываем.
+Всё. `Replace` нужен только для condense — больше нигде историю не переписываем. Санитизация (пустые assistant, orphan tool-result, неразрывность пар `tool_call ↔ tool_result`) встроена в саму историю — та же `History`, что в [Главе 12](../12-agent-memory/README.md).
 
 ### Шаг 2: Один порог, одно действие
 
 ```go
 type Run struct {
-    mem           *Memory
+    mem           *History
     contextWindow int     // лимит модели, например 128_000
-    condenseAt    float64 // 0.80 — порог запуска condense
+    condenseAt    float64 // один настраиваемый Threshold ∈ (0,1); типовое значение ~0.85
     condenseDone  bool    // лимит: condense максимум 1 раз за Run
     lastTokens    int     // usage.PromptTokens из последнего ответа провайдера
 }
@@ -108,7 +122,10 @@ func (r *Run) BeforeNextRequest(ctx context.Context) error {
     used := float64(r.lastTokens) / float64(r.contextWindow)
     if used >= r.condenseAt && !r.condenseDone {
         if err := r.condense(ctx); err != nil {
-            return err
+            // CondenseErrorEvent: событие цикла, не крах — ход продолжается
+            // с несжатой историей. Реактивно разберётся Шаг 3.
+            r.condenseDone = true
+            return nil
         }
         r.condenseDone = true
     }
@@ -121,37 +138,43 @@ func (r *Run) BeforeNextRequest(ctx context.Context) error {
 Иногда оценка по `lastTokens` не успевает: следующий tool result оказался жирнее, чем ожидалось, и провайдер вернул `ContextOverflowError`. Делаем то же самое, но реактивно.
 
 ```go
-resp, err := client.Chat(ctx, r.mem.Snapshot())
+resp, err := client.Complete(ctx, Request{Messages: r.mem.Messages()})
 if isContextOverflow(err) {
     if r.condenseDone {
         return r.wrapUp(ctx) // condense уже был — graceful save
     }
     if err := r.condense(ctx); err != nil {
-        return err
+        // Ошибка конденсации — событие цикла (CondenseErrorEvent), не крах Run:
+        // продолжаем ход с несжатой историей. Попытка израсходована —
+        // повторных конденсаций не будет.
+        r.condenseDone = true
+        return nil // следующая итерация идёт с несжатой историей
     }
     r.condenseDone = true
-    resp, err = client.Chat(ctx, r.mem.Snapshot()) // повтор
+    resp, err = client.Complete(ctx, Request{Messages: r.mem.Messages()}) // повтор
 }
 ```
 
-Триггер всего два: **threshold** (proactive) и **overflow** (reactive). Действие одно: `condense`. Лимит один: `1 раз за Run`. При повторном overflow — `wrapUp` (см. ниже), не повторный condense.
+Триггер всего два: **threshold** (proactive) и **overflow** (reactive). Действие одно: `condense`. Лимит один: `1 раз за Run`. При повторном overflow после успешного condense — `wrapUp` (см. ниже), не повторный condense. Если condense упал — Run не падает: ход продолжается с несжатой историей; когда следующая итерация снова упрётся в overflow, condense уже израсходован — единственный путь `wrapUp`. Бисекций («а может, сжать только четверть?») нет.
 
 ### Шаг 4: Condense — что внутри
 
 ```go
 func (r *Run) condense(ctx context.Context) error {
-    msgs := r.mem.Snapshot()
-    if len(msgs) < 6 {
+    snap := r.mem.Snapshot() // оригинал — для аудита и отката
+    if len(snap) < 6 {
         return nil // нечего сжимать
     }
 
-    head := msgs[1 : len(msgs)-4] // всё кроме system и последних 4
-    tail := msgs[len(msgs)-4:]
-    system := msgs[0]
+    head := snap[1 : len(snap)-4] // всё кроме system и последних 4
+    tail := snap[len(snap)-4:]
+    system := snap[0]
 
+    // Запрос суммаризации несёт ТОТ ЖЕ кэшируемый префикс (system + tools),
+    // поэтому head читается из прогретого кэша, а не платится по полной.
     summary, err := r.summarizeWithLLM(ctx, head)
     if err != nil {
-        return err
+        return err // оригинал не тронут — см. обработку в Шаге 3
     }
 
     next := make([]llm.Message, 0, 2+len(tail))
@@ -161,20 +184,23 @@ func (r *Run) condense(ctx context.Context) error {
         Content: "Контекст предыдущей работы:\n\n" + summary,
     })
     next = append(next, tail...)
-    r.mem.Reset(next)
+    r.mem.Replace(next)
     return nil
 }
 ```
 
-Три ключевых момента:
+Четыре ключевых момента:
 
 1. **Полная замена истории**, а не «обрезание середины». Так чище и предсказуемее.
 2. **Summary кладём как `user`**, не как `assistant`. Модель тогда воспринимает его как «вот контекст, продолжай», а не как свой собственный ответ, который можно противоречить.
 3. **Хвост (последние 3-5 сообщений) — нетронут.** Это страховка от того, что в summary потерялось что-то важное и непосредственно нужное модели прямо сейчас.
+4. **Суммаризация читает историю из прогретого кэша.** LLM-вызов для summary несёт тот же префикс system + tools, что и обычные итерации, — head не платится по полной цене, condense стоит заметно дешевле, чем кажется.
+
+> **Как это устроено в реальном SDK.** Память цикла — линейная `History` (`New`/`Append`/`Replace`/`Snapshot`/`Restore`). В конфиге один `Threshold ∈ (0,1)`, типовое значение ~0.85; condense — максимум 1 раз за Run. Ошибка конденсации эмитится как событие `EvCondenseErr`: Run продолжается с несжатой историей, инвариант «condense ≤ 1/Run» не нарушается. Кэш-метрики (CacheRead / CacheCreation) парсятся из `Usage` ответа.
 
 ### Шаг 5: Wrap-up при повторном overflow
 
-Если condense уже был — больше не сжимаем (повторное сжатие катастрофически теряет детали). Вместо этого: сохраняем прогресс, выдаём пользователю частичный результат, выходим из Run.
+Если condense уже был — больше не сжимаем (повторное сжатие катастрофически теряет детали). Вместо этого: сохраняем прогресс, выдаём пользователю частичный результат, выходим из Run. Исключение — condense упал с ошибкой (`CondenseErrorEvent`): попытка израсходована впустую, ход продолжается с несжатой историей; при следующем overflow — `wrapUp`, как и после успешного condense.
 
 ```go
 func (r *Run) wrapUp(ctx context.Context) error {
@@ -192,7 +218,7 @@ func (r *Run) wrapUp(ctx context.Context) error {
 
 Иерархия источников — от лучшего к худшему:
 
-1. **`usage.PromptTokens` из ответа провайдера.** Точное число, по которому вам выставили счёт. Берёте из последнего ответа модели и используете для решения «не пора ли condense». Это **первичный источник**, не выдумывайте свой счётчик, если есть этот.
+1. **`usage.PromptTokens` из ответа провайдера.** Точное число, по которому вам выставили счёт. Берёте из последнего ответа модели и используете для решения «не пора ли condense». Это **первичный источник**, не выдумывайте свой счётчик, если есть этот. Правило PromptTokens введено ещё в [Главе 01: LLM Fundamentals](../01-llm-fundamentals/README.md) — здесь оно просто применяется к порогу condense.
 2. **Токенизатор модели** (например, `tiktoken` для OpenAI, `anthropic.count_tokens` для Anthropic). Нужен в одном случае: вы хотите оценить вес ещё-не-отправленного сообщения, чтобы решить «отправлять или сначала сжать».
 3. **Приближение по словам/символам** — последнее средство. Подходит для черновой оценки, когда (1) и (2) недоступны.
 
@@ -200,7 +226,7 @@ func (r *Run) wrapUp(ctx context.Context) error {
 
 ```go
 // Самый частый паттерн: после каждого Chat-ответа сохраняем число токенов.
-resp, err := client.Chat(ctx, msgs)
+resp, err := client.Complete(ctx, Request{Messages: msgs})
 if err == nil {
     r.lastTokens = resp.Usage.PromptTokens
 }
@@ -238,13 +264,20 @@ func SafeBudget(m Model, reserveOutput int) int {
 
 ## Условия для truncate
 
-`truncate` (выкинуть лишние сообщения из середины и оставить голову+хвост) — отдельный инструмент от `condense`. Он применим в трёх случаях:
+`truncate` (выкинуть сообщения из середины, оставив голову и хвост) в цикле агента с prompt cache **не нужен**: середина меняется → кэш сбрасывается на каждой итерации, а разорванная пара `tool_call ↔ tool_result` — это `400 Bad Request`. Он остаётся инструментом для single-shot запросов и провайдеров без кэша. Если condense уже отработал (1/Run), а контекст всё ещё переполнен — не truncate, а `wrapUp`.
 
-- **Single-shot запросы** без многошагового цикла (агентный loop тут вообще ни при чём).
-- **Провайдеры без prompt cache** — экономить нечего, остаётся только укладываться в лимит.
-- **Аварийный fallback**, когда condense уже отработал свой лимит 1/Run и контекст всё ещё переполнен — проще урезать, чем падать (но проще — отдать `wrapUp` и сохранить прогресс).
+## Вес инструментов и tool-результатов
 
-В цикле агента с prompt cache `truncate` использовать **не нужно** — он сбрасывает кэш на каждой итерации, потому что middle меняется. Если очень хочется — пишите аккуратно, сохраняя пары `tool_call ↔ tool_result` целыми (рваная пара — это `400 Bad Request` от провайдера).
+Контекст платят не только system prompt и история. Два постоянных источника роста, о которых часто забывают:
+
+**1. Блок `tools` платится в каждом запросе.** Схема каждого инструмента (name, description, параметры) уезжает провайдеру на каждой итерации — 4 типовых инструмента это уже ~742 токена overhead на каждый запрос Run'а. Поэтому descriptions должны быть короткими и точными — это не место для эссе. Как писать хорошие схемы — [Глава 03: Tools & Function Calling](../03-tools-and-function-calling/README.md).
+
+**2. Tool-результаты — главный рычаг экономии контекста: FilteredContent.** Результат инструмента существует в двух версиях: **полная** — для UI и аудита (её видит человек), **отфильтрованная** — для модели (её видит LLM). Классика: полный вывод `go test` (десятки килобайт) — в лог/UI человеку; модели — только список упавших тестов с последними строками стектрейса. Модель почти никогда не нужны сырые десятки KB, но почти всегда нужен вывод «что сломалось и где».
+
+Плюс два жёстких бюджета, которые стоит зашить в цикл:
+
+- **Бюджет на один tool-результат: ~128 KB.** Что не влезло — усекается с маркером `... truncated, full output in artifact`; полный вывод пишется в артефакт **вне контекста** ([Глава 11: State Management](../11-state-management/README.md)).
+- **Лимит картинок в сессии.** Изображения дороги в токенах и не сжимаются condense'ом (они в сообщениях); держите счётчик и ограничивайте число картинок в одной сессии.
 
 ## Condensation Prompt
 
@@ -313,9 +346,9 @@ System prompt занимает токены на **каждой итерации
 
 **4. Условные «знания» — лучше через tool, чем через условный prompt.** Если хочется на этапе анализа добавить SOP, а на этапе действия — не показывать, оформите SOP как `tool` (`get_sop("incident_diagnosis")`) и пусть модель сама вызывает. Tool result добавляется в хвост — кэш не страдает.
 
-### Правило 20-25%
+### Ориентир 20-25%
 
-System prompt не должен превышать ~20-25% контекстного окна. Для 128K — ~25-32K токенов. Если разрастается — режьте **базовую версию** на старте, а не «между итерациями». Live state не кладите вообще никогда — это [Ошибка 6 из Главы 12](../12-agent-memory/README.md#ошибка-6-live-state-в-system-prompt).
+System prompt не должен занимать заметную долю окна; грубый ориентир — ~20-25% (для 128K это ~25-32K токенов). Это **эвристика-ориентир, а не правило**: точная доля зависит от задачи, и ничего не «ломается» при 18% или 30%. Если разрастается — режьте **базовую версию** на старте, а не «между итерациями». Live state не кладите вообще никогда — это [Ошибка 6 из Главы 12](../12-agent-memory/README.md#ошибка-6-live-state-в-system-prompt).
 
 ## Типовые ошибки
 
@@ -364,7 +397,7 @@ sys := `You are an agent. Use tools to read files when needed.`
 ```go
 // BAD: бесконечная конденсация
 for {
-    resp, err := llm.Chat(ctx, messages)
+    resp, err := llm.Complete(ctx, Request{Messages: messages})
     if isContextOverflow(err) {
         messages = condense(ctx, messages)
         continue
@@ -374,7 +407,7 @@ for {
 // GOOD: максимум 1 раз за Run, дальше — wrapUp
 condenseDone := false
 for {
-    resp, err := llm.Chat(ctx, messages)
+    resp, err := llm.Complete(ctx, Request{Messages: messages})
     if isContextOverflow(err) {
         if condenseDone {
             return wrapUpAndSaveProgress()
@@ -398,7 +431,7 @@ for {
 
 **Симптом:** При смене модели агент работает «как-то не так» — упирается в overflow раньше, чем должен, или поздно начинает condense.
 
-**Причина:** Словарь типа `var ModelLimits = map[string]int{"gpt-4o": 128000, ...}` не обновили под новую модель, и она получила дефолтное значение `4096`.
+**Причина:** Словарь типа `var ModelLimits = map[string]int{"glm-5.3": 128000, ...}` не обновили под новую модель, и она получила дефолтное значение `4096`.
 
 **Решение:** Берите лимит из каталога моделей вашего SDK (см. раздел [Лимиты моделей](#лимиты-моделей) выше). В одном месте, не размазывайте по коду.
 
@@ -421,7 +454,7 @@ func (r *Run) ShouldCondense() bool {
 ```
 
 **Ожидаемый результат:**
-- Возвращает `true`, если `lastTokens / contextWindow >= 0.80` и condense ещё не был.
+- Возвращает `true`, если `lastTokens / contextWindow >= 0.85` (типовое значение порога) и condense ещё не был.
 - Возвращает `false` во всех остальных случаях.
 - Никаких счётчиков сообщений, никаких слоёв.
 
@@ -431,7 +464,7 @@ func (r *Run) ShouldCondense() bool {
 
 ```go
 for {
-    resp, err := client.Chat(ctx, mem.Snapshot())
+    resp, err := client.Complete(ctx, Request{Messages: mem.Messages()})
     // ваш код
 }
 ```
@@ -443,7 +476,7 @@ for {
 
 ### Упражнение 3: Перенос фактов из system в user
 
-Дано: код, где факты из долгой памяти добавлялись отдельным `system`-сообщением и переписывались на каждой итерации. Задача: перенести так, чтобы факты попадали в **первое user-сообщение Run** и больше не менялись (если набор фактов меняется внутри Run — это сигнал, что вам нужен `recall`-tool, а не мутация контекста).
+Дано: код, где факты из долгой памяти добавлялись отдельным `system`-сообщением и переписывались на каждой итерации. Задача: перенести так, чтобы факты попадали в **первое user-сообщение Run** и больше не менялись (если набор фактов меняется внутри Run — это сигнал, что нужен внешний tool поиска по долговременной памяти, а не мутация контекста).
 
 **Ожидаемый результат:**
 - В коде один `system`-message за Run, неизменный.
@@ -456,8 +489,10 @@ for {
 - [x] Понимаете 4 слоя контекста как **ментальную модель**, а не как 4 отдельных `system`-сообщения
 - [x] Берёте `usage.PromptTokens` от провайдера как первичный источник числа токенов
 - [x] Лимиты моделей живут в одном месте (каталог/конфиг), а не разбросаны по коду
-- [x] Сжатие — один порог запуска (threshold или overflow), один лимит (1 раз за Run)
+- [x] Сжатие — один настраиваемый порог (типовое значение ~0.85, threshold или overflow), один лимит (1 раз за Run)
 - [x] Condense — полная замена истории, summary как `user`, хвост из последних 3-5 сообщений нетронут
+- [x] Знаете, что блок `tools` платится в каждом запросе, а у tool-результата есть полная версия (UI/аудит) и отфильтрованная (для модели)
+- [x] Ошибка конденсации — событие `CondenseErrorEvent`, Run продолжается с несжатой историей
 - [x] System prompt стабилен внутри Run (live state — вне system, см. [Глава 12](../12-agent-memory/README.md#live-state-без-мутации-system-prompt))
 - [x] Понимаете trade-off: «адаптивный prompt» против prompt cache почти всегда проигрывает по деньгам
 - [x] Знаете, что при повторном overflow делается `wrapUp`, а не повторный condense
@@ -478,15 +513,15 @@ for {
 
 ### Почему один порог, а не два
 
-В литературе часто встречается каскад «warning at 75% → condense at 80% → wrap-up at 90%». На практике с условием `usage.PromptTokens >= contextWindow * 0.80` один порог покрывает все случаи, потому что:
+В литературе часто встречается каскад «warning at 75% → condense at 85% → wrap-up at 95%». На практике с условием `usage.PromptTokens >= contextWindow * 0.85` один порог покрывает все случаи, потому что:
 
-- К моменту, когда вы достигли 80%, у вас уже **точная** информация о потреблении (из последнего `usage`). Никакой неопределённости, для которой нужен «warning» как отдельный уровень.
+- К моменту, когда вы достигли 85%, у вас уже **точная** информация о потреблении (из последнего `usage`). Никакой неопределённости, для которой нужен «warning» как отдельный уровень.
 - Warning через мутацию system prompt — антипаттерн (cache miss). Через мутацию assistant — тоже плохая идея (модель видит чужой «голос»). Остаётся вставлять в user — и тогда это уже не отдельный уровень, а просто «добавили строчку в очередное user-сообщение».
 - Wrap-up — это не уровень сжатия, а **исход**. Он не уменьшает контекст, он сохраняет состояние и завершает Run. Логически он стоит **после** condense, не параллельно ему.
 
 ### Что насчёт block-памяти и recall
 
-Если у вас агент с REPL-подобным взаимодействием (один сложный запрос → один большой результат → следующий запрос), может быть полезна **блочная память** с tool `recall`: история каталогизируется по «блокам», в активный контекст идут summary, а полное содержимое блока подгружается по запросу модели. Это уже не базовый случай; разбор — в [Главе 12: Block Memory](../12-agent-memory/README.md).
+Для REPL-подобного взаимодействия (один сложный запрос → один большой результат → следующий запрос) описывают **блочную память** с tool `recall(block_id)`: история каталогизируется по блокам, в активный контекст идут summary, полное содержимое блока подгружается по запросу модели. Это **не основной путь**: два источника правды (каталог и оригиналы), двойная цена (summary-вызовы + промахи кэша) и лишний слой поверх линейной истории. Разбор, почему это почти всегда лишнее, — в [Главе 12, «Для любопытных»](../12-agent-memory/README.md#для-любопытных).
 
 ### Когда контекст реально не помещается
 
@@ -496,7 +531,7 @@ for {
 
 - **[Глава 04: Автономность и циклы](../04-autonomy-and-loops/README.md)** — простой loop, в который встроены `BeforeNextRequest` и реакция на overflow
 - **[Глава 11: State Management](../11-state-management/README.md)** — `wrapUp` сохраняет состояние через checkpoint
-- **[Глава 12: Системы Памяти Агента](../12-agent-memory/README.md)** — линейная память, факты в user, live state без мутации system, recall для блочной памяти
+- **[Глава 12: Системы Памяти Агента](../12-agent-memory/README.md)** — линейная History, факты в user, live state без мутации system
 - **[Глава 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md)** — стабильность префикса, prompt cache, стоимость condense
 
 **Важно:** Context Engineering — это про **сборку контекста для одного запроса**. Хранение знаний между сессиями описано в Memory; постоянные данные (схемы, политики) — в State Management; внешний поиск — в RAG.

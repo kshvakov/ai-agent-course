@@ -2,9 +2,14 @@
 
 ## Зачем это нужно?
 
-Один агент "мастер на все руки" часто путается в инструментах. Когда у агента слишком много инструментов (20+), модель начинает путаться в выборе и делает ошибки.
+Когда у агента становится много инструментов (20+), первый порыв — «нанять команду»: Supervisor и узкие специалисты. Это почти всегда неверный ответ. Правильный — **скилы и progressive disclosure** ([гл. 09](../09-agent-architecture/README.md)): модель видит одну строку на скил и подтягивает детали сама, только когда они нужны; длинные описания не ездят в каждом запросе. Дешёвое решение той же проблемы «слишком много всего в контексте» — RAG ([гл. 06](../06-rag/README.md)).
 
-Эффективнее разделить ответственность: создать команду узких специалистов, управляемую главным агентом (Supervisor). Каждый специалист знает только свои инструменты и фокусируется на своей области.
+Мультиагентность решает другую проблему — **изоляцию контекста и независимую проверку**:
+
+1. **Ревью с чистой памятью.** Модель, ревьюящая собственную работу, соглашается с собой: в истории она видит, *почему* приняла решение, и проверяет своё оправдание, а не результат. Субагент-ревьюер получает только артефакт (диф, отчёт) и критерии — без истории родителя.
+2. **Вынос шумного чтения.** Поиск по логам, анализ кодовой базы — десятки `read`/`search` вызовов с большими результатами. Субагент перекачивает их через свою короткую историю и возвращает родителю одну страницу выводов, не раздувая его память.
+
+Разделение на «узких специалистов» — не базовый ответ на «много инструментов», а исключение с обоснованием (когда — см. ниже паттерн Supervisor).
 
 ### Реальный кейс
 
@@ -12,9 +17,11 @@
 
 **Проблема:** Агент путается в инструментах. Когда пользователь просит "Проверь доступность БД и узнай версию", агент может вызвать неправильный инструмент или пропустить шаг.
 
-**Решение:** Multi-Agent система с Supervisor и специалистами. Supervisor делегирует задачу Network Expert для проверки доступности и DB Expert для получения версии. Каждый специалист фокусируется только на своей области.
+**Первый шаг — не мультиагент.** Уберите шум из контекста: скилы для групп инструментов (гл. 09), progressive disclosure для описаний. В большинстве случаев этого достаточно, и вы заканчиваете с одним агентным циклом.
 
-> **Junior employee model.** Supervisor + специалисты — это «тимлид + команда». У каждого члена команды свой набор инструментов и доступов; никто не получает права «всех остальных» — это базовый принцип найма, а не специфика LLM. Делегирование подзадачи субагенту = делегирование человеку: вместе с задачей передаются **только нужные** доступы и контекст, обратно возвращается результат, а не «весь мой инструментарий». См. [Предисловие → Ментальная модель](../00-preface/README.md#ментальная-модель-агент--это-новый-сотрудник) и [Гл. 17: Security и Governance](../17-security-and-governance/README.md).
+**Когда Supervisor/Worker всё же оправдан:** домены действительно разные (сеть, БД, безопасность), чтение в каждом домене шумное (десятки вызовов с большими результатами), и изоляция контекста даёт реальную экономию. Тогда Supervisor делегирует: Network Expert для проверки доступности, DB Expert для версии — не потому что «в команде должны быть роли», а потому что каждый специалист перекачивает шум через свою короткую историю.
+
+> **Junior employee model.** Делегирование субагенту = делегирование человеку: вместе с задачей передаётся **только нужный** контекст, обратно возвращается отчёт, а не «весь мой инструментарий». Субагент — чистая функция `task → result`: память родителя не наследуется. См. [Предисловие → Ментальная модель](../00-preface/README.md#ментальная-модель-агент--это-новый-сотрудник) и [Гл. 17: Security и Governance](../17-security-and-governance/README.md).
 
 ## Теория простыми словами
 
@@ -29,6 +36,8 @@
 **Суть:** Изоляция контекста — каждый специалист видит только свою задачу, а не всю историю Supervisor-а. Это экономит токены и фокусирует внимание.
 
 ## Паттерн Supervisor (Начальник-Подчиненный)
+
+> Это паттерн-исключение, а не дефолт. Оправдан, когда домены действительно разные и чтение в каждом из них шумное — тогда изоляция контекста окупается. Если мотивация «у агента много инструментов», правильный ответ — скилы ([гл. 09](../09-agent-architecture/README.md)), а не Supervisor.
 
 **Архитектура:**
 
@@ -61,37 +70,33 @@ graph TD
 **Шаг 1: Supervisor получает задачу**
 
 ```go
-// Supervisor имеет инструменты для вызова Workers
-supervisorTools := []openai.Tool{
+// Supervisor имеет инструменты для вызова Workers (нейтральные типы — гл. 03)
+supervisorTools := []ToolDef{
     {
-        Function: &openai.FunctionDefinition{
-            Name: "ask_network_expert",
-            Description: "Ask the network specialist about connectivity, pings, ports",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "question": {"type": "string"}
-                },
-                "required": ["question"]
-            }`),
-        },
+        Name:        "ask_network_expert",
+        Description: "Ask the network specialist about connectivity, pings, ports",
+        Parameters: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "question": {"type": "string"}
+            },
+            "required": ["question"]
+        }`),
     },
     {
-        Function: &openai.FunctionDefinition{
-            Name: "ask_database_expert",
-            Description: "Ask the DB specialist about SQL, schemas, data",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "question": {"type": "string"}
-                },
-                "required": ["question"]
-            }`),
-        },
+        Name:        "ask_database_expert",
+        Description: "Ask the DB specialist about SQL, schemas, data",
+        Parameters: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "question": {"type": "string"}
+            },
+            "required": ["question"]
+        }`),
     },
 }
 
-supervisorMessages := []openai.ChatCompletionMessage{
+supervisorMessages := []Message{
     {Role: "system", Content: "You are a Supervisor. Delegate tasks to specialists."},
     {Role: "user", Content: "Проверь, доступен ли сервер БД, и если да — узнай версию"},
 }
@@ -100,16 +105,18 @@ supervisorMessages := []openai.ChatCompletionMessage{
 **Шаг 2: Supervisor генерирует tool calls для Workers**
 
 ```go
-supervisorResp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    "gpt-4o",
+client, err := NewClient(...) // провайдер из конфига (гл. 04)
+
+supervisorResp, err := client.Complete(ctx, Request{
+    Model:    "glm-5.3",
     Messages: supervisorMessages,
     Tools:    supervisorTools,
-})
+}) // ошибка обрабатывается циклом (гл. 04)
 
 supervisorMsg := supervisorResp.Choices[0].Message
 // supervisorMsg.ToolCalls = [
-//     {Function: {Name: "ask_network_expert", Arguments: "{\"question\": \"Проверь доступность db-host.example.com\"}"}},
-//     {Function: {Name: "ask_database_expert", Arguments: "{\"question\": \"Какая версия PostgreSQL на db-host?\"}"}},
+//     {ID: "call_1", Name: "ask_network_expert", Arguments: "{\"question\": \"Проверь доступность db-host.example.com\"}"},
+//     {ID: "call_2", Name: "ask_database_expert", Arguments: "{\"question\": \"Какая версия PostgreSQL на db-host?\"}"},
 // ]
 ```
 
@@ -125,52 +132,59 @@ supervisorMsg := supervisorResp.Choices[0].Message
 ```go
 // Runtime перехватывает tool call "ask_network_expert"
 func askNetworkExpert(question string) string {
+    client, err := NewClient(...) // провайдер из конфига (гл. 04)
+
     // Создаем НОВЫЙ контекст для Worker (изоляция!)
-    workerMessages := []openai.ChatCompletionMessage{
+    workerMessages := []Message{
         {Role: "system", Content: "You are a Network Specialist. Use ping tool to check connectivity."},
         {Role: "user", Content: question},  // Только вопрос, без всей истории Supervisor!
     }
     
     // Worker имеет свои инструменты
-    workerTools := []openai.Tool{
+    workerTools := []ToolDef{
         {
-            Function: &openai.FunctionDefinition{
-                Name: "ping",
-                Description: "Ping a host to check connectivity",
-                Parameters: json.RawMessage(`{
-                    "type": "object",
-                    "properties": {"host": {"type": "string"}},
-                    "required": ["host"]
-                }`),
-            },
+            Name:        "ping",
+            Description: "Ping a host to check connectivity",
+            Parameters: json.RawMessage(`{
+                "type": "object",
+                "properties": {"host": {"type": "string"}},
+                "required": ["host"]
+            }`),
         },
     }
     
     // Запускаем Worker как отдельного агента
-    workerResp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    "gpt-4o-mini",
+    workerResp, err := client.Complete(ctx, Request{
+        Model:    "glm-5.3-flash", // Worker — модель дешевле: задача узкая
         Messages: workerMessages,  // Изолированный контекст!
         Tools:    workerTools,
     })
+    if err != nil {
+        return fmt.Sprintf("Error: %v", err) // ошибка — тоже результат для Supervisor
+    }
     
     workerMsg := workerResp.Choices[0].Message
-    // workerMsg.ToolCalls = [{Function: {Name: "ping", Arguments: "{\"host\": \"db-host.example.com\"}"}}]
+    // workerMsg.ToolCalls = [{ID: "call_1", Name: "ping", Arguments: `{"host": "db-host.example.com"}`}]
     
     // Выполняем ping
     pingResult := ping("db-host.example.com")  // "Host is reachable"
     
     // Worker видит результат и формулирует ответ
     workerMessages = append(workerMessages, workerMsg)
-    workerMessages = append(workerMessages, openai.ChatCompletionMessage{
-        Role:    "tool",
-        Content: pingResult,
+    workerMessages = append(workerMessages, Message{
+        Role:       "tool",
+        Content:    pingResult,
+        ToolCallID: "call_1",
     })
     
-    workerResp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    "gpt-4o-mini",
+    workerResp2, err := client.Complete(ctx, Request{
+        Model:    "glm-5.3-flash",
         Messages: workerMessages,
         Tools:    workerTools,
     })
+    if err != nil {
+        return fmt.Sprintf("Error: %v", err) // ошибка — тоже результат для Supervisor
+    }
     
     // Возвращаем финальный ответ Worker-а Supervisor-у
     return workerResp2.Choices[0].Message.Content  // "Host db-host.example.com is reachable"
@@ -184,45 +198,26 @@ func askNetworkExpert(question string) string {
 
 **Шаг 4: Runtime (ваш код) вызывает Worker для DB Expert**
 
-```go
-func askDatabaseExpert(question string) string {
-    // Аналогично Network Expert, но с другими инструментами
-    workerMessages := []openai.ChatCompletionMessage{
-        {Role: "system", Content: "You are a DB Specialist. Use SQL tools."},
-        {Role: "user", Content: question},  // Изолированный контекст!
-    }
-    
-    workerTools := []openai.Tool{
-        {
-            Function: &openai.FunctionDefinition{
-                Name: "sql_query",
-                Description: "Execute a SELECT query",
-                Parameters: json.RawMessage(`{
-                    "type": "object",
-                    "properties": {"query": {"type": "string"}},
-                    "required": ["query"]
-                }`),
-            },
-        },
-    }
-    
-    // Worker генерирует SQL и выполняет
-    // Возвращает: "PostgreSQL 15.2"
-    return "PostgreSQL 15.2"
-}
-```
+DB Expert устроен идентично Network Expert-у — тот же цикл «вопрос → tool call → результат → ответ». Не дублируйте реализацию: одна функция `runWorker(cfg WorkerConfig, question string) string`, меняется только конфигурация.
+
+| Параметр | Network Expert | DB Expert |
+|----------|----------------|-----------|
+| System prompt | "You are a Network Specialist. Use ping tool to check connectivity." | "You are a DB Specialist. Use SQL tools." |
+| Инструменты | `ping` (host) | `sql_query` (query, только SELECT) |
+| Модель | glm-5.3-flash | glm-5.3-flash |
+| Возвращает | "Host db-host.example.com is reachable" | "PostgreSQL 15.2" |
 
 **Шаг 5: Результаты Workers возвращаются Supervisor-у**
 
 ```go
 // Runtime добавляет результаты как tool messages
 supervisorMessages = append(supervisorMessages, supervisorMsg)
-supervisorMessages = append(supervisorMessages, openai.ChatCompletionMessage{
+supervisorMessages = append(supervisorMessages, Message{
     Role:       "tool",
     Content:    askNetworkExpert("Проверь доступность db-host.example.com"),  // "Host is reachable"
     ToolCallID: supervisorMsg.ToolCalls[0].ID,
 })
-supervisorMessages = append(supervisorMessages, openai.ChatCompletionMessage{
+supervisorMessages = append(supervisorMessages, Message{
     Role:       "tool",
     Content:    askDatabaseExpert("Какая версия PostgreSQL на db-host?"),  // "PostgreSQL 15.2"
     ToolCallID: supervisorMsg.ToolCalls[1].ID,
@@ -233,11 +228,11 @@ supervisorMessages = append(supervisorMessages, openai.ChatCompletionMessage{
 
 ```go
 // Отправляем Supervisor-у результаты Workers
-supervisorResp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    "gpt-4o",
+supervisorResp2, err := client.Complete(ctx, Request{
+    Model:    "glm-5.3",
     Messages: supervisorMessages,  // Supervisor видит результаты обоих Workers!
     Tools:    supervisorTools,
-})
+}) // ошибка обрабатывается циклом (гл. 04)
 
 finalMsg := supervisorResp2.Choices[0].Message
 // finalMsg.Content = "Сервер БД доступен (ping успешен). Версия PostgreSQL: 15.2"
@@ -254,7 +249,7 @@ finalMsg := supervisorResp2.Choices[0].Message
 
 ## Другие паттерны Multi-Agent систем
 
-Supervisor/Worker — это базовый паттерн. На практике используются и другие.
+Supervisor/Worker — паттерн для случая действительно разных доменов; по умолчанию же — один агентный цикл + скилы ([гл. 09](../09-agent-architecture/README.md)). На практике используются и другие паттерны.
 
 ### Паттерн: Router Agent (Маршрутизатор)
 
@@ -274,12 +269,14 @@ Router Agent получает запрос и направляет его к о�
 
 ```go
 // Router определяет, какому агенту отправить запрос
-func routeRequest(query string, client *openai.Client) (string, error) {
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: "gpt-4o-mini", // Дешёвая модель — задача классификации
-        Messages: []openai.ChatCompletionMessage{
+func routeRequest(ctx context.Context, query string) (string, error) {
+    client, err := NewClient(...) // провайдер из конфига (гл. 04)
+
+    resp, err := client.Complete(ctx, Request{
+        Model: "glm-5.3-flash", // дешёвая модель — задача классификации
+        Messages: []Message{
             {
-                Role: openai.ChatMessageRoleSystem,
+                Role: "system",
                 Content: `Classify the request and route to the correct specialist.
 Available specialists:
 - "network": connectivity, DNS, ports, network troubleshooting
@@ -287,9 +284,9 @@ Available specialists:
 - "security": access, vulnerabilities, incidents
 Return ONLY the specialist name.`,
             },
-            {Role: openai.ChatMessageRoleUser, Content: query},
+            {Role: "user", Content: query},
         },
-        Temperature: 0,
+        Temperature: 0.2, // качество: стабильный выбор маршрута
     })
     if err != nil {
         return "", err
@@ -298,7 +295,7 @@ Return ONLY the specialist name.`,
 }
 
 // Использование
-specialist, _ := routeRequest("Не могу подключиться к PostgreSQL")
+specialist, _ := routeRequest(ctx, "Не могу подключиться к PostgreSQL")
 // specialist = "database"
 result := runSpecialist(specialist, query) // Запуск нужного агента
 ```
@@ -316,17 +313,17 @@ Handoff — это когда один агент **передаёт управ�
 
 ```go
 type Handoff struct {
-    FromAgent string                          // Кто передаёт
-    ToAgent   string                          // Кому передаёт
-    Context   []openai.ChatCompletionMessage  // Что передаёт
-    Reason    string                          // Почему
+    FromAgent string    // Кто передаёт
+    ToAgent   string    // Кому передаёт
+    Context   []Message // Что передаёт
+    Reason    string    // Почему
 }
 
-func performHandoff(h Handoff, client *openai.Client) (string, error) {
+func performHandoff(h Handoff) (string, error) {
     // Формируем контекст для принимающего агента
-    handoffMessages := []openai.ChatCompletionMessage{
+    handoffMessages := []Message{
         {
-            Role: openai.ChatMessageRoleSystem,
+            Role: "system",
             Content: fmt.Sprintf(
                 "You are a %s specialist. You received a handoff from %s.\nReason: %s\nContinue the conversation.",
                 h.ToAgent, h.FromAgent, h.Reason,
@@ -336,8 +333,8 @@ func performHandoff(h Handoff, client *openai.Client) (string, error) {
     // Добавляем переданный контекст
     handoffMessages = append(handoffMessages, h.Context...)
 
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    "gpt-4o",
+    resp, err := client.Complete(ctx, Request{
+        Model:    "glm-5.3",
         Messages: handoffMessages,
         Tools:    getToolsForAgent(h.ToAgent),
     })
@@ -356,8 +353,8 @@ summary := summarizeConversation(messages)
 handoff := Handoff{
     FromAgent: "l1_support",
     ToAgent:   "l2_engineer",
-    Context: []openai.ChatCompletionMessage{
-        {Role: openai.ChatMessageRoleUser, Content: summary},
+    Context: []Message{
+        {Role: "user", Content: summary},
     },
     Reason: "Issue requires deeper investigation",
 }
@@ -370,93 +367,61 @@ handoff := Handoff{
 
 ### Паттерн: Subagents (Иерархия агентов)
 
-Subagent — это агент, которого другой агент создаёт **динамически** для подзадачи. В отличие от Worker, Subagent создаётся "на лету" под конкретную задачу.
+Subagent — это агент, которого родитель запускает для подзадачи. Это не «роль в команде», а **чистая функция**: вход — самодостаточное задание, выход — отчёт, память родителя не наследуется.
+
+Оправданных причин для субагента всего две (подробный разбор — [гл. 09](../09-agent-architecture/README.md)):
+
+- **Ревью с чистой памятью** — модель, ревьюящая себя, соглашается с собой; субагент-ревьюер видит только артефакт и критерии, без оправданий автора.
+- **Вынос шумного чтения** — десятки `read`/`search` с большими результатами остаются в короткой истории субагента, родитель получает страницу выводов.
 
 ```go
-// Агент решает задачу и понимает, что нужна подзадача
-func solveWithSubagent(task string, parentTools []openai.Tool) string {
-    // Родительский агент декомпозирует задачу
-    subtasks := decomposeTask(task)
-
-    var results []string
-    for _, subtask := range subtasks {
-        // Создаём Subagent для каждой подзадачи
-        subResult := runSubagent(subtask, parentTools)
-        results = append(results, subResult)
+// Субагент: минимальный Config — узкий промпт, read-only инструменты, свои лимиты.
+// Структуры Run/RunResult/AgentConfig — гл. 04.
+func runSubagent(ctx context.Context, task string) (string, error) {
+    cfg := AgentConfig{
+        SystemPrompt: "You are a focused agent. Complete the specific task given to you.",
+        Tools:        readOnlyTools, // только read/list/search — никаких пишущих
+        Limits:       Limits{MaxIterations: 15},
     }
-
-    // Объединяем результаты
-    return synthesizeResults(results)
-}
-
-func runSubagent(task string, tools []openai.Tool) string {
-    messages := []openai.ChatCompletionMessage{
-        {
-            Role:    openai.ChatMessageRoleSystem,
-            Content: "You are a focused agent. Complete the specific task given to you.",
-        },
-        {Role: openai.ChatMessageRoleUser, Content: task},
+    res := Run(ctx, cfg)
+    if res.Err != nil {
+        return "", res.Err
     }
-
-    // Subagent работает в своём цикле с доступными инструментами
-    return runAgentLoop(messages, tools, 5) // maxIterations = 5
+    return res.Output, nil // отчёт текстом; история родителя не наследуется
 }
 ```
 
-### Типизированные роли субагентов
+### Когда субагент оправдан (и когда нет)
 
-На практике субагенты не универсальны — у каждого своя роль с конкретным набором инструментов и ограничениями:
+| Ситуация | Субагент? | Почему |
+|----------|-----------|--------|
+| Ревью собственной работы (диф, отчёт, план) | ✅ | Чистая память: ревьюер не видит, *почему* автор принял решение |
+| Анализ кодовой базы, поиск по логам, чтение документации | ✅ | Шумное чтение не раздувает историю родителя |
+| Подзадача сводится к 2–3 tool call | ❌ | Обычный tool call в основном цикле |
+| «Разделить роли» внутри одной задачи (планировщик, критик, писатель, исследователь...) | ❌ | Антипаттерн: несколько агентов с общей задачей не работают лучше одного, а координация, latency и стоимость растут |
+| Слишком много инструментов в одном домене | ❌ | Это задача скилов и progressive disclosure — [гл. 09](../09-agent-architecture/README.md) |
 
-| Роль | Инструменты | MaxIter | CanPlan | Назначение |
-|------|-------------|---------|---------|------------|
-| **explorer** | read, list, search, recall | 15 | нет | Исследование кодовой базы |
-| **coder** | read, list, search, edit, write, exec | 30 | да | Реализация изменений |
-| **architect** | read, list, search, recall | 20 | да | Архитектурный анализ |
-| **reviewer** | read, list, search, exec | 15 | нет | Код-ревью |
-| **worker** | read, list, search | 15 | нет | Конкретная задача |
-| **thinker** | read, list, search, plan, subagent | 20 | да | Аналитика с делегированием |
-
-```go
-type SubagentRole struct {
-    Name      string
-    Tools     []string
-    MaxIter   int
-    CanPlan   bool
-    CanSpawn  bool // может ли создавать под-субагенты
-    System    string // специализированный system prompt
-}
-
-var roles = map[string]SubagentRole{
-    "explorer": {Tools: []string{"read", "list", "search", "recall"}, MaxIter: 15, CanPlan: false},
-    "coder":    {Tools: []string{"read", "list", "search", "edit", "write", "exec"}, MaxIter: 30, CanPlan: true},
-    "reviewer": {Tools: []string{"read", "list", "search", "exec"}, MaxIter: 15, CanPlan: false},
-}
-```
+У субагента **нет пишущих внешних инструментов**: никакого `exec` с записью, создания MR, деплоя, изменений БД. Все записи делает родитель, получив отчёт, — так аудит действий остаётся в одной истории.
 
 ### Depth Control
 
-Субагенты могут создавать дочерние субагенты, но глубина ограничена:
+Субагент не должен порождать субагентов. Глубина ограничивается явно — стандартный максимум один уровень вложенности:
 
 ```go
-const maxDepth = 3
+const maxDepth = 1
 
-func spawnSubagent(ctx context.Context, role string, task string) (string, error) {
+func spawnSubagent(ctx context.Context, task string) (string, error) {
     depth := getDepth(ctx)
     if depth >= maxDepth {
         return "", fmt.Errorf("max subagent depth %d reached", maxDepth)
     }
     ctx = withDepth(ctx, depth+1)
 
-    r := roles[role]
-    if depth == maxDepth-1 {
-        r.CanSpawn = false // на предпоследнем уровне запрещаем создание дочерних
-    }
-
-    return runSubagent(ctx, r, task)
+    return runSubagent(ctx, task)
 }
 ```
 
-Глубина передаётся через `context.Value` — без глобального состояния.
+Глубина передаётся через `context.Value` — без глобального состояния. Каждый следующий уровень умножает стоимость и усложняет отладку.
 
 ### Паттерн: Custom DAG Workflows
 
@@ -511,7 +476,7 @@ func analyzeProject(ctx context.Context, path string) (string, error) {
     groups := groupByDirectory(files)
     var results []string
     for _, group := range groups {
-        result, err := spawnSubagent(ctx, "explorer",
+        result, err := spawnSubagent(ctx,
             fmt.Sprintf("Analyze files in %s: %v", group.Dir, group.Files))
         if err != nil {
             continue
@@ -519,7 +484,7 @@ func analyzeProject(ctx context.Context, path string) (string, error) {
         results = append(results, result)
     }
 
-    return spawnSubagent(ctx, "architect",
+    return spawnSubagent(ctx,
         "Combine analysis results:\n" + strings.Join(results, "\n---\n"))
 }
 ```
@@ -530,22 +495,40 @@ func analyzeProject(ctx context.Context, path string) (string, error) {
 
 - Родитель **обязан передать** всё необходимое: точные пути файлов, критерии поиска, ожидаемый формат результата
 - Субагент **не проходит routing** — ему не нужна классификация задачи, он уже получил конкретное задание
-- Субагент **не имеет Working Memory** родителя — используется Nop-объект
+- Субагент **не наследует память родителя**: у него своя чистая история, которая начинается с его `task` — поэтому его вывод не замусорен ходом мысли родителя, а родитель не платит токенами за шум поиска
 
 ```go
 // ПЛОХО: неконкретная задача
-result := spawnSubagent(ctx, "coder", "Fix the auth bug")
+result, _ := spawnSubagent(ctx, "Изучи проект и найди проблемы")
 
-// ХОРОШО: конкретная задача с контекстом
-result := spawnSubagent(ctx, "coder",
-    "Fix JWT validation in internal/auth/middleware.go:45. "+
-    "The token expiry check uses time.Now() instead of time.Now().UTC(). "+
-    "After fix, run: go test ./internal/auth/...")
+// ХОРОШО: конкретная задача с контекстом и критерием завершения.
+// Субагент read-only: он подтверждает диагноз и находит места, правит — родитель.
+result, _ := spawnSubagent(ctx,
+    "Проверь JWT-валидацию в internal/auth/middleware.go:45: "+
+    "проверка expiry использует time.Now() вместо time.Now().UTC(). "+
+    "Подтверди проблему и найди все другие места с той же ошибкой. "+
+    "Верни список: файл:строка + обоснование")
 ```
+
+### Субагент с чистой памятью для ревью
+
+Почему ревью отдельным субагентом работает лучше, чем «проверь свой же результат» в том же цикле: модель, ревьюящая собственную работу, **соглашается с собой** — в истории она видит, *почему* приняла решение, и проверяет своё оправдание, а не результат. Субагент-ревьюер этого контекста не имеет.
+
+- **Вход:** самодостаточное задание — артефакт (диф, отчёт, план) + критерии ревью («ищи утечки, гонки, забытые обработки ошибок»)
+- **Выход:** verdict + findings — список проблем с указанием мест; ревьюер ничего не «исправляет»
+- **Инструменты:** только read-only (read/search/list) — правит код родитель, получив findings
+
+```
+Родитель: написал диф → SpawnSubagent(reviewCfg, диф + критерии)
+  Субагент (чистая память, read-only): читает диф → findings
+Родитель: читает findings и правит код сам
+```
+
+> **Как это устроено в реальном SDK.** Никакой специальной сущности «субагент» нет: это тот же агентный цикл, запущенный вторым Run с минимальным Config и чистой историей. Корреляция суб-хода с родительским — через общий `run_id` в телеметрии, чтобы в трейсах видеть всю цепочку (гл. 19).
 
 ### A2A (Agent-to-Agent) протокол
 
-В паттернах выше агенты общаются через runtime (ваш код). [A2A](https://google.github.io/A2A/) — это **стандартизированный протокол** для межагентной коммуникации, предложенный Google.
+В паттернах выше агенты общаются через runtime (ваш код). [A2A](https://a2a-protocol.org/) — это **стандартизированный протокол** для межагентной коммуникации. Инициатива Google, с 2025 года развивается под эгидой Linux Foundation.
 
 **Ключевые концепции:**
 
@@ -595,38 +578,21 @@ func sendA2ATask(agentURL string, task A2ATask) (*A2ATask, error) {
 - Все агенты в одном процессе — используйте tool calls (Supervisor/Worker)
 - Прототип — начните с простых функций
 
-Подробнее об A2A см. [Главу 18: Протоколы Инструментов](../18-tool-protocols-and-servers/README.md#a2a-протокол).
+Подробнее об A2A см. [Главу 18: Протоколы Инструментов](../18-tool-protocols-and-servers/README.md#a2a-agent-to-agent-protocol).
 
 ### Масштабирование Multi-Agent систем
 
-При росте нагрузки одного Supervisor недостаточно.
-
-**Пул Workers:**
-
-```go
-type WorkerPool struct {
-    workers map[string]chan WorkerTask // Канал задач для каждого типа Worker
-    results chan WorkerResult
-}
-
-func (p *WorkerPool) Submit(agentType string, task string) {
-    p.workers[agentType] <- WorkerTask{Task: task, ResultCh: p.results}
-}
-```
-
-**Балансировка:**
-- Round-robin — распределяем задачи по Workers равномерно
-- По загрузке — отправляем свободному Worker-у
-- По специализации — Router выбирает Worker по типу задачи
+Пул воркеров и балансировка (round-robin, по загрузке, по специализации) — общеинженерная тема, не специфичная для агентов: каналы задач на каждый тип Worker, общий канал результатов — обычный Go-воркерпул. Отличий от любого другого воркерпула здесь нет. При росте системы главное быстро становится не «как распределить задачи», а «как всё это трассировать» — см. [Главу 19: Observability и Tracing](../19-observability-and-tracing/README.md).
 
 ### Таблица решений: когда какой паттерн
 
 | Паттерн | Когда использовать | Сложность |
 |---------|-------------------|-----------|
-| Supervisor/Worker | Задача требует координации нескольких специалистов | Средняя |
+| Один цикл + скилы | Много инструментов в одном домене (дефолт, см. [гл. 09](../09-agent-architecture/README.md)) | Низкая |
+| Supervisor/Worker | Действительно разные домены, нужна изоляция контекста | Средняя |
 | Router | Запрос относится к одному домену | Низкая |
 | Handoffs | Эскалация, смена домена | Средняя |
-| Subagents | Динамическая декомпозиция задач | Высокая |
+| Subagents | Ревью с чистой памятью; вынос шумного чтения | Высокая |
 | DAG Workflow | Задачи со сложными зависимостями | Высокая |
 | A2A | Распределённые агенты на разных серверах | Высокая |
 
@@ -644,7 +610,7 @@ func (p *WorkerPool) Submit(agentType string, task string) {
 workerMessages := supervisorMessages  // Вся история!
 
 // ХОРОШО: Worker получает только свой вопрос
-workerMessages := []openai.ChatCompletionMessage{
+workerMessages := []Message{
     {Role: "system", Content: "You are a Network Specialist."},
     {Role: "user", Content: question},  // Только вопрос!
 }
@@ -686,7 +652,7 @@ func askNetworkExpert(question string) string {
 }
 
 // Supervisor получает результат
-supervisorMessages = append(supervisorMessages, openai.ChatCompletionMessage{
+supervisorMessages = append(supervisorMessages, Message{
     Role:       "tool",
     Content:    askNetworkExpert("..."),  // Результат Worker-а
     ToolCallID: supervisorMsg.ToolCalls[0].ID,
@@ -702,16 +668,16 @@ supervisorMessages = append(supervisorMessages, openai.ChatCompletionMessage{
 **Решение:**
 ```go
 // ПЛОХО: расплывчатая задача
-spawnSubagent(ctx, "explorer", "Изучи проект и расскажи, как он устроен")
+spawnSubagent(ctx, "Изучи проект и расскажи, как он устроен")
 
 // ХОРОШО: конкретная задача с критерием завершения
-spawnSubagent(ctx, "explorer",
+spawnSubagent(ctx,
     "Найди все файлы с gRPC-сервисами в internal/. "+
     "Для каждого: имя файла, имя сервиса, список методов. "+
     "Верни результат в формате: service_name: [method1, method2]")
 ```
 
-Реальный случай из Atlas: при запуске субагентов для анализа проекта один из них завис в цикле повторного чтения файлов. Решение: перезапуск с более чёткими инструкциями и добавление `MaxIter` для конкретной роли.
+Реальный случай из Atlas: при запуске субагентов для анализа проекта один из них завис в цикле повторного чтения файлов. Решение: перезапуск с более чёткими инструкциями и добавление лимита итераций в Config субагента.
 
 ## Мини-упражнения
 
@@ -720,7 +686,7 @@ spawnSubagent(ctx, "explorer",
 Реализуйте функцию создания изолированного контекста для Worker-а:
 
 ```go
-func createWorkerContext(question string, workerRole string) []openai.ChatCompletionMessage {
+func createWorkerContext(question string, workerRole string) []Message {
     // Создайте изолированный контекст для Worker-а
     // Только System Prompt и вопрос пользователя
 }
@@ -735,7 +701,7 @@ func createWorkerContext(question string, workerRole string) []openai.ChatComple
 Создайте Supervisor-а с двумя специалистами (Network Expert и DB Expert):
 
 ```go
-supervisorTools := []openai.Tool{
+supervisorTools := []ToolDef{
     // Ваш код здесь
 }
 ```
@@ -753,7 +719,7 @@ supervisorTools := []openai.Tool{
 - [x] Результаты Workers возвращаются Supervisor-у
 - [x] Supervisor собирает результаты и формулирует финальный ответ
 - [x] Описания инструментов для вызова Workers четкие
-- [x] Понимаете типизированные роли субагентов
+- [x] Понимаете, когда субагент оправдан (ревью с чистой памятью, шумное чтение), а когда — нет
 - [x] Знаете правило 10 файлов
 
 **Не сдано:**

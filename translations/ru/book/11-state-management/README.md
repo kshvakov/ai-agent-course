@@ -39,16 +39,9 @@ State Management тесно связан с [Planning](../10-planning-and-workfl
 
 ## Как это работает (пошагово)
 
-### Шаг 0: Состояние агента как контракт (AgentState)
+### Шаг 0: Состояние agent run и артефакты вне контекста
 
-В примерах ниже мы храним состояние "задачи" (`Task`). В прод-агенте удобно ввести отдельный контракт состояния **agent run**. Тогда агент может:
-
-- продолжать выполнение после рестартов,
-- пересобирать план по мере новых данных,
-- требовать подтверждение (HITL) по политике,
-- экономить контекст через артефакты.
-
-Минимальная каноническая форма (упрощённо):
+В примерах ниже мы храним состояние "задачи" (`Task`). В прод-агенте полезен отдельный контракт **agent run**: цель, ограничения (HITL-политика), бюджет и план. Упрощённо:
 
 ```json
 {
@@ -56,21 +49,25 @@ State Management тесно связан с [Planning](../10-planning-and-workfl
   "constraints": {
     "human_in_the_loop": { "required_for_risk_levels": ["write_local", "external_action"] }
   },
-  "budget": {
-    "max_steps": 20,
-    "max_wall_time_ms": 300000,
-    "max_llm_tokens": 200000,
-    "max_artifact_bytes_in_context": 8000
-  },
-  "plan": ["Проверить текущий статус", "Собрать конфиг", "Применить изменения", "Проверить снова"],
-  "known_facts": [{ "key": "service", "value": "X", "source": "user" }],
-  "open_questions": ["В какой namespace деплоить?"],
-  "artifacts": [{ "artifact_id": "log_123", "type": "tool_result.logs", "summary": "nginx error log", "bytes": 48231 }],
-  "risk_flags": ["budget_pressure"]
+  "budget": { "max_steps": 20, "max_wall_time_ms": 300000, "max_llm_tokens": 200000 },
+  "plan": ["Проверить текущий статус", "Собрать конфиг", "Применить изменения", "Проверить снова"]
 }
 ```
 
-А для обновления такого состояния между шагами удобно использовать **StatePatch**: "добавь факты", "замени план", "добавь вопросы". Это помогает разделить роли: один компонент нормализует данные, другой выбирает следующий шаг.
+Важно: это **не** часть контекста LLM. Состояние персистентно в БД, отдельно от истории сообщений, и попадает в контекст только явно — как обычные сообщения.
+
+**Артефакты — вне контекста.** Дампы, логи, длинные выводы команд хранятся в файле или БД, а в историю идёт только путь/ID и короткая выдержка:
+
+```go
+type Artifact struct {
+    ID      string // "art_123"
+    Path    string // /var/agent/artifacts/art_123.log
+    Summary string // "nginx error log, 48 KB; выдержка — первые 20 строк"
+    Bytes   int64
+}
+```
+
+Легитимный предел, который стоит ставить, — бюджет на размер **одного tool-результата** (в проде ~128 KB): превышение → обрезка или вынос в артефакт. А вот «фильтрация релевантного состояния» скорингом внутри контекста — антипаттерн: какую часть истории оставить, решает конденсация ([Глава 13](../13-context-engineering/README.md)), а не ручной скоринг фактов.
 
 ### Шаг 1: Структура задачи с состоянием
 
@@ -102,9 +99,9 @@ type Task struct {
 Проверяйте, не выполнялась ли задача уже:
 
 ```go
-func executeTask(id string) error {
-    // Загружаем задачу из БД
-    task, exists := getTask(id)
+func executeTask(ctx context.Context, store *TaskStore, id string) error {
+    // Загружаем задачу из хранилища
+    task, exists := store.Get(id)
     if !exists {
         return fmt.Errorf("task not found: %s", id)
     }
@@ -116,8 +113,7 @@ func executeTask(id string) error {
     
     // Устанавливаем состояние "running"
     task.State = TaskRunning
-    task.UpdatedAt = time.Now()
-    saveTask(task)
+    store.Save(task)
     
     // Выполняем задачу...
     result, err := doWork(task.UserInput)
@@ -130,8 +126,7 @@ func executeTask(id string) error {
         task.Result = result
     }
     
-    task.UpdatedAt = time.Now()
-    saveTask(task)
+    store.Save(task)
     
     return err
 }
@@ -139,37 +134,22 @@ func executeTask(id string) error {
 
 ### Шаг 3: Retry с экспоненциальным backoff
 
-Повторяйте вызов при ошибке с увеличивающейся задержкой:
+Транзиентные ошибки (сеть, лимиты API) ретраит сам LLM-клиент — экспоненциальным backoff с jitter; классификация ошибок и реализация показаны в [Главе 04](../04-autonomy-and-loops/README.md). Здесь достаточно контракта:
 
 ```go
-func executeWithRetry(fn func() error, maxRetries int) error {
-    var lastErr error
-    
-    for i := 0; i < maxRetries; i++ {
-        err := fn()
-        if err == nil {
-            return nil
-        }
-        
-        lastErr = err
-        
-        // Не делаем backoff после последней попытки
-        if i < maxRetries-1 {
-            backoff := time.Duration(1<<i) * time.Second // 1s, 2s, 4s, 8s...
-            time.Sleep(backoff)
-        }
-    }
-    
-    return fmt.Errorf("failed after %d retries: %v", maxRetries, lastErr)
-}
+// executeWithRetry повторяет fn при транзиентной ошибке.
+// Терминальные ошибки (лимит итераций, дедлайн) возвращаются сразу — их не ретраят.
+func executeWithRetry(ctx context.Context, fn func() error, maxRetries int) error
 ```
+
+Планирование и ретраи не отменяют границ: дедлайн на весь run и лимит итераций — терминальные, их превышение останавливает ход с сообщением человеку (см. FSM ниже).
 
 ### Шаг 4: Дедлайны
 
 Установите timeout для всего agent run и для каждого шага:
 
 ```go
-func runAgentWithDeadline(ctx context.Context, client *openai.Client, userInput string) (string, error) {
+func runAgentWithDeadline(ctx context.Context, agent *Agent, userInput string) (string, error) {
     // Дедлайн для всего agent run (5 минут)
     ctx, cancel := context.WithDeadline(ctx, time.Now().Add(5*time.Minute))
     defer cancel()
@@ -191,75 +171,42 @@ func runAgentWithDeadline(ctx context.Context, client *openai.Client, userInput 
 
 ### Шаг 5: Сохранение состояния
 
-Сохраняйте состояние задачи в БД (или файл для простоты):
+Сохраняйте состояние задачи после каждого значимого изменения. В учебных примерах ниже — в памяти процесса; в проде — SQLite или любая другая БД (см. раздел [Store](#store-database-backed-хранение) ниже):
 
 ```go
-// Простая реализация с файлом
-var tasks = make(map[string]*Task)
-var tasksMutex sync.RWMutex
-
-func saveTask(task *Task) {
-    tasksMutex.Lock()
-    defer tasksMutex.Unlock()
-    
-    task.UpdatedAt = time.Now()
-    tasks[task.ID] = task
-    
-    // Сохраняем в файл (для простоты)
-    data, _ := json.Marshal(tasks)
-    os.WriteFile("tasks.json", data, 0644)
+type TaskStore struct {
+    mu    sync.RWMutex
+    tasks map[string]*Task
 }
 
-func getTask(id string) (*Task, bool) {
-    tasksMutex.RLock()
-    defer tasksMutex.RUnlock()
-    
-    task, exists := tasks[id]
+func (s *TaskStore) Save(task *Task) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    task.UpdatedAt = time.Now()
+    s.tasks[task.ID] = task
+}
+
+func (s *TaskStore) Get(id string) (*Task, bool) {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+    task, exists := s.tasks[id]
     return task, exists
 }
 ```
 
-### Working Memory как часть состояния
+### Память: линейная история + condense
 
-Состояние агента — это не только `AgentState`. На практике есть ещё **Working Memory**: текущая задача, план, прочитанные файлы, последние действия. Эти данные живут в оперативной памяти и теряются между сессиями.
+Отдельного слоя «working memory» в агенте нет — это пережиток старых фреймворков. Память агента — это **линейная история сообщений**: текущая задача, план, прочитанные файлы и последние действия уже находятся в ней. При переполнении контекста работает конденсация: старые сообщения сжимаются в краткое резюме, последние остаются как есть.
 
-**Проблема:** Агент перечитывает файлы, теряет план, начинает задачу с нуля после перезапуска.
-
-**Решение:** Working Memory передаётся как параметр в `Run()` и переживает между REPL-циклами:
-
-```go
-// Working Memory переживает между Run-ами
-wm := workmem.New()
-
-for {
-    userInput := readInput()
-    result, err := agent.Run(ctx, userInput, wm) // WM передаётся явно
-    if err != nil {
-        break
-    }
-    fmt.Println(result)
-}
-```
-
-Для персистенции между сессиями — Export/Import:
-
-```go
-// При завершении сессии
-snapshot := wm.Export()
-saveToFile("session.json", snapshot)
-
-// При восстановлении
-snapshot := loadFromFile("session.json")
-wm.Restore(snapshot)
-```
+Персистентность — это сохранение самой истории (чекпоинты, см. ниже): после рестарта агент загружает историю и продолжает, не перечитывая файлы и не теряя план. Как устроены condense и долговременная память — [Главы 12](../12-agent-memory/README.md) и [13](../13-context-engineering/README.md).
 
 ### Шаг 6: Возобновление выполнения
 
 Продолжайте выполнение задачи после сбоя:
 
 ```go
-func resumeTask(taskID string) error {
-    task, exists := getTask(taskID)
+func resumeTask(ctx context.Context, store *TaskStore, taskID string) error {
+    task, exists := store.Get(taskID)
     if !exists {
         return fmt.Errorf("task not found: %s", taskID)
     }
@@ -272,7 +219,7 @@ func resumeTask(taskID string) error {
     // Если задача упала, можно повторить
     if task.State == TaskFailed {
         task.State = TaskPending
-        saveTask(task)
+        store.Save(task)
     }
     
     // Продолжаем выполнение
@@ -284,61 +231,60 @@ func resumeTask(taskID string) error {
 
 ### Точка интеграции 1: Agent Loop
 
+> **Примечание:** лабы пока не ревизованы (остаются на старом стеке) — используйте их как наводку, канон смотрите в этой главе.
+
 В [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab04-autonomy/main.go) добавьте сохранение состояния:
 
 ```go
+store := &TaskStore{tasks: map[string]*Task{}}
+
 // В начале agent run:
-taskID := generateTaskID()
 task := &Task{
-    ID:        taskID,
+    ID:        generateTaskID(),
     UserInput: userInput,
     State:     TaskRunning,
     CreatedAt: time.Now(),
 }
-saveTask(task)
-
-// В цикле сохраняем прогресс:
-task.State = TaskRunning
-saveTask(task)
+store.Save(task)
 
 // После завершения:
 task.State = TaskCompleted
 task.Result = finalAnswer
-saveTask(task)
+store.Save(task)
 ```
 
 ### Точка интеграции 2: Tool Execution
 
+> **Примечание:** лабы пока не ревизованы (остаются на старом стеке) — используйте их как наводку, канон смотрите в этой главе.
+
 В [`labs/lab02-tools/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab02-tools/main.go) добавьте retry для инструментов:
 
 ```go
-func executeToolWithRetry(toolCall openai.ToolCall) (string, error) {
-    return executeWithRetry(func() error {
-        result, err := executeTool(toolCall)
-        if err != nil {
-            return err
-        }
-        return nil
+func executeToolWithRetry(ctx context.Context, toolCall ToolCall) (string, error) {
+    var result string
+    err := executeWithRetry(ctx, func() error {
+        var err error
+        result, err = executeTool(toolCall)
+        return err
     }, 3)
+    return result, err
 }
 ```
 
 ## Мини-пример кода
 
-Полный пример с workflow и state management на базе [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab04-autonomy/main.go):
+> **Примечание:** лаба пока не ревизована (остаётся на старом стеке) — используйте её как наводку, канон смотрите в этой главе.
+
+Полный пример с workflow и state management на базе [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab04-autonomy/main.go). Клиент LLM — нейтральный (`llm.Client`): retry транзиентных ошибок уже внутри клиента, здесь мы управляем только состоянием и границами:
 
 ```go
 package main
 
 import (
     "context"
-    "encoding/json"
     "fmt"
-    "os"
     "sync"
     "time"
-
-    "github.com/sashabaranov/go-openai"
 )
 
 type TaskState string
@@ -360,191 +306,93 @@ type Task struct {
     UpdatedAt time.Time `json:"updated_at"`
 }
 
-var tasks = make(map[string]*Task)
-var tasksMutex sync.RWMutex
-
-func generateTaskID() string {
-    return fmt.Sprintf("task-%d", time.Now().UnixNano())
+type TaskStore struct {
+    mu    sync.RWMutex
+    tasks map[string]*Task
 }
 
-func saveTask(task *Task) {
-    tasksMutex.Lock()
-    defer tasksMutex.Unlock()
-    
+func (s *TaskStore) Save(task *Task) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
     task.UpdatedAt = time.Now()
-    tasks[task.ID] = task
-    
-    data, _ := json.Marshal(tasks)
-    os.WriteFile("tasks.json", data, 0644)
+    s.tasks[task.ID] = task
 }
 
-func getTask(id string) (*Task, bool) {
-    tasksMutex.RLock()
-    defer tasksMutex.RUnlock()
-    
-    task, exists := tasks[id]
+func (s *TaskStore) Get(id string) (*Task, bool) {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+    task, exists := s.tasks[id]
     return task, exists
 }
 
-func executeWithRetry(fn func() error, maxRetries int) error {
-    var lastErr error
-    
-    for i := 0; i < maxRetries; i++ {
-        err := fn()
-        if err == nil {
-            return nil
-        }
-        
-        lastErr = err
-        
-        if i < maxRetries-1 {
-            backoff := time.Duration(1<<i) * time.Second
-            fmt.Printf("Retry %d/%d after %v...\n", i+1, maxRetries, backoff)
-            time.Sleep(backoff)
-        }
-    }
-    
-    return fmt.Errorf("failed after %d retries: %v", maxRetries, lastErr)
+var tools = map[string]func() string{
+    "check_disk": func() string { return "Disk usage: 95%, large folder: /var/log" },
+    "clean_logs": func() string { return "Logs cleaned, freed 20 GB" },
 }
 
-func checkDisk() string { return "Disk Usage: 95% (CRITICAL). Large folder: /var/log" }
-func cleanLogs() string { return "Logs cleaned. Freed 20GB." }
-
 func main() {
-    token := os.Getenv("OPENAI_API_KEY")
-    baseURL := os.Getenv("OPENAI_BASE_URL")
-    if token == "" {
-        token = "dummy"
-    }
-
-    config := openai.DefaultConfig(token)
-    if baseURL != "" {
-        config.BaseURL = baseURL
-    }
-    client := openai.NewClientWithConfig(config)
-
+    // Дедлайн на весь agent run — терминальная граница
     ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(5*time.Minute))
     defer cancel()
 
     userInput := "У меня кончилось место. Разберись."
 
-    // Создаём задачу
-    taskID := generateTaskID()
+    store := &TaskStore{tasks: map[string]*Task{}}
     task := &Task{
-        ID:        taskID,
+        ID:        fmt.Sprintf("task-%d", time.Now().UnixNano()),
         UserInput: userInput,
         State:     TaskRunning,
         CreatedAt: time.Now(),
     }
-    saveTask(task)
+    store.Save(task)
 
-    tools := []openai.Tool{
-        {
-            Type: openai.ToolTypeFunction,
-            Function: &openai.FunctionDefinition{
-                Name:        "check_disk",
-                Description: "Check current disk usage",
-            },
-        },
-        {
-            Type: openai.ToolTypeFunction,
-            Function: &openai.FunctionDefinition{
-                Name:        "clean_logs",
-                Description: "Delete old logs to free space",
-            },
-        },
-    }
+    agent := NewAgent(llm.ClientFromEnv())
 
-    messages := []openai.ChatCompletionMessage{
-        {Role: openai.ChatMessageRoleSystem, Content: "You are an autonomous DevOps agent."},
-        {Role: openai.ChatMessageRoleUser, Content: userInput},
-    }
-
-    fmt.Printf("Starting Agent Loop (task_id: %s)...\n", taskID)
-
-    for i := 0; i < 5; i++ {
-        // Проверяем дедлайн
+    const maxIterations = 5
+    for i := 0; i < maxIterations; i++ {
         select {
         case <-ctx.Done():
-            task.State = TaskFailed
-            task.Error = "deadline exceeded"
-            saveTask(task)
-            fmt.Println("Deadline exceeded")
+            task.State, task.Error = TaskFailed, "deadline exceeded"
+            store.Save(task)
             return
         default:
         }
 
-        req := openai.ChatCompletionRequest{
-            Model:    "gpt-4o-mini",
-            Messages: messages,
-            Tools:    tools,
-        }
-
-        resp, err := client.CreateChatCompletion(ctx, req)
+        // Одна итерация: вызов LLM + выполнение tool calls
+        reply, err := agent.Step(ctx, userInput)
         if err != nil {
-            task.State = TaskFailed
-            task.Error = err.Error()
-            saveTask(task)
-            panic(fmt.Sprintf("API Error: %v", err))
+            task.State, task.Error = TaskFailed, err.Error()
+            store.Save(task)
+            return
         }
 
-        msg := resp.Choices[0].Message
-        messages = append(messages, msg)
-
-        if len(msg.ToolCalls) == 0 {
-            task.State = TaskCompleted
-            task.Result = msg.Content
-            saveTask(task)
-            fmt.Println("AI:", msg.Content)
-            break
-        }
-
-        for _, toolCall := range msg.ToolCalls {
-            fmt.Printf("Executing tool: %s\n", toolCall.Function.Name)
-
-            var result string
-            err := executeWithRetry(func() error {
-                if toolCall.Function.Name == "check_disk" {
-                    result = checkDisk()
-                } else if toolCall.Function.Name == "clean_logs" {
-                    result = cleanLogs()
-                }
-                return nil
-            }, 3)
-
-            if err != nil {
-                task.State = TaskFailed
-                task.Error = err.Error()
-                saveTask(task)
-                fmt.Printf("Tool execution failed: %v\n", err)
-                continue
-            }
-
-            fmt.Println("Tool Output:", result)
-
-            messages = append(messages, openai.ChatCompletionMessage{
-                Role:       openai.ChatMessageRoleTool,
-                Content:    result,
-                ToolCallID: toolCall.ID,
-            })
+        if reply.Done { // модель ответила текстом — задача завершена
+            task.State, task.Result = TaskCompleted, reply.Text
+            store.Save(task)
+            fmt.Println("AI:", reply.Text)
+            return
         }
     }
+
+    // Лимит итераций — тоже терминальная ошибка
+    task.State, task.Error = TaskFailed, "iteration limit exceeded"
+    store.Save(task)
 }
 ```
 
+Обратите внимание: дедлайн и лимит итераций завершают задачу со статусом `failed` и сообщением человеку — никакой логики «повезёт на шестой попытке».
+
 ## Store: Database-backed хранение
 
-В примерах выше мы используем файл `tasks.json` для хранения состояния. Для учебных целей это работает, но в продакшене файловое хранилище ненадёжно.
+В примерах выше состояние живёт в памяти процесса. Для учебных целей это работает, но в продакшене так нельзя.
 
-### Почему файл — не продакшен
+### Почему память процесса — не продакшен
 
-Файловое хранение имеет три проблемы:
+1. **Перезагрузка = потеря.** Состояние умирает вместе с процессом.
+2. **Нет конкурентного доступа.** Два инстанса агента не могут безопасно работать с одними задачами.
+3. **Нет запросов.** Чтобы найти все незавершённые задачи, нужно перебрать всё.
 
-1. **Нет атомарности.** Если процесс упадёт во время записи, файл повредится.
-2. **Нет конкурентного доступа.** Два агента не могут безопасно писать в один файл.
-3. **Нет запросов.** Чтобы найти все незавершённые задачи, нужно прочитать весь файл.
-
-Базы данных решают все три проблемы. PostgreSQL — надёжный выбор для продакшена. SQLite — хороший вариант для локальной разработки.
+Базы данных решают все три проблемы. PostgreSQL — надёжный выбор для продакшена. SQLite — хороший вариант для локальной разработки и одиночного инстанса.
 
 ### StateStore: интерфейс хранилища
 
@@ -684,121 +532,21 @@ func (s *PgStateStore) ExecuteStep(ctx context.Context, taskID string, stepFn fu
 
 ## MCP для состояния
 
-Model Context Protocol (MCP) позволяет хранить и передавать состояние агента через стандартизированные ресурсы. Подробнее о MCP — в [Главе 18: Протоколы Инструментов и Tool Servers](../18-tool-protocols-and-servers/README.md).
+Model Context Protocol (MCP) позволяет выставить состояние агента наружу как стандартизированные ресурсы: один агент записывает прогресс, другой читает по URI и продолжает работу — без собственного API для каждого хранилища. Это имеет смысл в [мульти-агентных системах](../07-multi-agent/README.md), где несколько агентов делят одно состояние; для одиночного агента достаточно `StateStore` из этой главы. Подробно о MCP — в [Главе 18: Протоколы Инструментов и Tool Servers](../18-tool-protocols-and-servers/README.md).
 
-### Зачем MCP для состояния?
+## Артефакты вне контекста (вместо «динамического выбора состояния»)
 
-MCP-сервер выступает единым хранилищем состояния. Любой агент или инструмент обращается к нему по URI. Это решает две задачи:
+Агент накапливает артефакты: логи, результаты команд, промежуточные данные. Со временем их объём превышает контекстное окно LLM. Отправить всё — модель потеряет фокус; не отправлять ничего — не сможет принять решение.
 
-1. **Общий доступ.** Несколько агентов читают и обновляют одно состояние.
-2. **Стандартный протокол.** Не нужно писать свой API для каждого хранилища.
+**Антипаттерн — «Dynamic Context»:** вручную скорить известные факты и артефакты («приоритет 1: артефакты текущего шага, приоритет 2: последние факты») и собирать из них срез контекста на каждом шаге. Это скрытая логика в обход модели: её нельзя протестировать, она конфликтует с конденсацией и молча ломается при смене контекстного окна.
 
-### Ресурс состояния
+**Рабочий подход:**
 
-Состояние агента представляется как MCP-ресурс с URI:
+- Большие артефакты хранятся **вне** истории — в файле или БД; в контекст идёт путь/ID + короткая выдержка (см. `Artifact` в «Шаге 0»).
+- Бюджет ставится на размер **одного tool-результата** (~128 KB в проде): превышение → обрезка или вынос в артефакт.
+- Что остаётся в истории при переполнении контекста — решает конденсация, а не ручной скоринг ([Глава 13](../13-context-engineering/README.md)).
 
-```
-state://agents/{agent_id}/tasks/{task_id}
-```
-
-Один агент записывает прогресс, другой читает его и продолжает работу.
-
-### Пример: чтение общего состояния
-
-```go
-// MCPStateResource описывает состояние агента как MCP-ресурс.
-type MCPStateResource struct {
-    URI       string    `json:"uri"`
-    AgentID   string    `json:"agent_id"`
-    TaskID    string    `json:"task_id"`
-    State     TaskState `json:"state"`
-    Plan      []string  `json:"plan,omitempty"`
-    Artifacts []string  `json:"artifacts,omitempty"`
-}
-
-// readSharedState читает состояние другого агента через MCP.
-// Агент A записал прогресс, агент B читает и продолжает.
-func readSharedState(
-    ctx context.Context,
-    mcpClient *mcp.Client,
-    agentID, taskID string,
-) (*MCPStateResource, error) {
-    uri := fmt.Sprintf("state://agents/%s/tasks/%s", agentID, taskID)
-
-    resource, err := mcpClient.ReadResource(ctx, uri)
-    if err != nil {
-        return nil, fmt.Errorf("read MCP resource %s: %w", uri, err)
-    }
-
-    var state MCPStateResource
-    if err := json.Unmarshal(resource.Content, &state); err != nil {
-        return nil, fmt.Errorf("decode state: %w", err)
-    }
-    return &state, nil
-}
-```
-
-Такой подход полезен в [мульти-агентных системах](../07-multi-agent/README.md), где несколько агентов работают над одной задачей.
-
-## Dynamic Context: выбор релевантного состояния
-
-### Проблема: не всё помещается в контекст
-
-Агент накапливает артефакты: логи, результаты команд, промежуточные данные. Со временем их объём превышает контекстное окно LLM. Если отправить всё — модель потеряет фокус. Если не отправить ничего — модель не сможет принять решение.
-
-Решение — выбирать только релевантное состояние для текущего шага.
-
-### Фильтрация по релевантности
-
-Стратегия простая: сначала берём данные текущего шага, потом заполняем остаток последними фактами.
-
-```go
-// ContextSlice — срез состояния, который помещается в контекстное окно.
-type ContextSlice struct {
-    Goal          string     `json:"goal"`
-    CurrentStep   string     `json:"current_step"`
-    Facts         []Fact     `json:"facts"`
-    Artifacts     []Artifact `json:"artifacts"`
-    OpenQuestions []string   `json:"open_questions"`
-}
-
-// filterRelevantState выбирает из полного состояния только то,
-// что нужно для текущего шага.
-// maxBytes ограничивает объём, чтобы не переполнить контекстное окно.
-func filterRelevantState(state *AgentState, currentStep string, maxBytes int) *ContextSlice {
-    slice := &ContextSlice{
-        Goal:          state.Goal,
-        CurrentStep:   currentStep,
-        OpenQuestions: state.OpenQuestions,
-    }
-
-    usedBytes := 0
-
-    // Приоритет 1: артефакты текущего шага
-    for _, a := range state.Artifacts {
-        if a.Step == currentStep && usedBytes+a.Bytes <= maxBytes {
-            slice.Artifacts = append(slice.Artifacts, a)
-            usedBytes += a.Bytes
-        }
-    }
-
-    // Приоритет 2: последние факты (свежие данные чаще релевантны)
-    for i := len(state.KnownFacts) - 1; i >= 0; i-- {
-        factSize := len(state.KnownFacts[i].Value)
-        if usedBytes+factSize > maxBytes {
-            break
-        }
-        slice.Facts = append(slice.Facts, state.KnownFacts[i])
-        usedBytes += factSize
-    }
-
-    return slice
-}
-```
-
-### Когда это нужно
-
-Фильтрация становится критичной, когда агент работает дольше 5-10 шагов. На коротких задачах можно обойтись без неё. Подробнее об управлении контекстом — в [Главе 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md).
+Об управлении размером контекста и стоимостью — [Глава 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md).
 
 ## Продвинутые стратегии Checkpoint
 
@@ -906,6 +654,43 @@ func (cm *CheckpointManager) Cleanup(ctx context.Context, taskID string) (int64,
 
 Хорошая практика — запускать ротацию после каждого успешного сохранения или по расписанию.
 
+## FSM автономного хода
+
+Прод-боты, которые живут в чате или трекере часами, не крутят agent loop бесконечно. Задача (issue, тикет, сообщение) проходит конечный автомат состояний:
+
+| Состояние | Что происходит |
+|-----------|----------------|
+| `queued` | Задача поставлена, ждёт воркера |
+| `working` | Идёт agent loop: модель, инструменты, шаги плана |
+| `waiting` | Ход приостановлен: ждём внешний ответ или человека |
+| `paused` | Липкая пауза по команде человека; переживает рестарт |
+| `asleep` | Ход завершён (отчёт отправлен или пропущен), задача «слушает» поток |
+| `done` / `failed` / `cancelled` | Терминальные состояния — из них не выходят |
+
+```mermaid
+stateDiagram-v2
+    [*] --> queued
+    queued --> working: воркер взял задачу
+    working --> waiting: нужен внешний ответ/человек
+    waiting --> working: ответ получен
+    working --> paused: команда человека
+    paused --> working: человек снял паузу
+    working --> asleep: ход завершён (report/skip)
+    waiting --> asleep: ход завершён (skip)
+    asleep --> working: будит упоминание в потоке
+    working --> done
+    working --> failed: терминальная ошибка
+    working --> cancelled
+```
+
+Ключевые правила:
+
+- **«Свобода внутри хода, границы снаружи».** Внутри хода (`working`) агент свободен: сам строит план, вызывает инструменты, пересматривает шаги. Снаружи — жёсткие границы: **дедлайн на ход (~1 час)** и **лимит итераций**. Их превышение — терминальная ошибка: ход завершается со статусом `failed` и сообщением человеку, а не «ещё одна попытка».
+- **`waiting` ≠ `paused`.** `waiting` — агент сам ждёт ответа (HTTP-колбэк, подтверждение человека) и продолжит автоматически. `paused` — стоп-команда человека; выйти из паузы может только человек.
+- **`asleep` — задача слушает поток.** Ход завершён, отчёт отправлен (или помечен skip), но задача продолжает следить за чатом: новая реплика, где задачу **упомянули**, будит её — начинается новый ход `working`. Без упоминания задача спит и не тратит токены.
+- **Ack-после-персиста.** Входящее событие подтверждается доставщику **только после** успешного сохранения состояния и истории в БД. Если процесс упал до персиста — событие не подтверждено и доедет повторно; поэтому операции должны быть идемпотентны (см. выше). Недоставленный ответ доезжает следующим ходом — задача не теряет его в `waiting`/`asleep`.
+- Состояние FSM хранится в том же `StateStore`, что и задачи, и переживает рестарты процесса.
+
 ## Типовые ошибки
 
 ### Ошибка 1: Нет идемпотентности
@@ -961,13 +746,13 @@ err := executeWithRetry(func() error {
 **Решение:**
 ```go
 // ПЛОХО
-resp, _ := client.CreateChatCompletion(ctx, req)
+resp, _ := agent.Step(ctx, input)
 // Может зависнуть навсегда
 
 // ХОРОШО
 ctx, cancel := context.WithDeadline(ctx, time.Now().Add(5*time.Minute))
 defer cancel()
-resp, err := client.CreateChatCompletion(ctx, req)
+resp, err := agent.Step(ctx, input)
 ```
 
 ### Ошибка 4: Состояние не сохраняется
@@ -983,31 +768,23 @@ var taskState = "running" // Только в памяти
 
 // ХОРОШО
 task.State = TaskRunning
-saveTask(task) // Сохраняем в БД/файл
+store.Save(task) // Сохраняем в БД
 ```
 
-### Ошибка 5: Потеря Working Memory между сессиями
+### Ошибка 5: Потеря истории между сессиями
 
 **Симптом:** Агент перечитывает файлы, которые уже читал в прошлой сессии. План задачи потерян. Прогресс не сохранён.
 
-**Причина:** Working Memory (текущая задача, план, файлы, действия) живёт только в оперативной памяти. При перезапуске — теряется.
+**Причина:** История сообщений живёт только в оперативной памяти. При перезапуске — теряется.
 
-**Решение:**
+**Решение:** Персистите саму историю — линейную историю сообщений вместе с конденсатом, а не выдуманный слой «working memory»:
+
 ```go
-// ПЛОХО: Working Memory создаётся заново на каждую сессию
-func handleSession(ctx context.Context) {
-    wm := workmem.New() // всё потеряно
-    agent.Run(ctx, msg, wm)
-}
-
-// ХОРОШО: Export/Import между сессиями
+// ХОРОШО: история + конденсат сохраняются и восстанавливаются
 func handleSession(ctx context.Context, sessionID string) {
-    wm := workmem.New()
-    if snap, err := loadSnapshot(sessionID); err == nil {
-        wm.Restore(snap) // восстановили план, файлы, задачу
-    }
-    defer saveSnapshot(sessionID, wm.Export())
-    agent.Run(ctx, msg, wm)
+    history := loadHistory(sessionID) // из БД
+    defer saveHistory(sessionID, history)
+    agent.Run(ctx, history)
 }
 ```
 
@@ -1052,13 +829,14 @@ func executeTaskIfNotDone(taskID string) error {
 - [x] Установлены дедлайны для agent run и отдельных операций
 - [x] Состояние задачи сохраняется между перезапусками
 - [x] Можно продолжить выполнение задачи после сбоя
+- [x] Понимаете FSM автономного хода: working/waiting/paused/asleep, ack-после-персиста
 
 **Не сдано:**
 - [ ] Нет идемпотентности
 - [ ] Нет retry при ошибках
 - [ ] Нет дедлайнов
 - [ ] Состояние не сохраняется
-- [ ] Потеря Working Memory между сессиями
+- [ ] Потеря истории между сессиями (нет чекпоинтов истории)
 
 ## Связь с другими главами
 

@@ -2,7 +2,7 @@
 
 ## Зачем это нужно?
 
-**ВАЖНО:** Базовые концепции state management (идемпотентность, retries, дедлайны, persist) описаны в [Главе 11: State Management](../11-state-management/README.md). Эта глава — про **прод-реальность**: очереди, асинхронность, масштабирование, распределённое состояние.
+Базовые концепции state management (идемпотентность, retries, дедлайны, persist) описаны в [Главе 11: State Management](../11-state-management/README.md). Эта глава — про **прод-реальность**: очереди, асинхронность, масштабирование, распределённое состояние.
 
 В продакшене агенты обрабатывают тысячи задач параллельно. Без прод-готовности workflow вы не можете:
 - Обрабатывать задачи асинхронно через очереди
@@ -26,7 +26,7 @@ Workflow — это последовательность шагов для вы�
 
 ### Прод-паттерн: AgentState + артефакты вместо "толстого" контекста
 
-В продакшене workflow обычно "живет" дольше одного HTTP-запроса и переживает рестарты воркеров. Поэтому полезно хранить **AgentState** как каноническое состояние agent run (цель, бюджеты, план, факты, вопросы, risk flags), а большие результаты инструментов складывать как **артефакты**:
+В продакшене workflow обычно "живёт" дольше одного HTTP-запроса и переживает рестарты воркеров. Поэтому полезно хранить **AgentState** как каноническое состояние agent run (цель, бюджеты, план, факты, вопросы, risk flags), а большие результаты инструментов складывать как **артефакты**:
 
 - рантайм/воркер сохраняет сырой результат (логи, JSON, файлы) во внешнем хранилище,
 - в состояние добавляет запись `artifact_id + summary + bytes`,
@@ -34,29 +34,36 @@ Workflow — это последовательность шагов для вы�
 
 Так вы снижаете стоимость и не "убиваете" контекстное окно, даже если задача длинная и шагов много.
 
+### FSM автономного хода: зрелая форма
+
+[Глава 11](../11-state-management/README.md) вводит конечный автомат автономного хода. В продакшене он обретает полную форму:
+
+```
+queued → working → (waiting | paused); исходы working: asleep (ход завершён, новый ход по упоминанию) | done | failed | cancelled
+```
+
+Полная диаграмма переходов — в [гл. 11](../11-state-management/README.md#fsm-автономного-хода).
+
+- **queued** — ход создан, ждёт воркера (строка в БД-очереди);
+- **working** — воркер крутит agent loop;
+- **waiting** — ходу нужно внешнее событие (подтверждение человека, результат долгой операции);
+- **paused** — человек приостановил ход;
+- **asleep** — ход завершён (отчёт отправлен или пропущен), задача «слушает» поток: будит только упоминание задачи;
+- **done / failed / cancelled** — терминальные состояния, из них нет переходов.
+
+Три правила зрелого FSM:
+
+1. **Каждый переход переживает рестарт воркера.** Состояние сначала сохраняется в БД, потом воркер действует. Упал воркер — ход подберёт другой (или sweep-процесс перезапустит застрявший `working`).
+2. **Дедлайн на ход (~1 час) и лимит итераций — терминальные границы, а не «обычная ошибка».** Ход останавливается со статусом `failed`, человек получает сообщение «ход прерван по дедлайну». Ретраить его бессмысленно: тот же контекст даст тот же цикл.
+3. **Каждое «спящее» состояние имеет будильщика, и это не таймер:** `waiting` будит входящее событие, `paused` — человек, `asleep` — упоминание задачи в потоке. Sweep-процесс по таймеру не будит спящие состояния — он перезапускает застрявший `working` и доотправляет недоставленные ack'и. Никаких «ждать в memory» — только строки в БД.
+
+Дальше в этой главе код для краткости использует подмножество FSM (`queued/working/done/failed`) — остальные состояния подключаются по той же схеме «событие → переход → персист».
+
 ## Как это работает (пошагово)
 
 Базовые паттерны (структура задачи, идемпотентность, retry с backoff, дедлайны, сохранение состояния) описаны в [Главе 11: State Management](../11-state-management/README.md). Здесь мы строим на этом фундаменте.
 
-### Шаг 1: Очередь задач
-
-Вместо синхронной обработки используйте очередь. Клиент кладёт задачу и сразу получает `task_id`. Воркер забирает задачу, выполняет и сохраняет результат.
-
-```
-Клиент → [Очередь задач] → Воркер → [Хранилище результатов] → Клиент
-```
-
-### Шаг 2: Пул воркеров
-
-Запустите несколько воркеров. Каждый забирает задачи из общей очереди. Масштабируйте горизонтально: больше задач — больше воркеров.
-
-### Шаг 3: Прогресс в реальном времени
-
-Отправляйте обновления через SSE или WebSocket. Пользователь видит, на каком шаге агент, какой инструмент вызывает.
-
-### Шаг 4: Компенсация при сбоях
-
-Для многошаговых операций используйте Saga. Если шаг N упал — откатите шаги N-1, ..., 1 в обратном порядке.
+Сначала карта пути. Задачи уходят из HTTP-хэндлера в **очередь** (клиент сразу получает `task_id`), забираются **пулом воркеров**, прогресс уходит пользователю через **SSE/WebSocket**, а многошаговые операции с побочными эффектами оборачиваются в **Saga** с компенсациями. Каждый паттерн ниже разобран подробно — начнём с асинхронности.
 
 ## Асинхронная коммуникация
 
@@ -81,6 +88,15 @@ Workflow — это последовательность шагов для вы�
 В Go очередь задач можно реализовать через каналы. В продакшене используют RabbitMQ, Kafka или Redis Streams — но принцип тот же.
 
 ```go
+// Состояния хода — подмножество FSM из главы 11
+// (полный автомат: queued/working/waiting/paused/asleep/done/failed/cancelled)
+const (
+    TaskQueued  = "queued"
+    TaskWorking = "working"
+    TaskDone    = "done"
+    TaskFailed  = "failed"
+)
+
 // TaskQueue — простая очередь задач на каналах
 type TaskQueue struct {
     tasks   chan *Task
@@ -100,7 +116,7 @@ func (q *TaskQueue) Submit(userInput string) string {
     task := &Task{
         ID:        generateTaskID(),
         UserInput: userInput,
-        State:     TaskPending,
+        State:     TaskQueued,
         CreatedAt: time.Now(),
     }
 
@@ -138,17 +154,17 @@ func (q *TaskQueue) Worker(ctx context.Context) {
         case <-ctx.Done():
             return
         case task := <-q.tasks:
-            task.State = TaskRunning
+            task.State = TaskWorking
             task.UpdatedAt = time.Now()
 
-            // Выполняем задачу (здесь будет agent loop)
+            // Выполняем ход (здесь будет agent loop)
             result, err := doWork(task.UserInput)
 
             if err != nil {
                 task.State = TaskFailed
                 task.Error = err.Error()
             } else {
-                task.State = TaskCompleted
+                task.State = TaskDone
                 task.Result = result
             }
             task.UpdatedAt = time.Now()
@@ -239,7 +255,7 @@ bus := NewEventBus()
 
 // Сервис мониторинга подписан на ошибки
 bus.Subscribe("agent.error", func(e Event) {
-    log.Printf("[ALERT] Агент %s: ошибка — %v", e.TaskID, e.Payload["error"])
+    log.Printf("[alert] Агент %s: ошибка — %v", e.TaskID, e.Payload["error"])
 })
 
 // Сервис нотификаций подписан на завершение
@@ -295,6 +311,59 @@ func (n *WebhookNotifier) Notify(webhookURL string, task *Task) error {
 | NATS           | Легковесный pub/sub, микросервисы     |
 
 Каналы Go хороши для прототипа и одного процесса. Для распределённой системы нужна внешняя очередь.
+
+## Идемпотентная доставка: ack после персиста
+
+Центральный тезис надёжности асинхронного агента: **входящее событие подтверждается (ack) только после успешного сохранения состояния и памяти хода**. Событие — это сообщение человека, результат инструмента, таймер, подтверждение. Порядок операций всегда один:
+
+1. Воркер получает событие из очереди (пока без ack).
+2. Применяет его к состоянию хода: переход FSM, дописывание в историю.
+3. Сохраняет состояние и память в БД — одной транзакцией.
+4. Только теперь ack-ает событие в очереди.
+
+Если воркер упал между шагами 1 и 4, очередь вернёт событие (redelivery), и оно будет применено заново. Поэтому шаг 2 обязан быть идемпотентным: повторное применение того же события не меняет результат — в состоянии хода хранится ID обработанного события.
+
+```go
+// handleEvent: сначала сохранить, потом ack — и никогда наоборот
+func handleEvent(ev Event) error {
+    turn, err := store.LoadTurn(ev.TurnID)
+    if err != nil {
+        return err // не ack-аем: событие доедет заново
+    }
+    if turn.SeenEvent(ev.ID) {
+        return queue.Ack(ev.ID) // дубль после redelivery — просто ack
+    }
+    turn.Apply(ev) // переход FSM + запись в историю
+
+    if err := store.Save(turn); err != nil { // состояние и память, одна транзакция
+        return err // не ack-аем
+    }
+    return queue.Ack(ev.ID) // персист прошёл — теперь можно
+}
+```
+
+Антипаттерн — ack сразу при получении: воркер падает, событие потеряно навсегда, ход зависает в `waiting`, человек не получает ответа и дублирует запрос.
+
+### Интерливинг: реплика человека входит в идущий ход
+
+Пользователь пишет «стоп, передумал», пока агент работает. Реплика не ждёт следующего хода: она **вставляется в конец истории идущего хода**, и текущая итерация agent loop её увидит. Ack — по тому же правилу: после персиста истории.
+
+```go
+// Воркер проверяет новые сообщения между итерациями agent loop
+select {
+case msg := <-inbox:
+    messages = append(messages, Message{Role: "user", Content: msg.Text})
+    if err := store.SaveHistory(turn, messages); err != nil {
+        return err // не ack-аем — сообщение доедет
+    }
+    if err := inbox.Ack(msg.ID); err != nil {
+        return err
+    }
+default:
+}
+```
+
+> **Как это устроено в реальном SDK.** FSM агента живёт поверх очереди-«почтового ящика» (mailbox): каждое входящее событие — сообщение в очередь, ход обрабатывает их по одному. Интерливинг — это вставка реплики человека в конец истории идущего хода. Ack события отправляется только после успешного персиста состояния. Версия промпта — константа хода, зафиксированная при его старте (подробнее — [глава 22](../22-prompt-program-management/README.md)).
 
 ## Agent-to-UI (A2UI)
 
@@ -446,18 +515,24 @@ WebSocket нужен, если клиент отправляет данные в
 // ProgressCallback — функция для отправки обновлений
 type ProgressCallback func(update ProgressUpdate)
 
+// Терминальная граница хода — НЕ transient-ошибка, ретраить нельзя
+var ErrLoopLimit = errors.New("agent loop: iteration limit reached")
+
 func runAgentLoop(
     ctx context.Context,
-    client *openai.Client,
+    client Client, // нейтральный клиент из гл. 04: Complete(ctx, Request) (*Response, error)
     task *Task,
     onProgress ProgressCallback,
 ) error {
-    messages := []openai.ChatCompletionMessage{
-        {Role: openai.ChatMessageRoleSystem, Content: "You are a DevOps agent."},
-        {Role: openai.ChatMessageRoleUser, Content: task.UserInput},
-    }
+    const maxIterations = 25 // лимит итераций хода
 
-    for i := 0; i < 10; i++ {
+    messages := []Message{
+        {Role: "system", Content: task.SystemPrompt}, // константа хода (гл. 22)
+        {Role: "user", Content: task.UserInput},
+    }
+    tools := task.Tools // []ToolDef хода (гл. 04)
+
+    for i := 0; i < maxIterations; i++ {
         select {
         case <-ctx.Done():
             return ctx.Err()
@@ -471,13 +546,9 @@ func runAgentLoop(
             Time: time.Now(),
         })
 
-        resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-            Model:    "gpt-4o-mini",
-            Messages: messages,
-            Tools:    tools,
-        })
+        resp, err := client.Complete(ctx, Request{Messages: messages, Tools: tools})
         if err != nil {
-            return err
+            return err // классификацию ошибок см. ниже
         }
 
         msg := resp.Choices[0].Message
@@ -496,26 +567,35 @@ func runAgentLoop(
         for _, tc := range msg.ToolCalls {
             onProgress(ProgressUpdate{
                 TaskID: task.ID, Step: i + 1, Status: "tool_call",
-                Tool: tc.Function.Name,
-                Message: fmt.Sprintf("Вызываю %s...", tc.Function.Name),
+                Tool: tc.Name,
+                Message: fmt.Sprintf("Вызываю %s...", tc.Name),
                 Time: time.Now(),
             })
 
             result := executeTool(tc)
-            messages = append(messages, openai.ChatCompletionMessage{
-                Role: openai.ChatMessageRoleTool, Content: result, ToolCallID: tc.ID,
+            messages = append(messages, Message{
+                Role: "tool", Content: result, ToolCallID: tc.ID,
             })
 
             onProgress(ProgressUpdate{
                 TaskID: task.ID, Step: i + 1, Status: "tool_result",
-                Tool: tc.Function.Name, Message: result, Time: time.Now(),
+                Tool: tc.Name, Message: result, Time: time.Now(),
             })
         }
     }
 
-    return fmt.Errorf("max iterations reached")
+    // Лимит итераций — терминальная граница: ход в failed, человеку сообщение.
+    // Это не transient: ретрай с тем же контекстом даст тот же цикл.
+    return ErrLoopLimit
 }
 ```
+
+**Классификация ошибок хода** — то, что отличает зрелую систему от «retry на всё»:
+
+- **Transient** (сеть, таймаут LLM, 429/5xx провайдера) → ретрай: sweep перезапускает ход или повторяет итерацию с backoff.
+- **Границы хода** (лимит итераций `ErrLoopLimit`, дедлайн ~1 ч) → терминально: ход в `failed`, человеку сообщение «ход прерван». Ретраить бессмысленно — тот же контекст воспроизведёт тот же цикл. Диагностика: смотреть трейс ([глава 19](../19-observability-and-tracing/README.md)), чинить причину (промпт, инструменты), запускать новый ход.
+
+Если вернуть `ErrLoopLimit` как «обычную» ошибку, внешний retry-механизм будет бесконечно перезапускать зависшего агента — и сжигать бюджет ([глава 20](../20-cost-latency-engineering/README.md)).
 
 ## Распределённые паттерны
 
@@ -584,7 +664,7 @@ func (s *Saga) compensate(ctx context.Context) {
 
         if err := step.Compensate(ctx); err != nil {
             // Компенсация не должна падать, но логируем
-            log.Printf("[saga] ОШИБКА компенсации шага %d: %v", idx+1, err)
+            log.Printf("[saga] ошибка компенсации шага %d: %v", idx+1, err)
         }
     }
 }
@@ -653,10 +733,10 @@ func (s *DistributedTaskStore) Claim(ctx context.Context, workerID string) (*Tas
     // UPDATE ... RETURNING с блокировкой: только один воркер получит задачу
     err := s.db.QueryRowContext(ctx, `
         UPDATE tasks
-        SET state = 'running', worker_id = $1, updated_at = now()
+        SET state = 'working', worker_id = $1, updated_at = now()
         WHERE id = (
             SELECT id FROM tasks
-            WHERE state = 'pending'
+            WHERE state = 'queued'
             ORDER BY created_at
             FOR UPDATE SKIP LOCKED
             LIMIT 1
@@ -681,7 +761,7 @@ func (s *DistributedTaskStore) Claim(ctx context.Context, workerID string) (*Tas
 - **Temporal** — самый популярный. Workflow описывается как обычный код (Go, Java, Python). Движок берёт на себя retry, state, таймауты.
 - **Cadence** — предшественник Temporal (от Uber).
 
-Temporal полезен, когда у вас десятки шагов, сложная логика ветвления и нужна гарантированная доставка. Для 3–5 шагов достаточно Saga из этой главы.
+Честная оценка: для большинства прод-ботов достаточно связки «БД-очередь + FSM хода + sweep-ретраи» из этой главы и [главы 11](../11-state-management/README.md) — меньше движущихся частей, всё наблюдаемо одним SQL-запросом. Temporal оправдан, когда появляются сложные саги с ветвлениями и мультидневные процессы (onboarding клиента, миграции), где вручную управлять таймерами, ретраями и компенсациями уже больно. Для 3–5 шагов достаточно Saga.
 
 ## Типовые ошибки
 
@@ -711,20 +791,20 @@ func handleTask(w http.ResponseWriter, r *http.Request) {
 
 **Симптом:** Два воркера берут одну задачу. Результат: дублирование работы, конфликты при записи результата, испорченное состояние.
 
-**Причина:** `SELECT ... WHERE state = 'pending'` без блокировки. Оба воркера видят одну строку и оба её забирают.
+**Причина:** `SELECT ... WHERE state = 'queued'` без блокировки. Оба воркера видят одну строку и оба её забирают.
 
 **Решение:**
 ```sql
 -- ПЛОХО: два воркера могут забрать одну задачу
-SELECT id FROM tasks WHERE state = 'pending' LIMIT 1;
-UPDATE tasks SET state = 'running' WHERE id = $1;
+SELECT id FROM tasks WHERE state = 'queued' LIMIT 1;
+UPDATE tasks SET state = 'working' WHERE id = $1;
 
 -- ХОРОШО: атомарный захват с блокировкой
 UPDATE tasks
-SET state = 'running', worker_id = $1
+SET state = 'working', worker_id = $1
 WHERE id = (
     SELECT id FROM tasks
-    WHERE state = 'pending'
+    WHERE state = 'queued'
     ORDER BY created_at
     FOR UPDATE SKIP LOCKED
     LIMIT 1
@@ -761,7 +841,7 @@ for i := len(completed) - 1; i >= 0; i-- {
 ```go
 // ПЛОХО: agent loop без обратной связи
 for i := 0; i < maxIter; i++ {
-    resp, _ := client.CreateChatCompletion(ctx, req)
+    resp, _ := llm.Complete(ctx, Request{Messages: messages, Tools: tools})
     // ... обработка ...
 }
 
@@ -771,7 +851,10 @@ for i := 0; i < maxIter; i++ {
         TaskID: task.ID, Step: i + 1, Status: "thinking",
         Message: fmt.Sprintf("Шаг %d: анализирую...", i+1),
     })
-    resp, _ := client.CreateChatCompletion(ctx, req)
+    resp, err := llm.Complete(ctx, Request{Messages: messages, Tools: tools})
+    if err != nil {
+        return err // прогресс не отменяет обработку ошибок (гл. 04)
+    }
     // ... обработка с onProgress для tool_call/tool_result ...
 }
 ```
@@ -865,6 +948,8 @@ func (s *Store) Claim(ctx context.Context, workerID string) (*Task, error) {
 - [x] Многошаговые операции используют Saga с компенсацией
 - [x] Конкурентный захват задач (`FOR UPDATE SKIP LOCKED`)
 - [x] Очередь имеет ограничение размера и backpressure
+- [x] Входящие события ack-аются только после персиста состояния (идемпотентная доставка)
+- [x] Дедлайн хода и лимит итераций — терминальные границы, а не retry
 
 **Не сдано:**
 - [ ] Синхронная обработка в HTTP-хэндлере

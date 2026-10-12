@@ -45,3 +45,7 @@ build/
 # Python package build artifacts
 *.egg-info/
 dist/
+
+# Python bytecode
+__pycache__/
+*.pyc

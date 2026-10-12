@@ -5,6 +5,7 @@ Generates unique meta descriptions for each page based on content,
 extracting the first meaningful paragraph after the title.
 """
 import re
+import mkdocs.config.config_options
 from typing import Any, Dict
 from mkdocs.plugins import BasePlugin
 from mkdocs.structure.pages import Page
@@ -12,6 +13,11 @@ from mkdocs.structure.pages import Page
 
 class AutoDescriptionPlugin(BasePlugin):
     """Plugin to auto-generate meta descriptions from page content."""
+
+    config_scheme = (
+        ('max_length', mkdocs.config.config_options.Type(int, default=160)),
+        ('min_length', mkdocs.config.config_options.Type(int, default=100)),
+    )
 
     def __init__(self):
         self.max_length = 160

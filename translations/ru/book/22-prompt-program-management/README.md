@@ -28,6 +28,12 @@
 
 Промпт-регрессия — ухудшение качества агента после изменения промпта. Одно слово может сломать поведение. Evals обнаруживают регрессии до деплоя.
 
+### Скилы как часть промпт-менеджмента
+
+Скилы ([глава 09](../09-agent-architecture/README.md)) — это тот же промпт-менеджмент, распространённый на большие знания. Файл `SKILL.md` версионируется как код: живёт в git, меняется через PR с обязательным eval-прогоном — те же правила, что и для system prompt. Разница — в независимости: скилы подключаются и отключаются, не трогая сам system prompt. Progressive disclosure ([глава 13](../13-context-engineering/README.md)) держит префикс дешёвым: в system prompt попадают только названия и краткие описания скилов, а полное содержимое агент подгружает при необходимости. Большие знания уезжают из system prompt в скилы — префикс короче, кэш стабильнее, поведение гибче.
+
+> **Как это устроено в реальном SDK.** Промпт агента собирается из секций (PromptSection): сначала неизменяемый system prompt, затем секция скилов — только названия и описания. Полное тело скила попадает в историю диалога, когда агент его выбрал. В метаданных хода фиксируются версии и system prompt, и каждого использованного скила.
+
 ## Как это работает (пошагово)
 
 ### Шаг 1: Централизованное хранилище промптов
@@ -48,7 +54,7 @@ type PromptVersion struct {
     Author      string            `json:"author"`
     CreatedAt   time.Time         `json:"created_at"`
     Description string            `json:"description"` // Что изменилось
-    Tags        map[string]string `json:"tags"`        // "model": "gpt-4o", "domain": "devops"
+    Tags        map[string]string `json:"tags"`        // "model": "glm-5.3", "domain": "devops"
     IsActive    bool              `json:"is_active"`   // Используется ли в проде
 }
 
@@ -58,7 +64,7 @@ func (r *PromptRegistry) Get(promptID, version string) (*PromptVersion, error) {
         return nil, fmt.Errorf("prompt %s not found", promptID)
     }
     for i := len(versions) - 1; i >= 0; i-- {
-        if version == "latest" || versions[i].Version == version {
+        if versions[i].Version == version {
             return &versions[i], nil
         }
     }
@@ -77,6 +83,8 @@ func (r *PromptRegistry) Rollback(promptID, toVersion string) error {
 }
 ```
 
+Обратите внимание: `Get` требует **точную** версию. Какую версию использовать — решает конфигурация при деплое, а не рантайм (почему — см. «Типовые ошибки», ошибка 1). «Активная» версия в реестре — это метка для людей и отката, а не способ адресации в рантайме.
+
 ### Шаг 2: Версионирование с Semantic Versioning
 
 Применяем semver к промптам:
@@ -85,21 +93,7 @@ func (r *PromptRegistry) Rollback(promptID, toVersion string) error {
 - **MINOR** (1.0 → 1.1): Добавление инструкций (новый edge case, уточнение)
 - **PATCH** (1.0.0 → 1.0.1): Исправление опечатки, форматирование
 
-```go
-// Diff между версиями
-func (r *PromptRegistry) Diff(promptID, v1, v2 string) string {
-    pv1, _ := r.Get(promptID, v1)
-    pv2, _ := r.Get(promptID, v2)
-
-    // Построчное сравнение
-    lines1 := strings.Split(pv1.Content, "\n")
-    lines2 := strings.Split(pv2.Content, "\n")
-
-    var diff strings.Builder
-    // ... стандартный diff алгоритм ...
-    return diff.String()
-}
-```
+Diff между версиями — любой построчный алгоритм; важно не его изящество, а то, что diff виден человеку: в PR и в интерфейсе реестра. Изменение промпта без видимого diff — то же, что деплой кода без diff в PR.
 
 ### Шаг 3: Templating (Шаблонизация промптов)
 
@@ -170,17 +164,25 @@ type PlaygroundResult struct {
     HasError bool    `json:"has_error"`
 }
 
-func runPlayground(req PlaygroundRequest, client *openai.Client) []PlaygroundResult {
-    prompt, _ := registry.Get("system", req.PromptVersion)
+// LLMClient — нейтральный интерфейс к провайдеру (канон — глава 04)
+type LLMClient interface {
+    Complete(ctx context.Context, req Request) (*Response, error)
+}
+
+func runPlayground(ctx context.Context, req PlaygroundRequest, llm LLMClient) []PlaygroundResult {
+    prompt, err := registry.Get("system", req.PromptVersion) // точная версия
+    if err != nil {
+        return nil
+    }
     var results []PlaygroundResult
 
     for _, input := range req.TestInputs {
         start := time.Now()
-        resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-            Model: req.Model,
-            Messages: []openai.ChatCompletionMessage{
-                {Role: openai.ChatMessageRoleSystem, Content: prompt.Content},
-                {Role: openai.ChatMessageRoleUser, Content: input},
+        resp, err := llm.Complete(ctx, Request{
+            Model: req.Model, // например, "glm-5.3" или "fable-5.1"
+            Messages: []Message{
+                {Role: "system", Content: prompt.Content},
+                {Role: "user", Content: input},
             },
         })
 
@@ -192,7 +194,7 @@ func runPlayground(req PlaygroundRequest, client *openai.Client) []PlaygroundRes
             result.HasError = true
         } else {
             result.Output = resp.Choices[0].Message.Content
-            result.Tokens = resp.Usage.TotalTokens
+            result.Tokens = resp.Usage.PromptTokens + resp.Usage.CompletionTokens
         }
         results = append(results, result)
     }
@@ -234,8 +236,13 @@ abTest := ABTest{
 }
 
 selectedVersion := abTest.SelectVersion(runID)
-prompt, _ := registry.Get("incident_sop", selectedVersion)
+prompt, err := registry.Get("incident_sop", selectedVersion)
+if err != nil {
+    return fmt.Errorf("prompt version %s not found: %w", selectedVersion, err)
+}
 ```
+
+Правила эксперимента: обе версии зафиксированы в конфиге A/B-теста, выбор детерминирован и происходит **один раз — в начале хода**. Дальше версия промпта — константа хода: system prompt не меняется посреди выполнения, кэшируемый префикс стабилен ([глава 02](../02-prompt-engineering/README.md)), а трасса хода воспроизводима: `runID → prompt_version` однозначно.
 
 **Метрики для сравнения:**
 
@@ -261,7 +268,7 @@ type PromptMCPServer struct {
 
 // Агент запрашивает промпт через MCP
 func (s *PromptMCPServer) GetResource(uri string) (string, error) {
-    // URI: "prompt://incident_sop/latest"
+    // URI: "prompt://incident_sop/1.1.0" — версия задана конфигом агента, не «текущая»
     parts := strings.Split(uri, "/")
     promptID := parts[1]
     version := parts[2]
@@ -277,33 +284,7 @@ func (s *PromptMCPServer) GetResource(uri string) (string, error) {
 
 ### Шаг 7: Link to Traces (Связь промптов с трассировками)
 
-Каждый run агента записывает, какая версия промпта использовалась. Это позволяет связать поведение с конкретной версией:
-
-```go
-type RunMetadata struct {
-    RunID         string `json:"run_id"`
-    PromptID      string `json:"prompt_id"`
-    PromptVersion string `json:"prompt_version"`
-    Model         string `json:"model"`
-    Timestamp     time.Time
-}
-
-func logRunMetadata(runID string, prompt *PromptVersion, model string) {
-    metadata := RunMetadata{
-        RunID:         runID,
-        PromptID:      prompt.PromptID,
-        PromptVersion: prompt.Version,
-        Model:         model,
-        Timestamp:     time.Now(),
-    }
-    // Записываем в трассировку
-    tracing.LogMetadata(metadata)
-}
-
-// Теперь при расследовании инцидента:
-// "Какая версия промпта использовалась в run_id=abc123?"
-// → prompt_id=incident_sop, version=1.1.0
-```
+Каждый run записывает в метаданные трейса: `run_id`, `prompt_id`, `prompt_version`, `model`, timestamp. Один вызов `tracing.LogMetadata(...)` при старте хода — и вопросы инцидентов решаются запросом: «какая версия промпта работала в run `abc123`?» → `prompt_id=incident_sop, version=1.1.0`. Без этой связи жалоба пользователя неразрешима: вы даже не знаете, какой промпт показал плохое поведение.
 
 Подробнее о трассировке см. [Главу 19: Observability и Tracing](../19-observability-and-tracing/README.md).
 
@@ -335,14 +316,23 @@ func getSystemPrompt(flags FeatureFlags) string {
 
 **Причина:** Промпты хранятся как строковые константы в Go-файлах.
 
-**Решение:**
+**Решение:** реестр версий — но версия фиксируется в конфигурации при деплое, а не выбирается рантаймом:
+
 ```go
-// ПЛОХО: Промпт в коде
+// ПЛОХО: промпт в коде
 const systemPrompt = "You are a DevOps agent..."
 
-// ХОРОШО: Промпт из реестра
+// ПЛОХО: «latest» в рантайме — рантайм сам решает, какая версия «текущая»
 prompt, _ := registry.Get("system_devops", "latest")
+
+// ХОРОШО: версия — константа конфигурации, зафиксирована при деплое
+prompt, err := registry.Get("system_devops", cfg.PromptVersion) // например, "1.4.2"
+if err != nil {
+    return fmt.Errorf("prompt version %s not found: %w", cfg.PromptVersion, err)
+}
 ```
+
+Почему не «latest»: system prompt — это **кэшируемый префикс** ([глава 02](../02-prompt-engineering/README.md)). Если рантайм при каждом запросе вытягивает «текущую» версию, любое параллельное обновление молча меняет префикс — промах кэша (растут стоимость и латентность) и недетерминизм: две трассы одного хода собраны из разных промптов, отладка невозможна. Смена версии — осознанный акт: PR с diff и eval-прогоном (главы [08](../08-evals-and-reliability/README.md) и [23](../23-evals-in-cicd/README.md)), затем новая версия в конфиге и деплой.
 
 ### Ошибка 2: Нет evals перед деплоем промпта
 
@@ -363,6 +353,8 @@ if passRate < 0.95 {
 }
 registry.SetActive("system_devops", "2.0.0")
 ```
+
+Ручной прогон — полумера: quality gates для промптов должны стоять в CI/CD и блокировать слияние PR с изменением промпта без зелёного eval-прогона — как это устроено, разбираем в [Главе 23: Evals в CI/CD](../23-evals-in-cicd/README.md).
 
 ### Ошибка 3: A/B тест без статистики
 
@@ -438,7 +430,7 @@ func (r *PromptRegistry) Rollback(id, version string) error { ... }
 
 **Ожидаемый результат:**
 - Можно добавить несколько версий промпта
-- Можно получить конкретную версию или "latest"
+- Можно получить конкретную версию; запрос несуществующей версии возвращает ошибку
 - Rollback деактивирует текущую и активирует указанную версию
 
 ### Упражнение 2: Реализуйте A/B тест
@@ -478,6 +470,8 @@ func testPrompt(promptContent string, testInputs []string) []PlaygroundResult {
 - [x] Версия промпта записывается в трассировку каждого run
 - [x] Есть механизм отката (rollback)
 - [x] Feature flags позволяют включать/выключать версии без деплоя
+- [x] Версия промпта фиксируется в конфиге при деплое, рантайм не выбирает «текущую»
+- [x] Скилы (SKILL.md) версионируются как код и проходят evals независимо от system prompt
 
 **Не сдано:**
 - [ ] Промпты захардкожены в коде
@@ -496,13 +490,16 @@ func testPrompt(promptContent string, testInputs []string) []PlaygroundResult {
 
 Оптимум: **Prompt as Code** для system prompt (редко меняется), **Prompt as Config** для few-shot примеров и SOP (меняется часто).
 
+Куда бы ни жил промпт, одно правило неизменно: динамические вставки (данные, контекст задачи, свежие факты) идут **в конец истории сообщений**, никогда в system prompt (`messages[0]`). System prompt — кэшируемый префикс ([глава 02](../02-prompt-engineering/README.md)): любая динамика в нём ломает кэш и удорожает каждый запрос, а заодно делает трассы невоспроизводимыми.
+
 ## Связь с другими главами
 
-- **[Глава 02: Промптинг](../02-prompt-engineering/README.md)** — как писать эффективные промпты
+- **[Глава 02: Промптинг](../02-prompt-engineering/README.md)** — как писать эффективные промпты; системный промпт как кэшируемый префикс
 - **[Глава 08: Evals и Надежность](../08-evals-and-reliability/README.md)** — как тестировать промпты
+- **[Глава 09: Архитектура агента](../09-agent-architecture/README.md)** — скилы (SKILL.md) и progressive disclosure
 - **[Глава 18: Протоколы Инструментов](../18-tool-protocols-and-servers/README.md)** — MCP для раздачи промптов
 - **[Глава 19: Observability и Tracing](../19-observability-and-tracing/README.md)** — связь промптов с трассировкой
-- **[Глава 23: Evals в CI/CD](../23-evals-in-cicd/README.md)** — автоматическая проверка в pipeline
+- **[Глава 23: Evals в CI/CD](../23-evals-in-cicd/README.md)** — quality gates: автоматическая проверка промптов в pipeline
 - **[Agent Skills](https://agentskills.io/)** — формат `SKILL.md` как стандартный способ упаковки переиспользуемых промптов и инструкций
 
 ## Что дальше?

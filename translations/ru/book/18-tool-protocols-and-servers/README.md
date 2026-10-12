@@ -336,11 +336,12 @@ var deployTool = MCPTool{
 func handleRequest(req JSONRPCRequest) JSONRPCResponse {
     switch req.Method {
     case "initialize":
-        // Рукопожатие: сервер сообщает свои возможности
+        // Рукопожатие: сервер сообщает версию протокола и свои возможности.
+        // Версия спецификации согласуется в handshake — подставляйте актуальную
         return JSONRPCResponse{
             JSONRPC: "2.0", ID: req.ID,
             Result: map[string]any{
-                "protocolVersion": "2025-03-26",
+                "protocolVersion": "YYYY-MM-DD",
                 "capabilities":    map[string]any{"tools": map[string]any{}},
                 "serverInfo": map[string]any{
                     "name": "deploy-server", "version": "1.0.0",
@@ -389,23 +390,7 @@ func handleRequest(req JSONRPCRequest) JSONRPCResponse {
 }
 ```
 
-Запуск через stdio. Сервер читает JSON-RPC сообщения из stdin, пишет ответы в stdout:
-
-```go
-func main() {
-    scanner := bufio.NewScanner(os.Stdin)
-    scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
-
-    for scanner.Scan() {
-        var req JSONRPCRequest
-        if err := json.Unmarshal(scanner.Bytes(), &req); err != nil {
-            continue
-        }
-        resp := handleRequest(req)
-        json.NewEncoder(os.Stdout).Encode(resp)
-    }
-}
-```
+Запуск через stdio. Цикл здесь тот же, что у stdio Tool Server из начала главы: scanner читает строку из stdin, `json.Unmarshal` разбирает запрос, обработчик формирует ответ, encoder пишет его в stdout. MCP не изобретает новый транспорт — он лишь оборачивает сообщения в JSON-RPC 2.0. Отличия от самописного протокола: обязательный handshake (`initialize`) с согласованием версии спецификации до первого вызова, стандартные методы (`tools/list`, `tools/call`, `resources/list`) вместо свободного формата и content-формат ответов (`content` + `isError` вместо пары result/error).
 
 ### Пример: MCP-клиент
 
@@ -434,9 +419,10 @@ func NewMCPClient(serverPath string) (*MCPClient, error) {
         stdout: bufio.NewScanner(stdoutPipe),
     }
 
-    // Инициализация — обязательный первый шаг
+    // Инициализация — обязательный первый шаг.
+    // Версия протокола согласуется в handshake — подставьте актуальную версию спецификации
     _, err := client.call("initialize", map[string]any{
-        "protocolVersion": "2025-03-26",
+        "protocolVersion": "YYYY-MM-DD",
         "clientInfo":      map[string]any{"name": "my-agent", "version": "1.0.0"},
     })
     return client, err
@@ -501,11 +487,23 @@ func main() {
 |----------|-----|-------------------|
 | **Агент использует инструмент** | Да — MCP создан для этого | Требует ручной интеграции |
 | **Инструменты для нескольких агентов** | Один сервер — любой MCP-клиент | Каждый агент пишет свой клиент |
-| **Высоконагруженный API** | Нет — не оптимизирован для RPS | Да — gRPC/HTTP лучший выбор |
+| **Сеть, масштаб, язык-агностицизм** | Условно: stdio — локально и просто, Streamable HTTP — для удалённых серверов | Да — HTTP/gRPC, когда нужен полноценный API для других сервисов |
 | **Сложная бизнес-логика** | Нет — лучше отдельный сервис | Да |
 | **IDE и инструменты разработчика** | Да — большинство IDE поддерживают MCP | Нет |
 
 **Правило:** Если инструмент нужен LLM-агенту — используйте MCP. Если это API для других сервисов — используйте HTTP/gRPC.
+
+### MCP vs скилы vs обычные tool'ы
+
+Три механизма решают разные задачи — не подменяйте один другим:
+
+- **Обычные tool'ы** ([гл. 03](../03-tools-and-function-calling/README.md)) — дефолт для собственных операций: деплой, запросы к своей БД, внутренние API. Вы контролируете код, схему и результат.
+- **MCP** — когда интегрируете чужие системы или хотите готовую экосистему серверов: браузер, файловая система, тикет-трекер. Один протокол — любой сервер работает с любым агентом.
+- **Скилы** ([гл. 09](../09-agent-architecture/README.md#skills-навыки)) — когда знание важнее кода: пакеты инструкций в формате `SKILL.md` с progressive disclosure, агент подгружает их только когда задача касается.
+
+Предостережение: **20+ подключённых MCP-серверов — та же болезнь, что 20+ самописных обёрток**. Каждый сервер приносит инструменты, чьи имена и описания съедают бюджет контекста ([гл. 03](../03-tools-and-function-calling/README.md), [гл. 13](../13-context-engineering/README.md)). Подключайте только те серверы, инструменты которых агенту реально нужны; для остального смотрите в сторону скилов и progressive disclosure — подгружать по требованию, а не всё сразу.
+
+> **FilteredContent-инвариант для больших результатов.** Результаты MCP-инструментов бывают объёмными: содержимое файлов, дампы таблиц, выдача поиска. Инвариант из [гл. 09](../09-agent-architecture/README.md) обязателен и здесь: полный результат идёт в `Content` (для UI и аудита), а в контекст модели — отфильтрованная версия. MCP-сервер не знает ваш бюджет контекста — фильтрацию делает хост.
 
 ## A2A (Agent-to-Agent Protocol)
 
@@ -517,7 +515,7 @@ A2A (Agent-to-Agent) — открытый протокол от Google для в
 
 ### Ключевые концепции
 
-**Agent Card** — JSON-документ, описывающий возможности агента. Публикуется по адресу `/.well-known/agent.json`. Любой агент может получить карточку и понять, какие задачи умеет решать другой агент.
+**Agent Card** — discovery-документ в формате JSON, описывающий возможности агента: имя, описание, поддерживаемые режимы ввода/вывода, скилы. Публикуется по правилам текущей версии A2A (см. [a2a-protocol.org](https://a2a-protocol.org/)); любой агент может получить карточку и понять, какие задачи умеет решать другой.
 
 **Task (задача)** — единица работы. Один агент создаёт задачу, другой выполняет. У задачи есть жизненный цикл с чёткими статусами.
 
@@ -547,7 +545,9 @@ submitted ──→ working ──→ completed
 Agent Card — описание возможностей агента:
 
 ```go
-// Agent Card — публикуется по /.well-known/agent.json
+// Agent Card — discovery-документ; путь публикации — по правилам текущей версии A2A
+const agentCardPath = "/.well-known/agent-card.json"
+
 type AgentCard struct {
     Name         string       `json:"name"`
     Description  string       `json:"description"`
@@ -583,7 +583,7 @@ type Task struct {
 }
 
 type TaskStatus struct {
-    State   string `json:"state"` // submitted, working, input-required, completed, failed
+    State   string `json:"state"` // submitted, working, input-required, completed, failed, canceled
     Message string `json:"message,omitempty"`
 }
 
@@ -614,7 +614,7 @@ type A2AServer struct {
 
 func (s *A2AServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
     switch r.URL.Path {
-    case "/.well-known/agent.json":
+    case agentCardPath:
         // Обнаружение: любой агент получает карточку
         json.NewEncoder(w).Encode(s.card)
 
@@ -669,7 +669,10 @@ func (s *A2AServer) processTask(task *Task) {
 ```go
 func discoverAndDelegate(agentURL string, taskText string) (*Task, error) {
     // 1. Получаем Agent Card
-    resp, _ := http.Get(agentURL + "/.well-known/agent.json")
+    resp, err := http.Get(agentURL + agentCardPath)
+    if err != nil {
+        return nil, fmt.Errorf("discovery failed: %w", err)
+    }
     var card AgentCard
     json.NewDecoder(resp.Body).Decode(&card)
     resp.Body.Close()
@@ -684,8 +687,14 @@ func discoverAndDelegate(agentURL string, taskText string) (*Task, error) {
             Parts: []Part{{Type: "text", Text: taskText}},
         },
     }
-    body, _ := json.Marshal(taskReq)
-    resp, _ = http.Post(agentURL+"/tasks/send", "application/json", bytes.NewReader(body))
+    body, err := json.Marshal(taskReq)
+    if err != nil {
+        return nil, err
+    }
+    resp, err = http.Post(agentURL+"/tasks/send", "application/json", bytes.NewReader(body))
+    if err != nil {
+        return nil, fmt.Errorf("task submission failed: %w", err)
+    }
 
     var task Task
     json.NewDecoder(resp.Body).Decode(&task)
@@ -694,7 +703,10 @@ func discoverAndDelegate(agentURL string, taskText string) (*Task, error) {
     // 3. Поллим статус до завершения
     for task.Status.State == "working" {
         time.Sleep(time.Second)
-        resp, _ = http.Get(agentURL + "/tasks/get?id=" + task.ID)
+        resp, err = http.Get(agentURL + "/tasks/get?id=" + task.ID)
+        if err != nil {
+            return nil, fmt.Errorf("poll failed: %w", err)
+        }
         json.NewDecoder(resp.Body).Decode(&task)
         resp.Body.Close()
     }
@@ -722,7 +734,7 @@ func discoverAndDelegate(agentURL string, taskText string) (*Task, error) {
 | **Применение** | Локальные инструменты | Распределённые сервисы | Production API | Инструменты для LLM-агентов | Взаимодействие агентов |
 | **Латентность** | Минимальная (IPC) | Средняя (сеть + HTTP/1.1) | Низкая (HTTP/2 + бинарный формат) | Зависит от транспорта (stdio или HTTP) | Средняя (HTTP) |
 | **Сложность реализации** | Низкая | Средняя | Высокая (protobuf, codegen) | Средняя (JSON-RPC 2.0) | Средняя-высокая |
-| **Обнаружение инструментов** | Нет | Swagger / OpenAPI | Reflection, service mesh | `tools/list`, `resources/list` | Agent Card (`/.well-known/agent.json`) |
+| **Обнаружение инструментов** | Нет | Swagger / OpenAPI | Reflection, service mesh | `tools/list`, `resources/list` | Agent Card (discovery-документ) |
 | **Стриминг** | Построчный через stdout | SSE, WebSocket | Bidirectional streams | SSE (Streamable HTTP) | SSE |
 | **Типизация контракта** | Нет (свободный JSON) | JSON Schema / OpenAPI | Строгая (Protobuf IDL) | JSON Schema (для инструментов) | JSON Schema |
 | **Когда выбирать** | CLI-утилиты, IDE-плагины | Внешние API, вебхуки | Микросервисы, высокие нагрузки | Инструменты для LLM-агентов | Мультиагентные системы |
@@ -753,7 +765,7 @@ func authMiddleware(next http.Handler) http.Handler {
 
 **MCP — аутентификация через OAuth 2.1:**
 
-MCP использует [OAuth 2.1](https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization) (IETF draft-ietf-oauth-v2-1) для удалённых серверов (Streamable HTTP транспорт). Клиент получает токен через стандартный OAuth-флоу и передаёт его в заголовке `Authorization`:
+MCP использует OAuth 2.1 (IETF draft-ietf-oauth-v2-1) для удалённых серверов (Streamable HTTP транспорт); точный флоу и требования — в актуальной версии спецификации ([modelcontextprotocol.io](https://modelcontextprotocol.io/specification)). Клиент получает токен через стандартный OAuth-флоу и передаёт его в заголовке `Authorization`:
 
 ```go
 // MCP-клиент с аутентификацией для HTTP-транспорта
@@ -850,7 +862,7 @@ func main() {
 **Не сдано:**
 - [ ] Нет версионирования, обновления ломают совместимость
 - [ ] Нет аутентификации, риск безопасности
-- [ ] Используете MCP для высоконагруженных API вместо gRPC
+- [ ] Используете MCP как публичный высоконагруженный API вместо HTTP/gRPC
 - [ ] Используете A2A там, где достаточно прямой оркестрации
 
 ## Связь с другими главами

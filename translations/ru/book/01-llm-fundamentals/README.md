@@ -16,7 +16,7 @@
 
 **Проблема:** Агент иногда отвечает текстом "Сервер работает", а иногда вызывает инструмент `check_status`. Поведение непредсказуемо.
 
-**Решение:** Понимание вероятностной природы LLM и настройка `Temperature = 0` делает поведение детерминированным. Понимание контекстного окна помогает управлять историей диалога.
+**Решение:** Понимание вероятностной природы LLM помогает управлять разнообразием генерации: низкая `Temperature`, чёткие `Description` у инструментов. Но предсказуемость процесса агента обеспечивает не «детерминизм» модели, а структура — строгие схемы вызовов, валидация ответов и гарды в коде. Понимание контекстного окна помогает управлять историей диалога.
 
 ## Теория простыми словами
 
@@ -44,6 +44,35 @@ $$P(x_{t+1} | x_1, ..., x_t)$$
 **1. Что отправляется в модель:**
 
 ```go
+// Нейтральные структуры для прямого протокола tool-calling.
+// У большинства провайдеров (облачных и локальных) протокол выглядит так же —
+// детали и полный цикл см. в Главе 03.
+type Message struct {
+    Role       string     // "system" | "user" | "assistant" | "tool"
+    Content    string
+    ToolCalls  []ToolCall // заполняется моделью для role="assistant"
+    ToolCallID string     // для role="tool": ID вызова, к которому относится результат
+}
+
+type ToolCall struct {
+    ID        string // например, "call_abc123"
+    Name      string // например, "check_status"
+    Arguments string // JSON-строка, например {"hostname":"web-01"}
+}
+
+type ToolDef struct {
+    Name        string
+    Description string
+    Parameters  json.RawMessage // JSON Schema аргументов
+}
+
+type Request struct {
+    Model       string
+    Messages    []Message
+    Tools       []ToolDef
+    Temperature float64
+}
+
 // System Prompt (задает роль и поведение)
 systemPrompt := `You are a DevOps assistant. 
 When user asks about server status, use the check_status tool.
@@ -55,62 +84,51 @@ userInput := "Проверь статус сервера"
 
 // Описание доступных инструментов (tools schema)
 // ВАЖНО: Модель видит ВСЕ инструменты и выбирает нужный!
-tools := []openai.Tool{
+tools := []ToolDef{
     {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "check_status",
-            Description: "Check the status of a server by hostname. Use this when user asks about server status or availability.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "hostname": {"type": "string", "description": "Server hostname"}
-                },
-                "required": ["hostname"]
-            }`),
-        },
+        Name:        "check_status",
+        Description: "Check the status of a server by hostname. Use this when user asks about server status or availability.",
+        Parameters: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "hostname": {"type": "string", "description": "Server hostname"}
+            },
+            "required": ["hostname"]
+        }`),
     },
     {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "read_logs",
-            Description: "Read the last N lines of service logs. Use this when user asks about logs, errors, or troubleshooting.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "service": {"type": "string", "description": "Service name"},
-                    "lines": {"type": "number", "description": "Number of lines to read"}
-                },
-                "required": ["service"]
-            }`),
-        },
+        Name:        "read_logs",
+        Description: "Read the last N lines of service logs. Use this when user asks about logs, errors, or troubleshooting.",
+        Parameters: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "service": {"type": "string", "description": "Service name"},
+                "lines": {"type": "number", "description": "Number of lines to read"}
+            },
+            "required": ["service"]
+        }`),
     },
     {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "restart_service",
-            Description: "Restart a systemd service. Use this when user explicitly asks to restart a service. WARNING: This causes downtime.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "service_name": {"type": "string", "description": "Service name to restart"}
-                },
-                "required": ["service_name"]
-            }`),
-        },
+        Name:        "restart_service",
+        Description: "Restart a systemd service. Use this when user explicitly asks to restart a service. WARNING: This causes downtime.",
+        Parameters: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "service_name": {"type": "string", "description": "Service name to restart"}
+            },
+            "required": ["service_name"]
+        }`),
     },
 }
 
 // Полный запрос к API
-messages := []openai.ChatCompletionMessage{
-    {Role: "system", Content: systemPrompt},
-    {Role: "user", Content: userInput},
-}
-
-req := openai.ChatCompletionRequest{
-    Model:    "gpt-4o-mini",
-    Messages: messages,
-    Tools:    tools,  // Важно: модель видит описание инструментов!
+req := Request{
+    Model: "glm-5.3", // любая актуальная модель с native tool calling
+    Messages: []Message{
+        {Role: "system", Content: systemPrompt},
+        {Role: "user", Content: userInput},
+    },
+    Tools: tools,  // Важно: модель видит описание инструментов!
 }
 ```
 
@@ -169,27 +187,31 @@ userInput := "Покажи последние ошибки в логах nginx"
 **3. Что делает Runtime:**
 
 ```go
-resp, _ := client.CreateChatCompletion(ctx, req)
-msg := resp.Choices[0].Message
+resp, err := client.Complete(ctx, req) // нейтральный вызов: один протокол, любой провайдер
+if err != nil {
+    return err // ошибки клиента — не для модели: retry/логи в коде (гл. 04)
+}
+msg := resp.Choices[0].Message // ответ модели
 
 // Runtime проверяет: есть ли tool_calls?
 if len(msg.ToolCalls) > 0 {
-    // Парсим аргументы
+    call := msg.ToolCalls[0]
+
+    // Парсим аргументы (Arguments — JSON-строка)
     var args struct {
         Hostname string `json:"hostname"`
     }
-    json.Unmarshal([]byte(msg.ToolCalls[0].Function.Arguments), &args)
-    
+    json.Unmarshal([]byte(call.Arguments), &args)
+
     // Выполняем реальную функцию
     result := checkStatus(args.Hostname)  // "Server is ONLINE"
-    
-    // Возвращаем результат обратно в модель
-    messages = append(messages, openai.ChatCompletionMessage{
-        Role:       "tool",
-        Content:    result,
-        ToolCallID: msg.ToolCalls[0].ID,
-    })
-    
+
+    // Возвращаем результат обратно в модель:
+    // assistant-сообщение с tool_calls + результат с role="tool"
+    req.Messages = append(req.Messages, msg,
+        Message{Role: "tool", Content: result, ToolCallID: call.ID},
+    )
+
     // Отправляем обновленную историю в модель снова
     // Модель видит результат и решает, что делать дальше
 }
@@ -197,7 +219,7 @@ if len(msg.ToolCalls) > 0 {
 
 **Примечание о "вероятностях":**
 
-Цифры типа "вероятность 0.85" — это **иллюстрация**. API OpenAI/локальных моделей обычно **не возвращает** эти вероятности напрямую (если не использовать `logprobs`). Важно другое: когда в контексте есть `tools` с хорошим `Description`, модель с высокой вероятностью выберет tool call вместо текста. Но это происходит **внутри модели** — снаружи мы видим только итоговый выбор.
+Цифры типа "вероятность 0.85" — это **иллюстрация**. API провайдеров (облачных и локальных) обычно **не возвращает** эти вероятности напрямую (если не использовать `logprobs`). Важно другое: когда в контексте есть `tools` с хорошим `Description`, модель с высокой вероятностью выберет tool call вместо текста. Но это происходит **внутри модели** — снаружи мы видим только итоговый выбор.
 
 #### Пример 2: Support — Магия vs Реальность
 
@@ -258,11 +280,12 @@ Runtime на каждой итерации парсит tool call, выполн�
 Ответ 2: [Отвечает текстом "Сервер работает"]
 ```
 
-**Решение:** `Temperature = 0` (Greedy decoding) сжимает распределение, заставляя модель всегда выбирать наиболее вероятный путь.
+**Решение:** Понизьте `Temperature` (для агентных циклов типично 0.0–0.3) — это уменьшает разнообразие генерации и делает выбор инструментов более устойчивым. Но не ждите «детерминизма»: у многих провайдеров `T=0` технически не гарантирует greedy-декодинг (батчинг запросов, MoE-архитектуры). Воспроизводимость процесса агента дают структура (JSON Schema, валидация), гарды в коде и evals — об этом подробнее в разделе «Температура» ниже.
 
 ```go
-req := openai.ChatCompletionRequest{
-    Temperature: 0,  // Детерминированное поведение
+req := Request{
+    Model:       "glm-5.3",
+    Temperature: 0.2, // меньше разброса в выборе инструментов
     // ...
 }
 ```
@@ -281,8 +304,9 @@ req := openai.ChatCompletionRequest{
 
 ```go
 systemPrompt := `You are a DevOps assistant.
-CRITICAL: Never invent facts. Always use tools to get real data.
-If you don't know something, say "I don't know" or use a tool.`
+Do not invent facts: you have tools that return real data, and real data
+is always more reliable than a plausible guess. If you don't know
+something, say "I don't know" or use a tool.`
 ```
 
 ## Токены и контекстное окно
@@ -303,12 +327,11 @@ If you don't know something, say "I don't know" or use a tool.`
 
 **Контекстное окно** — это "оперативная память" модели.
 
-**Примеры размеров контекстного окна (на момент написания):**
-- GPT-3.5: 4k токенов (~3000 слов)
-- GPT-4 Turbo: 128k токенов (~96000 слов)
-- Llama 3 70B: 8k токенов
+**Порядок величин (без точных цифр, которые быстро устаревают):**
+- У современных моделей контекстные окна — от ~128k до ~1M токенов (GLM-5.3, Fable 5.1, Opus 5.5)
+- Точное значение смотрите в документации провайдера — окна меняются чаще, чем выходят версии книг
 
-> **Примечание:** Конкретные модели и размеры контекста могут меняться со временем. Главное — принцип: чем больше контекстное окно, тем больше информации агент может "помнить" в одном запросе.
+> **Примечание:** Главное — принцип: чем больше контекстное окно, тем больше информации агент может "помнить" в одном запросе. Но большое окно не отменяет управление контекстом: длинная история стоит денег и деградирует по качеству (см. [Главу 13: Context Engineering](../13-context-engineering/README.md)).
 
 **Что это значит для агента?**
 
@@ -316,16 +339,14 @@ If you don't know something, say "I don't know" or use a tool.`
 
 **Пример расчета (приблизительно):**
 ```
-Контекстное окно: 4k токенов
-System Prompt: 200 токенов
-История диалога: 3000 токенов
-Результаты инструментов: 500 токенов
-Осталось места: 300 токенов
+Контекстное окно: 128k токенов
+System Prompt + tools: 2k токенов
+История диалога: 60k токенов
+Результаты инструментов: 30k токенов
+Осталось места: 36k токенов
 ```
 
-> **Примечание:** Это приблизительная оценка. Точный подсчет токенов зависит от модели и используемой библиотеки (например, `tiktoken` для OpenAI моделей).
-
-> **Важно для агента (правило главы 13).** В рантайме агента **первичный источник числа токенов — `usage.PromptTokens` / `usage.TotalTokens` из ответа провайдера**, а не свой счётчик. Провайдер уже знает свой токенайзер и применил его. Свой счётчик (`tiktoken`, `char/3`, `char/4`) используется только для **пред-оценки до отправки** — например, чтобы решить, не пора ли уже сжимать историю. Делать бюджет агента на основе только своих оценок — рецепт расхождения с реальностью на 10–30%, что особенно больно у большого окна. Подробнее см. [Глава 13: Context Engineering](../13-context-engineering/README.md).
+> **Важно для агента (правило главы 13).** В рантайме агента **первичный источник числа токенов — `usage.PromptTokens` / `usage.CompletionTokens` из ответа провайдера**, а не свой счётчик: провайдер уже знает свой токенайзер и применил его. Для грубой **пред-оценки до отправки** достаточно эвристики **~3 символа/токен** (для английского ближе к 4); токенайзеры вроде `tiktoken` точнее, но для решения «не пора ли сжимать историю» эта точность обычно не нужна. Делать бюджет агента на основе только своих оценок — рецепт расхождения с реальностью на 10–30%, что особенно больно у большого окна. Подробнее см. [Глава 13: Context Engineering](../13-context-engineering/README.md).
 
 Если история переполняется, агент "забывает" начало разговора. На практике это значит: либо ранние сообщения обрезаны/сжаты (и модель их реально не видит), либо, если переполнение не обработать, API вернёт ошибку превышения контекстного окна.
 
@@ -333,7 +354,7 @@ System Prompt: 200 токенов
 
 ```go
 // Каждый запрос должен включать всю историю
-messages := []openai.ChatCompletionMessage{
+messages := []Message{
     {Role: "system", Content: systemPrompt},
     {Role: "user", Content: "Проверь сервер"},
     {Role: "assistant", Content: "Проверяю..."},
@@ -344,58 +365,77 @@ messages := []openai.ChatCompletionMessage{
 
 ## Температура (Temperature)
 
-**Температура** — это параметр энтропии распределения вероятностей.
+**Температура** — это настройка качества и разнообразия генерации: она управляет энтропией распределения вероятностей при выборе следующего токена.
 
 ```go
-Temperature = 0  // Детерминировано (для агентов!)
-Temperature = 0.7  // Баланс креативности и стабильности
-Temperature = 1.0+  // Креативно, но нестабильно
+Temperature: 0.0–0.3  // типично для агентных циклов и структурированных вызовов
+Temperature: 0.7      // баланс креативности и стабильности
+Temperature: 1.0+     // креативные задачи, брейншторм
 ```
 
 ### Когда использовать какое значение?
 
 | Temperature | Использование | Пример |
 |-------------|---------------|--------|
-| 0.0 | Агенты, JSON-генерация, Tool Calling | DevOps-агент должен стабильно вызывать `restart_service`, а не "творить" |
-| 0.1-0.3 | Структурированные ответы | Support-агент генерирует шаблоны ответов |
-| 0.7-1.0 | Креативные задачи | Product-агент пишет маркетинговые тексты |
+| 0.0–0.3 | Агентные циклы, структурированные вызовы, JSON | DevOps-агент стабильно вызывает `restart_service`, а не "творит"; выбор инструментов и аргументов дополнительно фиксируется JSON Schema и валидацией |
+| 0.3–0.7 | Шаблонные ответы, черновики | Support-агент генерирует шаблоны ответов |
+| 0.7–1.0 | Креативные задачи | Product-агент пишет маркетинговые тексты |
+
+### Чего температура не даёт
+
+Распространённое заблуждение: «`Temperature = 0` делает агента детерминированным». Это не так:
+
+- **Технически** `T=0` у многих провайдеров не гарантирует greedy-детерминизм: батчинг запросов и MoE-архитектуры вносят недетерминизм независимо от температуры.
+- **Воспроизводимость процесса агента** дают не настройки сэмплинга, а структура: строгая JSON Schema для аргументов инструментов, валидация ответов, гарды в коде (контроль допустимых действий) и evals, фиксирующие поведение.
+
+Низкая температура снижает разброс и «шум» в выборе инструментов — это полезно. Но это настройка качества генерации, а не переключатель «детерминизм вкл/выкл».
 
 **Практический пример:**
 
 ```go
-// ПЛОХО: Для агента
-req := openai.ChatCompletionRequest{
-    Temperature: 0.9,  // Слишком случайно!
+// ПЛОХО: для агентного цикла
+req := Request{
+    Temperature: 0.9,  // слишком большой разброс: модель будет "творить"
     // ...
 }
 
-// ХОРОШО: Для агента
-req := openai.ChatCompletionRequest{
-    Temperature: 0,  // Максимальная детерминированность
+// ХОРОШО: для агентного цикла
+req := Request{
+    Temperature: 0.2,  // меньше разброса; предсказуемость процесса — schema + гарды + evals
     // ...
 }
 ```
 
-## Выбор модели для локального запуска
+## Выбор модели
 
 Не все модели одинаково хороши для агентов.
 
+### Актуальные модели (на момент ревизии)
+
+- **Fable 5.1** и **Opus 5.5** — флагманские модели для сложных агентных сценариев
+- **GLM-5.3** — сильная модель с native tool calling, хороший баланс цены и качества
+- **GLM-5.3 Flash** — дешёвый и быстрый вариант для массовых и простых вызовов
+
+> **Примечание:** Имена и версии моделей живут месяцами, а не годами. Доверяйте не спискам из книг, а свежей документации провайдера и собственному capability-тесту (см. ниже).
+
+### Локальный запуск
+
+Для локального запуска (Ollama, vLLM, LM Studio) берите актуальную instruct-модель с заявленной поддержкой function calling — и обязательно прогоняйте capability benchmark: работа инструментов в локальных рантаймах зависит от chat-шаблона модели, а не только от весов.
+
 ### Критерии выбора
 
-1. **Поддержка Function Calling:** Модель должна уметь генерировать структурированные вызовы инструментов.
-    - [x] Хорошо: Модели с fine-tuning на function calling (например, `Hermes-2-Pro`, `Llama-3-Instruct`, `Mistral-7B-Instruct` на момент написания)
-    - [ ] Плохо: Базовые модели без fine-tuning на tools
+1. **Поддержка Function Calling (native tool calling):** Модель должна уметь генерировать структурированные вызовы инструментов.
+    - [x] Хорошо: модели с native tool calling (GLM-5.3, GLM-5.3 Flash, Fable 5.1, Opus 5.5)
+    - [ ] Плохо: базовые модели без обучения на tools
 
-    > **Примечание:** Конкретные модели могут меняться. Важно проверить поддержку function calling через capability benchmark (см. [Приложение: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization)).
+    > **Примечание:** Конкретные модели меняются. Проверяйте поддержку function calling через capability benchmark (см. [Приложение: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization)).
 
-2. **Размер контекста:** Для сложных задач нужен большой контекст.
-    - Минимум: 4k токенов
-    - Рекомендуется: 8k+
+2. **Размер контекста:** В окно должны помещаться system prompt, tools, история и результаты инструментов. У современных моделей это от ~128k токенов — при условии управления контекстом (см. [Главу 13](../13-context-engineering/README.md)) этого обычно достаточно.
 
 3. **Качество следования инструкциям:** Модель должна строго следовать System Prompt.
     - Проверяется через capability benchmark (см. [Приложение: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization))
 
-4. **Совместимость Prompt Template (при использовании LM Studio):** Если вы используете LM Studio для локального запуска модели, убедитесь, что выбранный prompt template поддерживает все необходимые роли (system, user, assistant, tool). Если шаблон поддерживает только `user` и `assistant`, вы можете получить ошибку `"Only user and assistant roles are supported!"`. В этом случае выберите корректный template в настройках модели (например, `ChatML` или специфичный для модели, например `Mistral Instruct` для моделей Mistral). Подробнее см. [Ошибка 3: LM Studio — неверный Prompt Template](#ошибка-3-lm-studio--неверный-prompt-template-ошибка-ролей) в разделе "Типовые ошибки".
+4. **Совместимость chat-шаблона (для локальных рантаймов):** Роли сообщений (system, user, assistant, tool) должны соответствовать chat-шаблону модели, иначе tool-протокол не заработает. Подробнее см. [Ошибка 3: LM Studio — неверный Prompt Template](#ошибка-3-lm-studio--неверный-prompt-template-ошибка-ролей) в разделе "Типовые ошибки". У облачных провайдеров с native tool calling этой проблемы нет.
 
 ### Как проверить модель?
 
@@ -405,155 +445,119 @@ req := openai.ChatCompletionRequest{
 
 ## Типовые ошибки
 
-### Ошибка 1: Модель недетерминированна
+### Ошибка 1: Модель ведет себя по-разному при одинаковых запросах
 
 **Симптом:** Один и тот же промпт дает разные результаты. Агент иногда вызывает инструмент, иногда отвечает текстом.
 
-**Причина:** `Temperature > 0` делает модель случайной. Она выбирает не самый вероятный токен, а случайный из распределения.
+**Причина:** LLM сэмплирует из распределения вероятностей. При высокой температуре разброс растет, и «серые зоны» — ситуации, где и текст, и tool call правдоподобны — становятся нестабильными.
 
 **Решение:**
+
 ```go
-// ПЛОХО
-req := openai.ChatCompletionRequest{
-    Temperature: 0.7,  // Случайное поведение!
+// ПЛОХО: высокая температура в агентном цикле
+req := Request{
+    Temperature: 0.9,  // большой разброс: выбор инструментов нестабилен
     // ...
 }
 
-// ХОРОШО
-req := openai.ChatCompletionRequest{
-    Temperature: 0,  // Всегда используйте для агентов
+// ХОРОШО: низкая температура + структурные гарантии
+req := Request{
+    Temperature: 0.2,  // меньше разброса
     // ...
 }
+// И главное: валидируйте tool calls по JSON Schema, отклоняйте
+// нераспарсенные аргументы, ограничивайте допустимые инструменты.
+// Воспроизводимость процесса агента дают гарды и evals, а не температура.
 ```
 
 ### Ошибка 2: Контекст переполняется
 
-**Симптом:** Агент "забывает" начало разговора. После N сообщений перестает помнить, что обсуждалось в начале.
+**Симптом:** Агент "забывает" начало разговора. После N сообщений перестает помнить, что обсуждалось в начале. Или API возвращает ошибку превышения контекстного окна.
 
-**Причина:** История диалога превышает размер контекстного окна модели. Старые сообщения "выталкиваются" из контекста.
+**Причина:** История диалога растет и превышает размер контекстного окна модели.
 
-**Решение:**
+**Решение: Condense — одно сжатие истории при подходе к лимиту**
 
-Есть два подхода:
+Канонический механизм (подробнее — [Глава 09: Memory](../09-agent-architecture/README.md#memory-память) и [Глава 13: Context Engineering](../13-context-engineering/README.md)):
 
-**Вариант 1: Обрезка истории (простое, но теряем информацию)**
+1. **Порог — ~0.85 контекстного окна**, считается по `usage.PromptTokens` из ответа провайдера (не по собственному счётчику).
+2. **Максимум одно сжатие за Run:** при превышении порога старая часть истории (head) суммируется отдельным LLM-вызовом, свежая (tail) сохраняется как есть.
+3. **Пары `tool_call` ↔ `tool_result` не разрываются:** граница сжатия проходит только между завершёнными парами, иначе история становится невалидной.
+4. **Кэшируемый префикс не меняется:** `messages[0]` (system prompt) и список `tools` остаются неизменными — провайдер кэширует именно этот префикс.
+
 ```go
-// ПЛОХО: Теряем важную информацию из начала разговора!
-if len(messages) > maxHistoryLength {
-    messages = append(
-        []openai.ChatCompletionMessage{messages[0]},  // System
-        messages[len(messages)-maxHistoryLength+1:]...,  // Последние
-    )
+// Condense: порог по данным провайдера, head -> summary, tail как есть
+const condenseThreshold = 0.85
+
+if float64(resp.Usage.PromptTokens) > condenseThreshold*float64(ctxWindow) && !condensed {
+    // 1. Граница: индекс, на котором завершена последняя пара
+    //    tool_call <-> tool_result (пары не разрываем!)
+    cut := lastCompleteToolBoundary(req.Messages)
+
+    // 2. Head (все после system) суммируем отдельным LLM-вызовом
+    summary := summarize(ctx, req.Messages[1:cut])
+
+    // 3. Новый контекст: system (без изменений!) + summary + tail
+    req.Messages = append([]Message{
+        req.Messages[0], // system: мутировать нельзя — сломает prompt cache
+        {Role: "user", Content: "Summary of earlier conversation:\n" + summary},
+    }, req.Messages[cut:]...)
+    condensed = true // не чаще одного раза за Run
 }
 ```
 
-**Вариант 2: Сжатие контекста через саммаризацию (лучшее решение)**
+**Почему НЕ «вставить summary вторым system-сообщением»?**
 
-Вместо обрезки лучше **сжать** старые сообщения через LLM, сохранив важную информацию:
+Частый соблазн — приклеить сжатую историю сразу после system:
 
 ```go
-// 1. Разделяем на "старые" и "новые" сообщения
-systemMsg := messages[0]
-oldMessages := messages[1 : len(messages)-10]  // Все кроме последних 10
-recentMessages := messages[len(messages)-10:]  // Последние 10
-
-// 2. Сжимаем старые сообщения через LLM
-summary := summarizeMessages(ctx, client, oldMessages)
-
-// 3. Собираем новый контекст: System + Summary + Recent
-compressed := []openai.ChatCompletionMessage{
+// ПЛОХО: мутирует кэшируемый префикс
+compressed := []Message{
     systemMsg,
-    {
-        Role:    "system",
-        Content: fmt.Sprintf("Summary of previous conversation:\n%s", summary),
-    },
+    {Role: "system", Content: "Summary of previous conversation:\n" + summary},
 }
-compressed = append(compressed, recentMessages...)
 ```
 
-**Почему саммаризация лучше обрезки?**
+Это ломает **prompt cache**: провайдер кэширует неизменный префикс (system + tools). Вставка нового сообщения сразу после system меняет префикс — кэш инвалидируется, и каждый запрос после сжатия оплачивается полностью. Summary должно идти в теле истории (например, как `user`-сообщение), а `messages[0]` трогать нельзя.
 
-- **Сохраняет важную информацию:** Имя пользователя, контекст задачи, принятые решения
-- **Экономит токены:** Сжимает 2000 токенов до 200, сохраняя суть
-- **Агент помнит начало:** Может отвечать на вопросы о ранних сообщениях
+**Почему НЕ обрезка?**
+
+Наивная обрезка «System + последние N» теряет важную информацию из начала: имя пользователя, контекст задачи, принятые решения. Condense сохраняет суть: 2000 токенов сжимаются до ~200 с сохранением ключевых фактов.
 
 **Пример:**
 ```
-Исходная история (2000 токенов):
+Исходная история (60k токенов):
 - User: "Меня зовут Иван, я DevOps инженер"
 - Assistant: "Привет, Иван!"
 - User: "У нас проблема с сервером"
 - Assistant: "Опишите проблему"
-... (еще 50 сообщений)
+... (еще 50 сообщений и результаты инструментов)
 ```
 
 - [ ] После обрезки: теряем имя и контекст
-- [x] После саммаризации: "Пользователь Иван, DevOps инженер. Обсуждали проблему с сервером. Текущая задача: диагностика."
+- [x] После condense: "Пользователь Иван, DevOps инженер. Обсуждали проблему с сервером. Текущая задача: диагностика." + свежие сообщения как есть
 
-**Когда использовать:**
-- **Обрезка:** Быстрые одноразовые задачи, неважна история
-- **Саммаризация:** Долгие сессии, важна контекстная информация, автономные агенты
-
-См. подробнее: раздел "Оптимизация контекста" в [Главе 09: Анатомия Агента](../09-agent-architecture/README.md#оптимизация-контекста-context-optimization) и [Lab 09: Context Optimization](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab09-context-optimization)
+См. подробнее: раздел "Memory (Память)" в [Главе 09: Анатомия Агента](../09-agent-architecture/README.md#memory-память) и [Lab 09: Context Optimization](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab09-context-optimization)
 
 ### Ошибка 3: LM Studio — неверный Prompt Template (ошибка ролей)
 
-**Симптом:** При попытке использовать модель через LM Studio вы получаете ошибку:
+**Симптом:** При локальном запуске через LM Studio вы получаете ошибку вида `"Only user and assistant roles are supported!"`.
 
-```json
-{
-  "error": "Error rendering prompt with jinja template: \"Only user and assistant roles are supported!\".\n\nThis is usually an issue with the model's prompt template. If you are using a popular model, you can try to search the model under lmstudio-community, which will have fixed prompt templates. If you cannot find one, you are welcome to post this issue to our discord or issue tracker on GitHub. Alternatively, if you know how to write jinja templates, you can override the prompt template in My Models > model settings > Prompt Template."
-}
-```
-
-**Причина:** Шаблон промпта модели в LM Studio настроен так, что принимает только роли `user` и `assistant`, и не поддерживает роли `system` или `tool`, которые необходимы для работы агентов. Это может произойти, если выбран неверный community template или шаблон по умолчанию не совместим с вашей моделью.
-
-**Решение:**
-
-Выберите корректный prompt template в настройках модели. Пример для `mistralai/mistral-7b-instruct-v0.3`:
-
-1. Откройте LM Studio
-2. Перейдите в **My Models**
-3. Найдите модель `mistralai/mistral-7b-instruct-v0.3`
-4. Нажмите на три точки → **Model Settings**
-5. Перейдите на вкладку **Prompt Template**
-6. Выберите правильный шаблон:
-    - Для Mistral: **Mistral Instruct**
-    - Или попробуйте: **ChatML**
-
-Для других моделей аналогично выберите соответствующий шаблон (например, `Llama 3` для моделей Llama, `ChatML` как универсальный вариант).
-
-### Ошибка 4: Галлюцинации
-
-**Симптом:** Модель выдумывает факты. Например, говорит "используй флаг `--force`" для команды, которая его не поддерживает.
-
-**Причина:** Модель стремится сгенерировать *правдоподобный* текст, а не *истинный*. Она не знает реальных фактов о вашей системе.
-
-**Решение:**
-```go
-// ХОРОШО: Запрещаем выдумывать факты
-systemPrompt := `You are a DevOps assistant.
-CRITICAL: Never invent facts. Always use tools to get real data.
-If you don't know something, say "I don't know" or use a tool.`
-
-// Также используйте:
-// 1. Tools для получения реальных данных
-// 2. RAG для доступа к документации
-```
+**Причина и решение:** Chat-шаблон модели принимает только роли `user`/`assistant` и не знает ролей `system`/`tool`, которые нужны агенту. Выберите в настройках модели шаблон, соответствующий ей (ChatML-совместимый или специфичный для семейства модели), или возьмите модель из репозитория с уже корректным шаблоном. У облачных провайдеров с native tool calling этой проблемы нет.
 
 ## Критерии сдачи / Чек-лист
 
 **Сдано:**
 - [x] Понимаете, что LLM предсказывает токены, а не "думает"
-- [x] Знаете, как настроить `Temperature = 0` для детерминированного поведения
+- [x] Понимаете, что температура — настройка качества генерации; воспроизводимость процесса агента дают JSON Schema, валидация, гарды и evals
 - [x] Понимаете ограничения контекстного окна
-- [x] Знаете, как управлять историей диалога (саммаризация или обрезка)
+- [x] Знаете, как управлять историей диалога (condense при ~0.85 окна по `usage.PromptTokens`)
 - [x] Модель поддерживает Function Calling (проверено через [Lab 00](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab00-capability-check))
-- [x] System Prompt запрещает галлюцинации
+- [x] System Prompt мотивированно запрещает галлюцинации, grounding через Tools/RAG настроен
 
 **Не сдано:**
-- [ ] Модель ведет себя недетерминированно (`Temperature > 0`)
-- [ ] Агент "забывает" начало разговора (контекст переполняется)
+- [ ] Разброс поведения агента не контролирован (высокая температура, нет валидации tool calls)
+- [ ] Агент "забывает" начало разговора (контекст переполняется, condense не реализован)
 - [ ] Модель выдумывает факты (нет grounding через Tools/RAG)
 
 ## Мини-упражнения
@@ -576,55 +580,41 @@ func estimateTokens(text string) int {
 - Функция возвращает приблизительное количество токенов
 - Учитывает разницу между английским и русским текстом
 
-### Упражнение 2: Обрезка истории
+### Упражнение 2: Управление историей
 
 Реализуйте функцию обрезки истории сообщений:
 
 ```go
-func trimHistory(messages []ChatCompletionMessage, maxTokens int) []ChatCompletionMessage {
+func trimHistory(messages []Message, maxTokens int) []Message {
     // Оставляем System Prompt + последние сообщения, которые влезают в maxTokens
+    // Граница обрезки не должна разрывать пару tool_call <-> tool_result
     // ...
 }
 ```
 
 **Ожидаемый результат:**
-- System Prompt всегда остается первым
+- System Prompt всегда остается первым (messages[0] не мутируется)
 - Последние сообщения добавляются, пока не превысят maxTokens
+- Граница обрезки не разрывает пары `tool_call` ↔ `tool_result`
 - Функция возвращает обрезанную историю
 
 ## Для любопытных
 
-> Этот раздел объясняет формализацию работы LLM на более глубоком уровне. Можно пропустить, если вас интересует только практика.
+> Углубление в формализм. Можно пропустить, если вас интересует только практика.
 
-### Формальное определение LLM
+### Температура — формально
 
-LLM — это функция `NextToken(Context) -> Distribution`:
-
-$$P(x_{t+1} | x_1, ..., x_t)$$
-
-Где:
-- $x_1, ..., x_t$ — последовательность токенов (контекст)
-- $P(x_{t+1})$ — распределение вероятностей для следующего токена
-- Модель выбирает токен на основе этого распределения
-
-**Temperature** изменяет энтропию распределения:
-- `Temperature = 0`: выбирается наиболее вероятный токен (greedy decoding)
-- `Temperature > 0`: выбирается случайный токен из распределения (sampling)
+Температура $T$ масштабирует логиты распределения $P(x_{t+1} | x_1, ..., x_t)$ перед softmax: при $T \to 0$ распределение вырождается в аргмакс (greedy), при $T = 1$ остается "как есть", при $T > 1$ выравнивается и становится более случайным. Отсюда практический эффект из раздела «Температура»: низкая температура сужает разброс генерации, но не гарантирует воспроизводимость на уровне провайдера (батчинг, MoE).
 
 ### Почему модель "выбирает" инструмент?
 
-Когда модель видит в контексте:
-- System Prompt: "Use tools when needed"
-- Tools Schema: `[{name: "check_status", description: "..."}]`
-- User Input: "Проверь статус сервера"
-
-Модель генерирует последовательность токенов, которая соответствует формату tool call. Никакой магии — это результат обучения на примерах вызовов функций.
+Формально модель не «выбирает» — она генерирует последовательность токенов, соответствующую формату tool call, потому что обучалась на примерах вызовов функций. System Prompt и `tools[]` смещают распределение в сторону этого формата: чем точнее `Description` инструмента совпадает с запросом, тем выше вероятность соответствующих токенов. Никакой магии — результат обучения.
 
 ## Связь с другими главами
 
 - **Function Calling:** Подробнее о том, как модель генерирует tool calls, см. [Главу 03: Инструменты](../03-tools-and-function-calling/README.md)
-- **Контекстное окно:** Как управлять историей сообщений, см. [Главу 09: Анатомия Агента](../09-agent-architecture/README.md#оптимизация-контекста-context-optimization)
-- **Temperature:** Почему для агентов используется `Temperature = 0`, см. [Главу 03: Инструменты](../03-tools-and-function-calling/README.md)
+- **Контекстное окно:** Как управлять историей сообщений, см. [Главу 09: Анатомия Агента](../09-agent-architecture/README.md) и [Главу 13: Context Engineering](../13-context-engineering/README.md)
+- **Temperature:** Почему температура — настройка качества генерации, а воспроизводимость дают структура, гарды и evals — см. раздел «Температура» в этой главе и [Главу 13: Context Engineering](../13-context-engineering/README.md)
 
 ## Что дальше?
 

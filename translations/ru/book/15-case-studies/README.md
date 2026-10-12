@@ -6,6 +6,8 @@
 
 Теория полезна, но реальные примеры показывают, как это складывается в рабочую систему. Здесь видно, как все детали (SOP, CoT, Tools, Safety, RAG) работают вместе на практике.
 
+Кейсы используют механику, введённую в ранних главах: Confirm-коллбек и `confirmed_by` ([гл. 05](../05-safety-and-hitl/README.md)), allowlist инструментов и гарды ([гл. 05](../05-safety-and-hitl/README.md), [гл. 17](../17-security-and-governance/README.md)), Config/Run-паттерн ([гл. 04](../04-autonomy-and-loops/README.md)) и бюджеты на tool-результаты ([гл. 13](../13-context-engineering/README.md)). Два кейса разберём подробно, остальные — компактно.
+
 ### Реальный кейс
 
 **Ситуация:** Вы хотите создать агента для DevOps, но не знаете, с чего начать.
@@ -25,203 +27,88 @@
 
 Твоя цель — восстановить работоспособность сервисов максимально быстро.
 
-Ограничения:
-- Никогда не используй команды типа `rm -rf /`
-- Всегда спрашивай подтверждение перед удалением данных
-- Если не уверен в действии — спроси у пользователя
+Границы:
+- Ты вызываешь только инструменты из allowlist'а хода: команды, которых
+  там нет, runtime отклонит с ошибкой — не пытайся их «обойти»
+- Перезапуск сервиса — пишущее действие: цикл ставит ход на паузу
+  и спрашивает дежурного инженера. Если вызов отклонён — предложи
+  альтернативу и объясни риск
+- Если данных для решения не хватает — спроси дежурного, а не угадывай:
+  неверный регион или лимит создают проблему, которую кто-то будет чинить
 
 SOP для диагностики проблем:
 1. Проверь метрики (CPU, Memory, Connections)
 2. Прочитай логи (последние 50 строк)
 3. Проанализируй ошибки
 4. Выдвини гипотезу
-5. Примени фикс (если безопасно) или запроси подтверждение
+5. Примени фикс — write-инструменты выполняются после подтверждения дежурного
 6. Верифицируй результат
 ```
 
+Обратите внимание: границы объясняют **причину**, а не запрещают командным тоном. Механику (пауза хода, allowlist) всё равно держит код — промпт лишь помогает модели строить план вокруг реальных границ.
+
 ### Доступные инструменты
 
+Нейтральный `ToolDef` из [Главы 03](../03-tools-and-function-calling/README.md), без привязки к SDK:
+
 ```go
-tools := []openai.Tool{
+tools := []ToolDef{
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "check_db_metrics",
-            Description: "Check database metrics: CPU, memory, connections. Use this FIRST when investigating database issues.",
-        },
+        Name:        "check_db_metrics",
+        Description: "Check database metrics: CPU, memory, open connections. The natural starting point for investigating database issues.",
     },
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "read_db_logs",
-            Description: "Read the last N lines of database logs. Use this after checking metrics to find errors.",
-        },
+        Name:        "read_db_logs",
+        Description: "Read the last N lines of database logs. Use after checking metrics to find the error behind the numbers.",
     },
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "restart_db_service",
-            Description: "CRITICAL: Restart database service. Requires confirmation. Use this only if logs show it's safe.",
-        },
+        Name:        "restart_db_service",
+        Description: "Restart the database service: aborts in-flight transactions and drops open connections. Executed only after the on-call engineer approves the call via the Confirm mechanism (chapter 05).",
     },
 }
 ```
 
-### Пример выполнения
+`restart_db_service` объявляется в реестре хода как пишущий инструмент — с флагом `Confirm: true` ([гл. 04](../04-autonomy-and-loops/README.md)). Description объясняет, **что делает инструмент и чем рискован**, — а не требует «подтверждения» криком: подтверждение держит код, и строка в описании его не усиливает и не ослабляет.
 
-**Итерация 1:**
-- User: "У нас проблемы с базой, разберись"
-- Agent: `check_db_metrics()` → CPU: 95%, Connections: 1000/100
+### Подтверждение — механика кода
 
-**Итерация 2:**
-- Agent: `read_db_logs(lines=50)` → "ERROR: Too many connections"
-
-**Итерация 3:**
-- Agent: Анализирует проблему и предлагает решение: "Обнаружено превышение лимита соединений. Рекомендую перезапустить сервис или увеличить лимит."
-
-**Итерация 4:**
-- Agent: Запрашивает подтверждение для `restart_db_service()`
-- User: "yes"
-- Agent: `restart_db_service()` → Success
-
-**Итерация 5:**
-- Agent: `check_db_metrics()` → CPU: 30%, Connections: 50/100
-- Agent: "Проблема решена. База работает нормально."
-
-## Customer Support Agent
-
-**Задача:** "Пользователь жалуется на медленную загрузку"
-
-### Системный промпт
-
-```text
-Ты Customer Support Agent уровня Tier 2.
-
-Твоя цель — решить проблему пользователя быстро и вежливо.
-
-Ограничения:
-- Всегда будь вежлив
-- Если проблема сложная — эскалируй
-- Не давай технических деталей, если пользователь не технарь
-
-SOP для обработки тикета:
-1. Прочитай тикет полностью (get_ticket)
-2. Собери контекст (версия ПО, ОС, браузер)
-3. Поищи в базе знаний (search_kb)
-4. Если решение найдено — сформулируй ответ
-5. Если нет — эскалируй (escalate_ticket)
-```
-
-### Доступные инструменты
+Никаких «Введите yes» в истории. Цикл перехватывает вызов **до** выполнения ([гл. 05](../05-safety-and-hitl/README.md)):
 
 ```go
-tools := []openai.Tool{
-    {
-        Function: &openai.FunctionDefinition{
-            Name:        "get_ticket",
-            Description: "Get ticket details including user info, description, and history. Use this FIRST.",
-        },
-    },
-    {
-        Function: &openai.FunctionDefinition{
-            Name:        "search_kb",
-            Description: "Search knowledge base for solutions to common problems. Use this after reading ticket.",
-        },
-    },
-    {
-        Function: &openai.FunctionDefinition{
-            Name:        "draft_reply",
-            Description: "Draft a reply message to the ticket. Use this when you have a solution.",
-        },
-    },
-    {
-        Function: &openai.FunctionDefinition{
-            Name:        "escalate_ticket",
-            Description: "Escalate ticket to Tier 3 or engineering. Use this for complex technical issues.",
-        },
-    },
+// Реестр хода: категория и флаги задаются при объявлении инструмента.
+restartTool := Tool{
+    Def:     restartDef,
+    Confirm: true, // пишущее действие: пауза цикла + решение дежурного
+}
+
+// Внутри цикла, до выполнения каждого tool call.
+if tool.Confirm {
+    d := cfg.Confirm(ctx, call) // вопрос дежурному ВНЕ модели (UI, пейджер)
+    if !d.Approved {
+        memory.Append(Message{Role: "tool", ToolCallID: call.ID,
+            Content: "denied by automatic policy: restart requires on-call confirmation"})
+        continue // отказ в истории: модель видит его и меняет план
+    }
+    out, err = tool.Exec(ctx, call.Arguments, d.ConfirmedBy) // кто подтвердил — подставил runtime
 }
 ```
 
-### Пример выполнения
-
-**Итерация 1:**
-- User: "Пользователь жалуется на медленную загрузку"
-- Agent: `get_ticket(ticket_id="TICKET-12345")` → "User reports slow page load. Browser: Chrome, OS: Windows"
-
-**Итерация 2:**
-- Agent: `search_kb(query="slow page load chrome")` → "Solution: Clear browser cache, check network connection"
-
-**Итерация 3:**
-- Agent: `draft_reply(ticket_id="TICKET-12345", message="Попробуйте очистить кеш браузера...")` → Success
-
-**Итерация 4:**
-- Agent: "Ответ отправлен пользователю. Рекомендовано очистить кеш браузера."
-
-## Data Analytics Agent
-
-**Задача:** "Почему упали продажи в регионе X?"
-
-### Системный промпт
-
-```text
-Ты Data Analyst с опытом работы с SQL и BI-инструментами.
-
-Твоя цель — предоставить точные данные и аналитику.
-
-Ограничения:
-- Используй ТОЛЬКО read-only SQL (SELECT)
-- Всегда проверяй качество данных перед анализом
-- Если данные некорректны — сообщи об этом
-
-SOP для анализа:
-1. Понять вопрос пользователя
-2. Проверить схему таблицы (describe_table)
-3. Сформулировать SQL-запрос
-4. Выполнить запрос (sql_select)
-5. Проанализировать результаты
-6. Сгенерировать отчет
-```
-
-### Доступные инструменты
-
-```go
-tools := []openai.Tool{
-    {
-        Function: &openai.FunctionDefinition{
-            Name:        "describe_table",
-            Description: "Get table schema including column names, types, and constraints. Use this FIRST before writing SQL queries.",
-        },
-    },
-    {
-        Function: &openai.FunctionDefinition{
-            Name:        "sql_select",
-            Description: "Execute a SELECT query on the database. ONLY SELECT queries allowed.",
-        },
-    },
-    {
-        Function: &openai.FunctionDefinition{
-            Name:        "check_data_quality",
-            Description: "Check for data quality issues: nulls, duplicates, outliers. Use this before analysis.",
-        },
-    },
-}
-```
+`confirmed_by` — обязательный аргумент инструмента: идентификатор человека из аутентифицированной сессии, который runtime подставляет после явного решения. Пустой `confirmed_by` или «подтвердил бот» — отказ на уровне кода инструмента. Модель не может подделать это значение: его нет ни в промпте, ни в истории.
 
 ### Пример выполнения
 
-**Итерация 1:**
-- User: "Почему упали продажи в регионе X?"
-- Agent: `describe_table(table_name="sales")` → "Columns: date, region, amount, product"
+| Ит. | Действие агента | Результат | Что здесь важно |
+|---|---|---|---|
+| 1 | `check_db_metrics()` | CPU 95%, connections 1000/100 | read-only — выполняется сразу, без человека |
+| 2 | `read_db_logs(lines=50)` | "ERROR: Too many connections" | гипотеза: утечка соединений |
+| 3 | `restart_db_service()` | **отказ**: ход на паузе, дежурный отклонил — «сначала покажи, сколько соединений в дропе» | модель вызвала пишущий инструмент без доказательств; Confirm сработал до выполнения, отказ вернулся в историю как tool-результат |
+| 4 | `read_db_logs(lines=200)`, текст: план рестарта и риск | дежурный подтверждает | модель изменила план после отказа — не переспрашивает, а обосновывает |
+| 5 | `restart_db_service()` → `confirmed_by="oncall/i.ivanov"` | Success | подтверждение подставил runtime, не модель |
+| 6 | `check_db_metrics()` | CPU 30%, connections 50/100 | верификация: SOP завершён |
 
-**Итерация 2:**
-- Agent: `check_data_quality(table_name="sales")` → "No issues found"
+Учебный момент — итерация 3: модель попыталась применить фикс, не закончив диагностику. Промпт её не остановил (и не обязан был): отказ пришёл из Confirm-коллбека, как tool-результат в историю, и модель корректно перестроила план. Это и есть разница между «просьбой в промпте» и механикой в коде.
 
-**Итерация 3:**
-- Agent: `sql_select(query="SELECT date, SUM(amount) FROM sales WHERE region='X' GROUP BY date ORDER BY date DESC LIMIT 30")` → Results: [data...]
-
-**Итерация 4:**
-- Agent: `sql_select(query="SELECT date, SUM(amount) FROM sales WHERE region='X' AND date >= NOW() - INTERVAL '60 days' GROUP BY date")` → Comparison data
-
-**Итерация 5:**
-- Agent: Анализирует данные и генерирует отчет: "Продажи в регионе X упали на 30% за последний месяц. Основная причина: снижение продаж продукта Y."
+> **Как это устроено в реальном SDK.** `read_db_logs(lines=100000)` не уронит контекст: у цикла есть бюджет на один tool-результат (~128 KB, [гл. 13](../13-context-engineering/README.md)); что не влезло — усекается с маркером, полный вывод уходит в артефакт вне контекста ([гл. 11](../11-state-management/README.md)). Поэтому Description обещает «последние N строк», не оговаривая размер: обрезку держит runtime, а не дисциплина модели.
 
 ## Security Agent (SOC)
 
@@ -234,10 +121,13 @@ tools := []openai.Tool{
 
 Твоя цель — быстро и точно триажировать алерты безопасности.
 
-Ограничения:
-- Критические действия (изоляция хоста) требуют подтверждения
-- Всегда собирай доказательства перед действиями
-- Генерируй отчеты для аудита
+Границы:
+- Изоляция хоста — действие с необратимыми последствиями для бизнеса:
+  цикл ставит ход на паузу, решение принимает дежурный аналитик.
+  Вызывай инструмент, когда доказательств достаточно, — паузу держит код
+- Собирай доказательства до действий: изоляция по непроверенному алерту
+  останавливает рабочий сервис и портит доверие к автоматике SOC
+- Генерируй отчёты для аудита: каждое решение должно быть воспроизводимо
 
 SOP для триажа алерта:
 1. Определи severity (Low/Medium/High/Critical)
@@ -245,149 +135,78 @@ SOP для триажа алерта:
 3. Проанализируй паттерны атаки
 4. Определи scope (затронутые системы)
 5. Прими решение (False Positive / True Positive)
-6. Если True Positive — containment (с подтверждением!)
-7. Сгенерируй отчет для SOC
+6. Если True Positive — containment (подтверждение аналитика через Confirm)
+7. Сгенерируй отчёт для SOC
 ```
 
 ### Доступные инструменты
 
 ```go
-tools := []openai.Tool{
+tools := []ToolDef{
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "query_siem",
-            Description: "Query security information and event management system for logs and alerts.",
-        },
+        Name:        "query_siem",
+        Description: "Query the SIEM for logs and alerts. The starting point of any triage: evidence before conclusions.",
     },
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "check_ip_reputation",
-            Description: "Check if an IP address is known malicious or suspicious.",
-        },
+        Name:        "check_ip_reputation",
+        Description: "Check if an IP address is known malicious or suspicious. Returns no data for internal IPs — absence of reputation is not evidence of innocence.",
     },
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "isolate_host",
-            Description: "CRITICAL: Isolate a host from the network. Requires explicit confirmation.",
-        },
+        Name:        "isolate_host",
+        Description: "Isolate a host from the network: cuts all its connections, including legitimate ones — a false positive stops a working service. Executed only after the analyst approves via the Confirm mechanism (chapter 05).",
     },
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "generate_report",
-            Description: "Generate a security incident report for SOC and audit.",
-        },
+        Name:        "generate_report",
+        Description: "Generate a security incident report for SOC and audit, with evidence links and the decision trail.",
     },
 }
 ```
 
-### Пример выполнения
+### Изоляция хоста: подтверждение и настоящая граница
 
-**Итерация 1:**
-- User: "Алерт: подозрительная активность на хосте 192.168.1.10"
-- Agent: `query_siem(query="host=192.168.1.10 AND time>now-1h")` → "Multiple failed login attempts, unusual network traffic"
+В наивной реализации агент писал бы «изолировать?» в чат, а строка «yes» из истории считалась бы согласием. Это дыра: в историю попадает не только человек — текст алерта, вывод SIEM, содержимое логов. Injected-текст с «yes» выполнит изоляцию без аналитика.
 
-**Итерация 2:**
-- Agent: `check_ip_reputation(ip="192.168.1.10")` → "Internal IP, no external reputation data"
+Правильная механика — та же, что в DevOps-кейсе: `isolate_host` объявлен destructive, цикл ставит ход на паузу, аналитик подтверждает через свой канал, и runtime подставляет `confirmed_by` из аутентифицированной сессии. Отказ (никого на линии) — это «automatic policy»: модель не ждёт человека, а меняет план — собирает больше доказательств и эскалирует текстом.
 
-**Итерация 3:**
-- Agent: Анализирует данные и определяет: "High severity. Pattern: Brute-force attack. Scope: Single host."
-
-**Итерация 4:**
-- Agent: Запрашивает подтверждение для `isolate_host(host="192.168.1.10")`
-- User: "yes"
-- Agent: `isolate_host(host="192.168.1.10")` → Success
-
-**Итерация 5:**
-- Agent: `generate_report(incident_id="INC-12345", details="...")` → Report generated
-
-**Итерация 6:**
-- Agent: "Хост изолирован. Отчет сгенерирован. Инцидент: INC-12345."
-
-## Product Operations Agent
-
-**Задача:** "Подготовь план релиза фичи X"
-
-### Системный промпт
-
-```text
-Ты Product Operations Manager.
-
-Твоя цель — подготовить полный план релиза фичи.
-
-Ограничения:
-- Всегда проверяй зависимости перед релизом
-- Учитывай риски и откат-план
-- Согласовывай с заинтересованными сторонами
-
-SOP для подготовки релиза:
-1. Собери требования и спецификацию
-2. Проверь зависимости (другие фичи, сервисы)
-3. Определи риски и откат-план
-4. Создай документы (release notes, runbook)
-5. Отправь на согласование
-```
-
-### Доступные инструменты
-
-```go
-tools := []openai.Tool{
-    {
-        Function: &openai.FunctionDefinition{
-            Name:        "get_feature_spec",
-            Description: "Get feature specification and requirements.",
-        },
-    },
-    {
-        Function: &openai.FunctionDefinition{
-            Name:        "check_dependencies",
-            Description: "Check dependencies: other features, services, infrastructure.",
-        },
-    },
-    {
-        Function: &openai.FunctionDefinition{
-            Name:        "create_release_plan",
-            Description: "Create release plan document with timeline, risks, rollback plan.",
-        },
-    },
-    {
-        Function: &openai.FunctionDefinition{
-            Name:        "send_for_approval",
-            Description: "Send release plan for approval to stakeholders.",
-        },
-    },
-}
-```
+И вторая опора: реальная граница при изоляции — не строка в промпте, а **изоляция процесса и права хоста**: процесс агента работает от учётки, у которой физически нет прав трогать чужие хосты; изоляция выполняется через узко ограниченный API. Даже успешная инъекция не выводит за эти границы. Полный разбор — в [Главе 17: Security и Governance](../17-security-and-governance/README.md).
 
 ### Пример выполнения
 
-**Итерация 1:**
-- User: "Подготовь план релиза фичи X"
-- Agent: `get_feature_spec(feature_id="X")` → Specification details
+| Ит. | Действие агента | Результат | Что здесь важно |
+|---|---|---|---|
+| 1 | `query_siem(query="host=192.168.1.10 AND time>now-1h")` | "Multiple failed login attempts, unusual network traffic" | read-only, выполняется сразу |
+| 2 | `check_ip_reputation(ip="192.168.1.10")` | "Internal IP, no external reputation data" | модель не делает вывод «раз репутации нет — виновен»: описание инструмента предупреждает об этом |
+| 3 | Вывод: "High severity. Pattern: brute-force. Scope: single host" | — | решение формулируется **до** действия |
+| 4 | `isolate_host(host="192.168.1.10")` | ход на паузе → аналитик подтверждает → `confirmed_by="soc/a.petrova"` → Success | подтверждение вне модели; в историю попало бы что угодно — код проверяет только `confirmed_by` |
+| 5 | `generate_report(incident_id="INC-12345")` | отчёт с доказательствами | решение воспроизводимо для аудита |
 
-**Итерация 2:**
-- Agent: `check_dependencies(feature_id="X")` → "Depends on feature Y, requires service Z update"
+Учебный момент — итерация 2: пустой результат репутации — типичная ловушка. Модель, обученная «делать выводы из всего», склонна трактовать отсутствие данных как сигнал. Description инструмента закрывает это явно — пример того, зачем описания пишут с причинами.
 
-**Итерация 3:**
-- Agent: Анализирует зависимости и риски
+> **Как это устроено в реальном SDK.** Вывод SIEM-запроса легко содержит токены и пароли, попавшие в логи. Зрелые рунтаймы прогоняют tool-результат через redaction-фильтр до того, как он попадёт в историю: секреты маскируются и в контексте, и в логах, полный вывод остаётся в артефакте с ограниченным доступом. Маскирование по умолчанию, а не по списку полей: фильтруется всё, что похоже на секрет.
 
-**Итерация 4:**
-- Agent: `create_release_plan(feature_id="X", timeline="...", risks="...", rollback="...")` → Plan created
+## Остальные домены: компактный обзор
 
-**Итерация 5:**
-- Agent: `send_for_approval(plan_id="PLAN-12345", stakeholders=["...])` → Sent
+Три домена ниже устроены по той же схеме (SOP + инструменты + границы в коде) и не дают новых механик — поэтому компактно:
 
-**Итерация 6:**
-- Agent: "План релиза создан и отправлен на согласование. ID: PLAN-12345."
+| Кейс | Инструменты | Специфика | Главная ловушка |
+|---|---|---|---|
+| Customer Support | `get_ticket`, `search_kb`, `draft_reply`, `escalate_ticket` | тон и эскалация; `draft_reply` готовит черновик, отправка пользователю — отдельный Confirm | содержимое тикета — недоверенный текст: жалоба пользователя может содержать инъекцию, «подтверждение» из тикета не считается |
+| Data Analytics | `describe_table`, `sql_select`, `check_data_quality` | только read-only SQL; соединение к БД открывается от учётки с правами SELECT | «только SELECT» держит учётка БД, а не строка в промпте; без бюджета на результат большой SELECT раздувает контекст ([гл. 13](../13-context-engineering/README.md)) |
+| Product Operations | `get_feature_spec`, `check_dependencies`, `create_release_plan`, `send_for_approval` | документы и согласования; `send_for_approval` — Confirm: решение за стейкхолдерами | агент готовит план, но не «согласовывает» его сам: подделка одобрения в истории — не подтверждение |
+
+Общий вывод из таблицы: чем бы ни занимался агент, набор безопасных механик не растёт — allowlist, категории инструментов, Confirm + `confirmed_by`, бюджеты. Меняется только домен и SOP.
 
 ## Общие паттерны
 
 Во всех кейсах видны общие паттерны:
 
-1. **SOP задает процесс** — четкий алгоритм действий
+1. **SOP задаёт процесс** — четкий алгоритм действий
 2. **CoT помогает следовать процессу** — модель думает по шагам
 3. **Tools дают доступ к реальным данным** — grounding через инструменты
-4. **Safety checks** — подтверждение для критических действий
-5. **Верификация** — проверка результата после действий
+4. **Опасные действия держит код** — Confirm-коллбек + `confirmed_by` ([гл. 05](../05-safety-and-hitl/README.md)), а не просьба в промпте
+5. **Границы — allowlist** — модель физически вызывает только разрешённое ([гл. 05](../05-safety-and-hitl/README.md), [гл. 17](../17-security-and-governance/README.md))
+6. **Верификация** — проверка результата после действий
+7. **Бюджеты на результаты** — большие выводы усекаются и уходят в артефакты ([гл. 13](../13-context-engineering/README.md))
 
 ## Мини-упражнения
 
@@ -398,53 +217,53 @@ tools := []openai.Tool{
 ```go
 systemPrompt := `
 // Ваш код здесь
-// Включите: Role, Goal, Constraints, SOP
+// Включите: Role, Goal, границы (с причинами, не запреты капсом), SOP
 `
 ```
 
 **Ожидаемый результат:**
 - System Prompt содержит все необходимые компоненты
 - SOP четко описывает процесс действий
-- Constraints явно указаны
+- Границы объясняют, почему они существуют, и ссылаются на механику кода (Confirm, allowlist), а не дублируют её
 
 ### Упражнение 2: Определите инструменты для вашего агента
 
 Определите набор инструментов для вашего агента:
 
 ```go
-tools := []openai.Tool{
+tools := []ToolDef{
     // Ваш код здесь
-    // Включите: основные инструменты, инструменты безопасности
+    // Включите: read-only инструменты, пишущие (Confirm), destructive (dry-run + Confirm)
 }
 ```
 
 **Ожидаемый результат:**
 - Инструменты покрывают основные задачи домена
-- Описания инструментов четкие и понятные
-- Критические инструменты требуют подтверждения
+- Описания объясняют, что делает инструмент и чем рискован
+- Опасные инструменты объявлены с флагом `Confirm` и аргументом `confirmed_by`
 
 ## Критерии сдачи / Чек-лист
 
 **Сдано:**
 - [x] Понимаете общие паттерны создания агентов
 - [x] Можете создать System Prompt для своего домена
-- [x] Можете определить набор инструментов для агента
-- [x] Понимаете, как применять SOP, CoT, Safety checks
+- [x] Можете определить набор инструментов с категориями (read-only / пишущие / destructive)
+- [x] Понимаете, как применять SOP, CoT и подтверждение через механику кода
 
 **Не сдано:**
 - [ ] Не понимаете, как собрать все компоненты вместе
 - [ ] System Prompt не содержит всех необходимых компонентов
-- [ ] Инструменты не покрывают основные задачи
+- [ ] Опасные действия держатся строкой в промпте, а не Confirm-механикой
 
 ## Связь с другими главами
 
 - **Промптинг:** Как создавать System Prompt, см. [Главу 02: Промптинг](../02-prompt-engineering/README.md)
 - **Инструменты:** Как определять инструменты, см. [Главу 03: Инструменты](../03-tools-and-function-calling/README.md)
-- **Безопасность:** Как реализовать safety checks, см. [Главу 05: Безопасность](../05-safety-and-hitl/README.md)
+- **Цикл и лимиты:** Config/Run-паттерн и флаги инструментов, см. [Главу 04: Автономность и циклы](../04-autonomy-and-loops/README.md)
+- **Безопасность:** Confirm-коллбек и `confirmed_by`, см. [Главу 05: Безопасность](../05-safety-and-hitl/README.md)
+- **Границы и governance:** allowlist, изоляция процесса, права хоста, см. [Главу 17: Security и Governance](../17-security-and-governance/README.md)
 
 ## Что дальше?
 
 После изучения кейсов переходите к:
 - **[16. Best Practices и Области Применения](../16-best-practices/README.md)** — лучшие практики создания и поддержки агентов
-
-

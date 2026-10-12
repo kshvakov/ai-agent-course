@@ -37,8 +37,8 @@
 **Шаг 1: Запрос пользователя**
 
 ```go
-messages := []openai.ChatCompletionMessage{
-    {Role: "system", Content: "You are a DevOps assistant. Always search knowledge base before actions."},
+messages := []Message{
+    {Role: "system", Content: "You are a DevOps assistant. Internal procedures and protocols live in the knowledge base."},
     {Role: "user", Content: "Перезагрузи сервер Phoenix согласно регламенту"},
 }
 ```
@@ -46,32 +46,28 @@ messages := []openai.ChatCompletionMessage{
 **Шаг 2: Модель видит описание инструмента поиска**
 
 ```go
-tools := []openai.Tool{
+tools := []ToolDef{
     {
-        Function: &openai.FunctionDefinition{
-            Name: "search_knowledge_base",
-            Description: "Search the knowledge base for documentation, protocols, and procedures. Use this BEFORE performing actions that require specific procedures.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Search query"}
-                },
-                "required": ["query"]
-            }`),
-        },
+        Name:        "search_knowledge_base",
+        Description: "Search the knowledge base for documentation, protocols, and procedures.",
+        Parameters: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query"}
+            },
+            "required": ["query"]
+        }`),
     },
     {
-        Function: &openai.FunctionDefinition{
-            Name: "restart_server",
-            Description: "Restart a server",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "hostname": {"type": "string"}
-                },
-                "required": ["hostname"]
-            }`),
-        },
+        Name:        "restart_server",
+        Description: "Restart a server",
+        Parameters: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "hostname": {"type": "string"}
+            },
+            "required": ["hostname"]
+        }`),
     },
 }
 ```
@@ -79,25 +75,29 @@ tools := []openai.Tool{
 **Шаг 3: Модель генерирует tool call для поиска**
 
 ```go
-resp1, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    "gpt-4o-mini",
-    Messages: messages,
-    Tools:    tools,
-})
+client, err := NewClient(...) // провайдер из конфига (гл. 04)
+
+resp1, err := client.Complete(ctx, Request{
+    Model:       "glm-5.3",
+    Messages:    messages,
+    Tools:       tools,
+    Temperature: 0.2, // качество: меньше разброс в выборе инструментов
+}) // ошибка обрабатывается циклом (гл. 04)
 
 msg1 := resp1.Choices[0].Message
 // msg1.ToolCalls = [{
-//     Function: {
-//         Name: "search_knowledge_base",
-//         Arguments: "{\"query\": \"Phoenix restart protocol\"}"
-//     }
+//     ID: "call_1",
+//     Name: "search_knowledge_base",
+//     Arguments: "{\"query\": \"Phoenix restart protocol\"}"
 // }]
 ```
 
 **Почему модель сгенерировала tool_call на поиск?**
-- System Prompt говорит: "Always search knowledge base before actions"
-- Description инструмента говорит: "Use this BEFORE performing actions"
+- Модель **сама решила**, что для слова «регламент» ей нужны внутренние инструкции, а не общие знания
+- Description инструмента говорит, где искать документацию и процедуры
 - Модель видит слово "регламенту" в запросе и связывает это с инструментом поиска
+
+Здесь нет принуждающей строки в промпте вида «Always search knowledge base before actions»: поиск — обычный tool call, и решение «искать или нет» принимает модель по описанию инструмента. Если в вашей задаче поиск обязателен всегда — это инвариант runtime (код не выполняет действие без поиска), а не строка в system prompt.
 
 **Шаг 4: Runtime (ваш код) выполняет поиск**
 
@@ -125,7 +125,7 @@ result1 := searchKnowledgeBase("Phoenix restart protocol")
 **Шаг 5: Результат поиска добавляется в контекст**
 
 ```go
-messages = append(messages, openai.ChatCompletionMessage{
+messages = append(messages, Message{
     Role:       "tool",
     Content:    result1,  // Вся найденная документация!
     ToolCallID: msg1.ToolCalls[0].ID,
@@ -138,11 +138,11 @@ messages = append(messages, openai.ChatCompletionMessage{
 
 ```go
 // Отправляем обновленную историю (с документацией!) в модель
-resp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    "gpt-4o-mini",
+resp2, err := client.Complete(ctx, Request{
+    Model:    "glm-5.3",
     Messages: messages,  // Модель видит найденную документацию!
     Tools:    tools,
-})
+}) // ошибка обрабатывается циклом (гл. 04)
 
 msg2 := resp2.Choices[0].Message
 // Модель видит в контексте:
@@ -150,7 +150,7 @@ msg2 := resp2.Choices[0].Message
 // Модель генерирует tool calls согласно регламенту:
 
 // msg2.ToolCalls = [
-//     {Function: {Name: "restart_server", Arguments: "{\"hostname\": \"phoenix\"}"}},
+//     {ID: "call_1", Name: "restart_server", Arguments: "{\"hostname\": \"phoenix\"}"},
 //     // Или сначала выключить балансировщик, потом сервер
 // ]
 ```
@@ -166,7 +166,7 @@ msg2 := resp2.Choices[0].Message
 
 ## Простой RAG vs Векторный поиск
 
-В этой лабе мы реализуем **простой RAG** (поиск по ключевым словам). В продакшене используется **векторный поиск** (Semantic Search), который ищет по смыслу, а не по словам.
+Простой RAG (поиск по ключевым словам) реализуется в [Lab 07](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab07-rag) — лаба пока не ревизована и будет обновлена отдельным этапом. В продакшене используется **векторный поиск** (Semantic Search), который ищет по смыслу, а не по словам.
 
 **Простой RAG ([Lab 07](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab07-rag)):**
 ```go
@@ -178,14 +178,15 @@ if strings.Contains(content, query) {
 
 **Векторный поиск (продакшен):**
 ```go
-// 1. Документы разбиваются на чанки и преобразуются в векторы (embeddings)
+// 1. Документы разбиваются на чанки и преобразуются в векторы
+// embedding-моделью провайдера (размерность d зависит от модели)
 chunks := []Chunk{
-    {ID: "chunk_1", Text: "Регламент перезагрузки Phoenix...", Embedding: [1536]float32{...}},
-    {ID: "chunk_2", Text: "Шаг 2: Выключить балансировщик...", Embedding: [1536]float32{...}},
+    {ID: "chunk_1", Text: "Регламент перезагрузки Phoenix...", Embedding: embed("Регламент перезагрузки Phoenix...")},
+    {ID: "chunk_2", Text: "Шаг 2: Выключить балансировщик...", Embedding: embed("Шаг 2: Выключить балансировщик...")},
 }
 
 // 2. Запрос пользователя тоже преобразуется в вектор
-queryEmbedding := embedQuery("Phoenix restart protocol")  // [1536]float32{...}
+queryEmbedding := embed("Phoenix restart protocol")
 
 // 3. Поиск похожих векторов по косинусному расстоянию
 similarDocs := vectorDB.Search(queryEmbedding, topK=3)
@@ -193,7 +194,7 @@ similarDocs := vectorDB.Search(queryEmbedding, topK=3)
 
 // 4. Результат добавляется в контекст модели так же, как в простом RAG
 result := formatChunks(similarDocs)  // "Chunk 1: ...\nChunk 2: ...\nChunk 3: ..."
-messages = append(messages, openai.ChatCompletionMessage{
+messages = append(messages, Message{
     Role:    "tool",
     Content: result,
 })
@@ -241,119 +242,21 @@ Basic RAG          Advanced RAG           Agentic RAG
 └──────────┘       └──────────────┘       └─────────────────┘
 ```
 
-### Query Transformation (Трансформация запроса)
+### Пред- и пост-обработка запроса: когда она оправдана
 
-**Проблема:** Пользователь пишет "сервер лежит". Поиск по этому запросу не найдёт документ "Процедура восстановления после отказа сервера".
+Между запросом пользователя и поиском (и между поиском и ответом) можно вставить дополнительные LLM-вызовы: переформулировать запрос, сгенерировать гипотетический документ, выбрать источник, оценить релевантность найденного. Это рабочие приёмы — но у каждого один и тот же интерфейс цены: **лишний LLM-вызов до или после поиска**. Он добавляет латентность и токены в каждом запросе, даже когда базовый поиск и так справился.
 
-**Решение:** Перед поиском трансформируем запрос — переформулируем, расширяем или разбиваем на под-запросы.
+| Приём | Что делает | Когда оправдан |
+|-------|-----------|----------------|
+| **Query Rewriting** | LLM переформулирует запрос под язык документов: «сервер лежит» → «процедура восстановления сервера после отказа» | Запросы пользователей разговорные, документы канцелярские; поиск часто промахивается |
+| **Sub-Query Decomposition** | Сложный запрос разбивается на несколько простых: «сравни настройки nginx на prod и staging» → два независимых поиска | Запросы агрегируют несколько независимых вопросов |
+| **HyDE** (Hypothetical Document Embeddings) | LLM генерирует гипотетический ответ, и поиск идёт по его embedding: embedding документа ближе к embedding другого документа, чем embedding короткого запроса | Короткие запросы к длинным каноническим документам; редкая терминология |
+| **Routing** | Классификация запроса и выбор источника: вики, SQL-база, API метрик | Несколько по-настоящему разных источников, которые нельзя опросить все |
+| **Self-RAG** | Модель оценивает релевантность и достаточность найденного: ответить / уточнить запрос / искать ещё | Шумный корпус, где промах поиска стоит дороже дополнительной итерации |
 
-**Техника 1: Переформулировка (Query Rewriting)**
+**Общее правило:** включайте приём, когда он даёт дешёвую победу именно на вашем корпусе (проверьте на evals — [гл. 23](../23-evals-in-cicd/README.md)), а не «потому что так делают в статьях». Порядок эскалации: сначала чините сам поиск (чанкинг, hybrid, reranking ниже), и только потом добавляйте LLM-обвязку вокруг него.
 
-```go
-// Инструмент для переформулировки запроса перед поиском
-func rewriteQuery(originalQuery string, client *openai.Client) (string, error) {
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: "gpt-4o-mini", // Дешёвая модель — задача простая
-        Messages: []openai.ChatCompletionMessage{
-            {
-                Role: openai.ChatMessageRoleSystem,
-                Content: `Rewrite the user query to be more specific for document search.
-Return ONLY the rewritten query, nothing else.
-Examples:
-- "сервер лежит" → "процедура восстановления сервера после отказа"
-- "медленно работает БД" → "диагностика производительности PostgreSQL высокая latency"`,
-            },
-            {Role: openai.ChatMessageRoleUser, Content: originalQuery},
-        },
-        Temperature: 0,
-    })
-    if err != nil {
-        return originalQuery, err // Fallback на оригинал
-    }
-    return resp.Choices[0].Message.Content, nil
-}
-```
-
-**Техника 2: Декомпозиция на под-запросы (Sub-Query Decomposition)**
-
-Сложный запрос разбивается на несколько простых. Результаты объединяются.
-
-```go
-// "Сравни настройки nginx на prod и staging" разбивается на:
-// 1. "настройки nginx production"
-// 2. "настройки nginx staging"
-subQueries := decomposeQuery(userQuery)
-var allResults []SearchResult
-for _, sq := range subQueries {
-    results := searchKnowledgeBase(sq)
-    allResults = append(allResults, results...)
-}
-```
-
-**Техника 3: HyDE (Hypothetical Document Embeddings)**
-
-Вместо поиска по запросу, просим модель сгенерировать **гипотетический ответ**. Затем ищем документы, похожие на этот ответ.
-
-```go
-// Шаг 1: Модель генерирует гипотетический документ
-hypothetical := generateHypotheticalAnswer(query)
-// query: "как настроить SSL"
-// hypothetical: "Для настройки SSL на nginx: 1. Получите сертификат... 2. Добавьте в конфиг..."
-
-// Шаг 2: Ищем документы, похожие на гипотетический ответ
-embedding := embedText(hypothetical)
-results := vectorDB.Search(embedding, topK=5)
-// Находит реальные документы о настройке SSL, даже если они написаны другими словами
-```
-
-**Зачем это нужно:** Embedding гипотетического документа ближе к embedding реального документа, чем embedding короткого запроса.
-
-### Routing (Маршрутизация запросов)
-
-**Проблема:** У вас несколько источников данных: вики, SQL-база, API мониторинга. Запрос "время отклика сервера за последний час" не найдётся в вики — нужно идти в базу метрик.
-
-**Решение:** Классифицируем запрос и направляем в нужный источник.
-
-```go
-type QueryRoute struct {
-    Source   string // "wiki", "sql", "metrics_api", "vector_db"
-    Query    string // Оригинальный или трансформированный запрос
-    Reason   string // Почему этот источник
-}
-
-func routeQuery(query string, client *openai.Client) (QueryRoute, error) {
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: "gpt-4o-mini",
-        Messages: []openai.ChatCompletionMessage{
-            {
-                Role: openai.ChatMessageRoleSystem,
-                Content: `Classify the query and route to the correct data source.
-Available sources:
-- "wiki": documentation, procedures, runbooks
-- "sql": structured data, tables, historical records
-- "metrics_api": real-time metrics, monitoring data
-- "vector_db": semantic search in knowledge base
-
-Return JSON: {"source": "...", "query": "...", "reason": "..."}`,
-            },
-            {Role: openai.ChatMessageRoleUser, Content: query},
-        },
-        Temperature: 0,
-    })
-    if err != nil {
-        return QueryRoute{Source: "vector_db", Query: query}, err
-    }
-
-    var route QueryRoute
-    json.Unmarshal([]byte(resp.Choices[0].Message.Content), &route)
-    return route, nil
-}
-
-// Использование:
-route, _ := routeQuery("время отклика сервера за последний час")
-// route.Source = "metrics_api"
-// route.Reason = "запрос о real-time метриках"
-```
+В agentic-режиме (раздел ниже) часть этих приёмов достаётся бесплатно: модель сама переформулирует запрос, сама выбирает источник и сама решает, искать ли ещё — потому что поиск для неё обычный tool call, а не зашитый в код шаг пайплайна.
 
 ### Hybrid Search (Гибридный поиск)
 
@@ -440,105 +343,32 @@ func rerankResults(query string, results []SearchResult, topK int) []SearchResul
 
 **Двухэтапный пайплайн:** Быстрый поиск (BM25/vector, top-100) → Точный reranking (cross-encoder, top-5).
 
-### Self-RAG (Самооценка качества)
-
-**Проблема:** Агент нашёл документы, но они могут быть нерелевантными, устаревшими или неполными. Базовый RAG этого не замечает.
-
-**Решение:** Модель сама оценивает качество найденных документов и решает: ответить, уточнить запрос или искать ещё.
-
-```go
-type RetrievalAssessment struct {
-    IsRelevant  bool   `json:"is_relevant"`  // Документы релевантны запросу?
-    IsSufficient bool  `json:"is_sufficient"` // Достаточно информации для ответа?
-    Action      string `json:"action"`        // "answer", "refine_query", "search_more"
-    RefinedQuery string `json:"refined_query,omitempty"` // Уточнённый запрос (если нужно)
-}
-
-func assessRetrieval(query string, docs []SearchResult, client *openai.Client) (RetrievalAssessment, error) {
-    docsText := formatDocs(docs)
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: "gpt-4o-mini",
-        Messages: []openai.ChatCompletionMessage{
-            {
-                Role: openai.ChatMessageRoleSystem,
-                Content: `Assess if the retrieved documents are relevant and sufficient to answer the query.
-Return JSON: {"is_relevant": bool, "is_sufficient": bool, "action": "answer"|"refine_query"|"search_more", "refined_query": "..."}`,
-            },
-            {
-                Role: openai.ChatMessageRoleUser,
-                Content: fmt.Sprintf("Query: %s\n\nRetrieved documents:\n%s", query, docsText),
-            },
-        },
-        Temperature: 0,
-    })
-    if err != nil {
-        return RetrievalAssessment{IsRelevant: true, IsSufficient: true, Action: "answer"}, err
-    }
-
-    var assessment RetrievalAssessment
-    json.Unmarshal([]byte(resp.Choices[0].Message.Content), &assessment)
-    return assessment, nil
-}
-```
-
-**Self-RAG в цикле:**
-
-```go
-func selfRAG(query string, maxAttempts int) ([]SearchResult, error) {
-    currentQuery := query
-
-    for attempt := 0; attempt < maxAttempts; attempt++ {
-        docs := hybridSearch(currentQuery, 10)
-        assessment, _ := assessRetrieval(currentQuery, docs)
-
-        switch assessment.Action {
-        case "answer":
-            return docs, nil // Документы достаточны — отвечаем
-        case "refine_query":
-            currentQuery = assessment.RefinedQuery // Уточняем запрос
-        case "search_more":
-            // Расширяем поиск (больше top-K или другой источник)
-            moreDocs := hybridSearch(currentQuery, 20)
-            docs = append(docs, moreDocs...)
-            return docs, nil
-        }
-    }
-    return nil, fmt.Errorf("could not find sufficient documents after %d attempts", maxAttempts)
-}
-```
-
 ### Agentic RAG (RAG как инструмент агента)
 
-**Проблема:** Self-RAG оценивает качество поиска, но не может принимать сложные решения: какой источник использовать, нужно ли комбинировать информацию из нескольких документов, или решить задачу multi-hop (ответ требует цепочки поисков).
+**Проблема:** Пред- и пост-обработка из таблицы выше не может принимать сложные решения: какой источник использовать, нужно ли комбинировать информацию из нескольких документов, или решить задачу multi-hop (ответ требует цепочки поисков). Каждое такое решение там — зашитый в код шаг пайплайна.
 
 **Решение:** RAG встраивается в Agent Loop (он же ReAct Loop — см. [Главу 04](../04-autonomy-and-loops/README.md)). Агент сам решает, когда искать, где искать и достаточно ли информации.
 
 ```go
 // Agentic RAG: RAG — это просто инструменты агента
-tools := []openai.Tool{
+tools := []ToolDef{
     // Инструмент 1: Поиск в документации
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "search_docs",
-            Description: "Search documentation and runbooks. Use when you need procedures or technical details.",
-            Parameters:  searchParamsSchema,
-        },
+        Name:        "search_docs",
+        Description: "Search documentation and runbooks. Use when you need procedures or technical details.",
+        Parameters:  searchParamsSchema,
     },
     // Инструмент 2: SQL-запрос к базе метрик
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "query_metrics",
-            Description: "Query metrics database. Use when you need historical data or statistics.",
-            Parameters:  sqlParamsSchema,
-        },
+        Name:        "query_metrics",
+        Description: "Query metrics database. Use when you need historical data or statistics.",
+        Parameters:  sqlParamsSchema,
     },
     // Инструмент 3: Поиск похожих инцидентов
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "search_incidents",
-            Description: "Search past incidents for similar issues and their resolutions.",
-            Parameters:  searchParamsSchema,
-        },
+        Name:        "search_incidents",
+        Description: "Search past incidents for similar issues and their resolutions.",
+        Parameters:  searchParamsSchema,
     },
 }
 
@@ -576,379 +406,74 @@ tools := []openai.Tool{
 | Self-RAG | Модель оценивает качество | Модель (assessment) |
 | Agentic RAG | Агент управляет всем | Agent Loop |
 
-## RAG для пространства действий (Tool Retrieval)
+## Много инструментов ≠ нужен их каталог
 
-До сих пор мы говорили о RAG для **документов** (регламенты, инструкции). Но RAG нужен и для **пространства действий** — когда у агента потенциально бесконечное количество инструментов.
+До сих пор мы говорили о RAG для **документов** (регламенты, инструкции). Частая следующая мысль: «а не применить ли RAG к пространству действий» — у агента ведь потенциально бесконечное количество команд и инструментов. Разберём, почему каталог инструментов с retrieval по нему — почти всегда over-engineering, и какая форма правильная.
 
-### Проблема: "Бесконечные" инструменты
+### Проблема: "Бесконечные" команды
 
 **Ситуация:** Агент должен работать с Linux-командами для траблшутинга. В Linux тысячи команд (`grep`, `awk`, `sed`, `jq`, `sort`, `uniq`, `head`, `tail` и т.д.), и они комбинируются в пайплайны.
 
 **Проблема:**
-- Нельзя передать все команды в `tools[]` — это тысячи токенов
+- Нельзя передать все команды в `tools[]` — это тысячи токенов в каждом запросе
 - Модель хуже выбирает из большого списка (больше галлюцинаций)
-- Задержка растет (больше токенов = медленнее)
 - Нет контроля безопасности (какие команды опасны?)
 
-**Наивное решение (не работает):**
-```go
-// ПЛОХО: Один универсальный инструмент для всего
-tools := []openai.Tool{
-    {
-        Function: &openai.FunctionDefinition{
-            Name: "run_shell",
-            Description: "Execute any shell command",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "command": {"type": "string"}
-                }
-            }`),
-        },
-    },
-}
+**Наивное решение (не работает):** один универсальный инструмент `run_shell(command)` без ограничений. Нет валидации (можно выполнить `rm -rf /`), нет аудита (непонятно, какие команды выполнялись), нет контроля.
+
+### Антипаттерн: каталог tool-обёрток и Tool RAG над shell-командами
+
+Первая идея: сделать **каталог инструментов** — по обёртке на каждую команду (`grep`, `sort`, `head`...) с описаниями и тегами — и перед планированием извлекать релевантные. Это называется Tool RAG (Action-Space Retrieval), и для shell-команд это over-engineering:
+
+- **Команда уже умеет быть найденной.** Знание «для фильтрации логов нужен `grep | sort | head`» живёт в документации (README, скил) и в знаниях самой модели — а не в каталоге схем. Retrieval по описаниям команд решает проблему, которой не существует.
+- **Retrieval не проверяет корректность.** Поиск по каталогу вернёт команды, «похожие по описанию», но не гарантирует, что команда подходит и её аргументы корректны. За корректность всё равно отвечает runtime (валидация, allowlist) — система безопасности не меняется, а retrieval-слой добавляется сверху как вторая подсистема, которую нужно синхронизировать с реальными командами и прогонять через evals.
+- **Каталог из 20+ обёрток над одной системой** (shell, kubectl, docker) — это не «богатое пространство действий», а дублирование одного инструмента `exec` двадцатью схемами, каждая из которых платит за себя в каждом запросе.
+
+Отдельный вид этого антипаттерна — **JSON DSL-пайплайны**: модель генерирует JSON-план из шагов (`grep` → `sort` → `head`), а runtime его исполняет. Внешне «надёжнее», на деле — второй язык описания действий, который нужно валидировать, отлаживать и поддерживать, вместо обычных tool calls, которые модель и так генерирует хорошо.
+
+### Правильная форма: скилы + exec с allowlist
+
+Когда действий много, их **описание** выносят из `tools[]` в файлы, а **исполнение** — в один инструмент `exec` с allowlist. Это механизм **скилов** ([гл. 09](../09-agent-architecture/README.md)): по одному `SKILL.md` на область знаний + progressive disclosure.
+
+1. **Discovery.** При старте runtime читает все `SKILL.md` и добавляет в system prompt одну строку на скил: имя + `description`. 10 скилов ≈ 10 строк — это вся цена обнаружения.
+2. **Activation.** Когда модель решает, что навык нужен, она читает тело `SKILL.md` сама — обычным инструментом `read`. Текст входит в историю как tool_result.
+3. **Execution.** Модель действует по инструкциям скила через `exec` — с allowlist команд и подтверждением опасных операций.
+
+**Пример: скил «k8s-debug»**
+
+```
+skills/k8s-debug/SKILL.md
+---
+name: k8s-debug
+description: Debug Kubernetes pods — check status, logs, describe.
+  Use when user reports pod crashes or restart loops.
+---
+1. kubectl get pods -n <namespace> — найти проблемный под
+2. kubectl describe pod <pod> -n <namespace> — события и причины рестартов
+3. kubectl logs <pod> -n <namespace> --tail=100 — последние логи
+Опасное (delete, rollout undo) — только через подтверждение.
 ```
 
-**Почему это плохо:**
-- Нет валидации (можно выполнить `rm -rf /`)
-- Нет аудита (непонятно, какие команды использовались)
-- Нет контроля (модель может вызвать что угодно)
-
-### Решение: Tool RAG (Action-Space Retrieval)
-
-**Идея:** Храним **каталог инструментов** и перед планированием извлекаем только релевантные.
-
-**Как это работает:**
-
-1. **Каталог инструментов** хранит метаданные каждого инструмента:
-    - Имя и описание
-    - Теги/категории (например, "text-processing", "network", "filesystem")
-    - Параметры и их типы
-    - Уровень риска (safe/moderate/dangerous)
-    - Примеры использования
-
-2. **Перед планированием** агент ищет релевантные инструменты:
-    - По запросу пользователя ("найди ошибки в логах")
-    - Извлекает top-k инструментов (например, `grep`, `tail`, `jq`)
-    - Добавляет только их схемы в `tools[]`
-
-3. **Для пайплайнов** используем двухуровневый контракт:
-    - **JSON DSL** описывает план пайплайна (steps, stdin/stdout, ожидания)
-    - **Runtime** маппит DSL в tool calls или выполняет через один `execute_pipeline`
-
-### Пример: Tool RAG для Linux-команд
-
-**Шаг 1: Каталог инструментов**
+В system prompt — одна строка `k8s-debug: Debug Kubernetes pods...`. Дальше модель сама: `read("skills/k8s-debug/SKILL.md")` → `exec("kubectl", "get", "pods", "-n", "prod")` → `exec("kubectl", "logs", ...)`. Никакого каталога из сотен tool-обёрток и никакого retrieval по нему — при этом модель видит все шаги диагностики и выполняет их через один контролируемый инструмент:
 
 ```go
-type ToolDefinition struct {
-    Name        string
-    Description string
-    Tags        []string  // "text-processing", "filtering", "sorting"
-    RiskLevel   string    // "safe", "moderate", "dangerous"
-    Schema      json.RawMessage
-}
-
-var toolCatalog = []ToolDefinition{
-    {
-        Name:        "grep",
-        Description: "Search for patterns in text. Use for filtering lines matching a pattern.",
-        Tags:        []string{"text-processing", "filtering", "search"},
-        RiskLevel:   "safe",
-        Schema: json.RawMessage(`{
-            "type": "object",
-            "properties": {
-                "pattern": {"type": "string"},
-                "input": {"type": "string"}
-            }
-        }`),
-    },
-    {
-        Name:        "sort",
-        Description: "Sort lines of text. Use for ordering output.",
-        Tags:        []string{"text-processing", "sorting"},
-        RiskLevel:   "safe",
-        Schema: json.RawMessage(`{
-            "type": "object",
-            "properties": {
-                "input": {"type": "string"}
-            }
-        }`),
-    },
-    {
-        Name:        "head",
-        Description: "Show first N lines. Use for limiting output.",
-        Tags:        []string{"text-processing", "filtering"},
-        RiskLevel:   "safe",
-        Schema: json.RawMessage(`{
-            "type": "object",
-            "properties": {
-                "lines": {"type": "number"},
-                "input": {"type": "string"}
-            }
-        }`),
-    },
-    // ... еще сотни инструментов
-}
-```
-
-**Шаг 2: Поиск релевантных инструментов**
-
-Для поиска инструментов можно использовать два подхода: простой поиск по ключевым словам (для обучения) и векторный поиск (для продакшена).
-
-**Простой поиск ([Lab 13](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab13-tool-retrieval)):**
-```go
-func searchToolCatalog(query string, topK int) []ToolDefinition {
-    // Простой поиск по описанию и тегам
-    var results []ToolDefinition
-    
-    queryLower := strings.ToLower(query)
-    for _, tool := range toolCatalog {
-        // Ищем по описанию
-        if strings.Contains(strings.ToLower(tool.Description), queryLower) {
-            results = append(results, tool)
-            continue
-        }
-        // Ищем по тегам
-        for _, tag := range tool.Tags {
-            if strings.Contains(strings.ToLower(tag), queryLower) {
-                results = append(results, tool)
-                break
-            }
-        }
+// exec с allowlist — единственный «исполнитель» команд
+func execCommand(command string, args ...string) (string, error) {
+    allowed := []string{"kubectl", "grep", "sort", "head", "tail", "jq"} // allowlist, не denylist
+    if !slices.Contains(allowed, command) {
+        return "", fmt.Errorf("command %q is not in the allowlist", command)
     }
-    
-    // Возвращаем top-k
-    if len(results) > topK {
-        return results[:topK]
-    }
-    return results
+    cmd := exec.Command(command, args...)
+    // ... выполнение, логирование для аудита, лимит на размер вывода
+    return string(output), nil
 }
 ```
 
-**Векторный поиск (продакшен):**
-```go
-// 1. Инструменты преобразуются в векторы (embeddings)
-toolEmbeddings := []ToolEmbedding{
-    {
-        Tool:      toolCatalog[0], // grep
-        Embedding: embedText("Search for patterns in text. Use for filtering lines matching a pattern."), // [1536]float32{...}
-    },
-    {
-        Tool:      toolCatalog[1], // sort
-        Embedding: embedText("Sort lines of text. Use for ordering output."), // [1536]float32{...}
-    },
-    // ... все инструменты
-}
+> **Сайдбар: как это устроено в реальном SDK.** Каталоги инструментов с retrieval — редкость именно потому, что их вытеснили скилы: одна строка на скил в system prompt вместо сотен схем в `tools[]`. Главный «retrieval»-инструмент агента — `read`: модель сама читает нужный файл, когда он нужен. Чтение ограничено FSHooks-политикой: какие директории можно читать, что логируется и что попадает в контекст — решает runtime, а не модель.
 
-// 2. Запрос пользователя тоже преобразуется в вектор
-queryEmbedding := embedQuery("find errors in logs")  // [1536]float32{...}
+### Если tool'ов реально много: tool retrieval как вынужденная мера
 
-// 3. Поиск похожих векторов по косинусному расстоянию
-similarTools := vectorDB.Search(queryEmbedding, topK=5)
-// Возвращает 5 наиболее похожих инструментов по смыслу (не по словам!)
-
-// 4. Результат используется так же, как в простом поиске
-relevantTools := extractTools(similarTools)  // [grep, tail, jq, ...]
-```
-
-**Почему векторный поиск лучше для инструментов:**
-- Ищет по **смыслу**, а не по словам
-- Найдет `grep` даже если запрос "фильтровать строки по паттерну" (без слова "grep")
-- Работает с синонимами и разными формулировками
-- Особенно важен для больших каталогов (1000+ инструментов)
-
-**Пример использования:**
-```go
-userQuery := "найди ошибки в логах"
-relevantTools := searchToolCatalog("error log filter", 5)
-// Возвращает: [grep, tail, jq, ...] - только релевантные!
-```
-
-**Шаг 3: Добавляем только релевантные tools в контекст**
-
-```go
-// Вместо передачи всех 1000+ инструментов
-relevantTools := searchToolCatalog(userQuery, 5)
-
-// Преобразуем в формат OpenAI
-tools := make([]openai.Tool, 0, len(relevantTools))
-for _, toolDef := range relevantTools {
-    tools = append(tools, openai.Tool{
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        toolDef.Name,
-            Description: toolDef.Description,
-            Parameters:  toolDef.Schema,
-        },
-    })
-}
-
-// Теперь tools содержит только 5 релевантных инструментов вместо 1000+
-```
-
-### Пайплайны: JSON DSL + Runtime
-
-Для сложных задач (например, "найди топ-10 ошибок в логах") агент должен строить **пайплайны** из нескольких команд.
-
-**Подход 1: JSON DSL пайплайна**
-
-Агент генерирует формализованный план пайплайна:
-
-```go
-type PipelineStep struct {
-    Tool    string                 `json:"tool"`
-    Args    map[string]interface{} `json:"args"`
-    Input   string                 `json:"input,omitempty"`  // stdin от предыдущего шага
-    Output  string                 `json:"output,omitempty"` // ожидаемый формат
-}
-
-type Pipeline struct {
-    Steps         []PipelineStep `json:"steps"`
-    ExpectedOutput string        `json:"expected_output"`
-    RiskLevel     string         `json:"risk_level"` // "safe", "moderate", "dangerous"
-}
-
-// Пример: Агент генерирует такой JSON
-pipelineJSON := `{
-    "steps": [
-        {
-            "tool": "grep",
-            "args": {"pattern": "ERROR"},
-            "input": "logs.txt"
-        },
-        {
-            "tool": "sort",
-            "args": {},
-            "input": "{{step_0.output}}"
-        },
-        {
-            "tool": "head",
-            "args": {"lines": 10},
-            "input": "{{step_1.output}}"
-        }
-    ],
-    "expected_output": "Top 10 error lines, sorted",
-    "risk_level": "safe"
-}`
-```
-
-**Подход 2: Runtime выполняет пайплайн**
-
-```go
-func executePipeline(pipelineJSON string, inputData string) (string, error) {
-    var pipeline Pipeline
-    if err := json.Unmarshal([]byte(pipelineJSON), &pipeline); err != nil {
-        return "", err
-    }
-    
-    // Валидация: проверяем риск
-    if pipeline.RiskLevel == "dangerous" {
-        return "", fmt.Errorf("dangerous pipeline requires confirmation")
-    }
-    
-    // Выполняем шаги последовательно
-    currentInput := inputData
-    for i, step := range pipeline.Steps {
-        // Подставляем результат предыдущего шага
-        if strings.Contains(step.Input, "{{step_") {
-            step.Input = currentInput
-        }
-        
-        // Выполняем шаг (в реальности - вызов соответствующего инструмента)
-        result, err := executeToolStep(step.Tool, step.Args, step.Input)
-        if err != nil {
-            return "", fmt.Errorf("step %d failed: %v", i, err)
-        }
-        
-        currentInput = result
-    }
-    
-    return currentInput, nil
-}
-```
-
-**Подход 3: Инструмент `execute_pipeline`**
-
-Агент вызывает один инструмент с JSON пайплайна:
-
-```go
-tools := []openai.Tool{
-    {
-        Function: &openai.FunctionDefinition{
-            Name: "execute_pipeline",
-            Description: "Execute a pipeline of tools. Provide pipeline JSON with steps, expected output, and risk level.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "pipeline": {"type": "string", "description": "JSON pipeline definition"},
-                    "input_data": {"type": "string", "description": "Input data (e.g., log file content)"}
-                },
-                "required": ["pipeline", "input_data"]
-            }`),
-        },
-    },
-}
-
-// Агент генерирует tool call:
-// execute_pipeline({
-//     "pipeline": "{\"steps\":[...], \"risk_level\": \"safe\"}",
-//     "input_data": "log content here"
-// })
-```
-
-### Практические паттерны
-
-**Tool Discovery через Tool Servers:**
-
-В production инструменты часто предоставляются через [Tool Servers](../18-tool-protocols-and-servers/README.md). Каталог можно получать динамически:
-
-```go
-// Tool Server предоставляет ListTools()
-toolServer := connectToToolServer("http://localhost:8080")
-allTools, _ := toolServer.ListTools()
-
-// Фильтруем по задаче
-relevantTools := filterToolsByQuery(allTools, userQuery, topK=5)
-```
-
-**Валидация и безопасность:**
-
-```go
-func validatePipeline(pipeline Pipeline) error {
-    // Проверяем риск
-    if pipeline.RiskLevel == "dangerous" {
-        return fmt.Errorf("dangerous pipeline requires human approval")
-    }
-    
-    // Проверяем allowlist инструментов
-    allowedTools := map[string]bool{
-        "grep": true, "sort": true, "head": true,
-        // rm, dd и другие опасные - НЕ в allowlist
-    }
-    
-    for _, step := range pipeline.Steps {
-        if !allowedTools[step.Tool] {
-            return fmt.Errorf("tool %s not allowed", step.Tool)
-        }
-    }
-    
-    return nil
-}
-```
-
-**Наблюдаемость:**
-
-```go
-// Логируем выбранные инструменты и причины
-log.Printf("Tool retrieval: query=%s, selected=%v, reason=%s",
-    userQuery,
-    []string{"grep", "sort", "head"},
-    "matched tags: text-processing, filtering")
-
-// Сохраняем pipeline JSON для аудита
-auditLog.StorePipeline(userID, pipelineJSON, result)
-```
+Бывают случаи, когда инструмент — действительно отдельный tool со своей схемой: десятки SaaS-интеграций, сотни эндпоинтов за tool servers ([гл. 18](../18-tool-protocols-and-servers/README.md)). Тогда динамический выбор подмножества инструментов перед запросом (tool retrieval) — оправданная **вынужденная** мера. Помните цену: блок `tools[]` отправляется и оплачивается в **каждом** запросе ([гл. 03](../03-tools-and-function-calling/README.md)); retrieval уменьшает блок, но не отменяет каталог, который нужно версионировать и проверять на evals. Учебная реализация — [Lab 13](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab13-tool-retrieval).
 
 ## Типовые ошибки
 
@@ -956,16 +481,19 @@ auditLog.StorePipeline(userID, pipelineJSON, result)
 
 **Симптом:** Агент выполняет действия без поиска в базе знаний, используя только общие знания.
 
-**Причина:** System Prompt не инструктирует агента искать в базе знаний, или описание инструмента поиска недостаточно четкое.
+**Причина:** Описание инструмента поиска не говорит модели, **что** в нём лежит: непонятно, какие задачи требуют поиска.
 
-**Решение:**
+**Решение:** Не принуждайте промптом («Always search knowledge base before actions» — антипаттерн: строка либо игнорируется, либо заставляет модель искать даже там, где не нужно). Дайте модели принять решение самой — через точное описание инструмента:
+
 ```go
-// ХОРОШО: System Prompt требует поиск
-systemPrompt := `... Always search knowledge base before performing actions that require specific procedures.`
+// ХОРОШО: Описание говорит, ЧТО лежит в базе знаний — модель сама решает, когда это нужно
+Description: "Search the internal knowledge base: runbooks, procedures, protocols. Use when the task involves internal systems or company-specific procedures."
 
-// ХОРОШО: Четкое описание инструмента
-Description: "Search the knowledge base for documentation, protocols, and procedures. Use this BEFORE performing actions that require specific procedures."
+// ПЛОХО: Принуждение промптом
+systemPrompt := "... Always search knowledge base before performing actions ..."
 ```
+
+Если поиск в вашей задаче обязателен **всегда** (например, действие нельзя выполнять без регламента) — это инвариант runtime, а не строка в промпте: код не выполняет действие, пока в истории нет результата поиска.
 
 ### Ошибка 2: Плохой поисковый запрос
 
@@ -994,22 +522,13 @@ query := "Phoenix server restart protocol"
 chunkSize := 500  // Токенов
 ```
 
-### Ошибка 4: Передача всех инструментов в контекст
+### Ошибка 4: Каталог из 20+ tool-обёрток над одной системой
 
-**Симптом:** Агент получает список из 1000+ инструментов, модель хуже выбирает, растет задержка.
+**Симптом:** У агента десятки инструментов `grep`/`sort`/`head`/`tail` — по обёртке на каждую команду. Блок `tools[]` огромный, модель путается, каждый запрос дорожает.
 
-**Причина:** Все инструменты передаются в `tools[]` без фильтрации.
+**Причина:** Пространство действий перепутано с пространством инструментов: одна система (shell) обёрнута двадцатью схемами.
 
-**Решение:**
-```go
-// ПЛОХО: Все инструменты
-tools := getAllTools()  // 1000+ инструментов
-
-// ХОРОШО: Только релевантные
-userQuery := "найди ошибки в логах"
-relevantTools := searchToolCatalog(userQuery, topK=5)  // Только 5 релевантных
-tools := convertToOpenAITools(relevantTools)
-```
+**Решение:** Описание действий вынести в скилы (`SKILL.md` + progressive disclosure), исполнение — в один `exec` с allowlist (раздел «Много инструментов ≠ нужен их каталог» выше). Каталог инструментов с retrieval — только если tool'ы реально разные и их много (SaaS-интеграции).
 
 ### Ошибка 5: Универсальный `run_shell` без контроля
 
@@ -1019,56 +538,43 @@ tools := convertToOpenAITools(relevantTools)
 
 **Решение:**
 ```go
-// ПЛОХО: Универсальный shell
-tools := []openai.Tool{{
-    Function: &openai.FunctionDefinition{
-        Name: "run_shell",
-        Description: "Execute any shell command",
-    },
+// ПЛОХО: Универсальный shell без ограничений
+tools := []ToolDef{{
+    Name:        "run_shell",
+    Description: "Execute any shell command",
 }}
 
-// ХОРОШО: Конкретные инструменты + pipeline DSL
-tools := []openai.Tool{
-    {Function: &openai.FunctionDefinition{Name: "grep", ...}},
-    {Function: &openai.FunctionDefinition{Name: "sort", ...}},
-    {Function: &openai.FunctionDefinition{Name: "execute_pipeline", ...}},
-}
-
-// Pipeline JSON валидируется перед выполнением
-if err := validatePipeline(pipeline); err != nil {
-    return err
+// ХОРОШО: exec с allowlist (не denylist!) и подтверждением опасных операций
+func execCommand(command string, args ...string) (string, error) {
+    allowed := map[string]bool{
+        "grep": true, "sort": true, "head": true, "kubectl": true,
+        // rm, dd и другие опасные — НЕ в allowlist
+    }
+    if !allowed[command] {
+        return "", fmt.Errorf("command %q is not in the allowlist", command)
+    }
+    // ... выполнение, логирование для аудита
+    return string(output), nil
 }
 ```
 
-### Ошибка 6: Нет валидации пайплайна
+### Ошибка 6: Опасные операции без подтверждения
 
-**Симптом:** Агент генерирует пайплайн с опасными командами (`rm -rf`, `dd`), которые выполняются без проверки.
+**Симптом:** Агент выполняет деструктивные команды (`rm`, `kubectl delete`) без проверки и подтверждения человеком.
 
-**Причина:** Нет проверки risk level и allowlist перед выполнением.
+**Причина:** Валидация «в среднем» не отличается опасные вызовы от безопасных.
 
-**Решение:**
+**Решение:** allowlist отвечает на вопрос «разрешено ли вообще», а подтверждение (confirm, [гл. 05](../05-safety-and-hitl/README.md)) — на вопрос «разрешено ли сейчас, с человеком в цикле»:
+
 ```go
-// ХОРОШО: Валидация перед выполнением
-func executePipeline(pipelineJSON string) error {
-    var pipeline Pipeline
-    json.Unmarshal([]byte(pipelineJSON), &pipeline)
-    
-    // Проверяем риск
-    if pipeline.RiskLevel == "dangerous" {
-        return fmt.Errorf("dangerous pipeline requires confirmation")
-    }
-    
-    // Проверяем allowlist
-    allowedTools := map[string]bool{"grep": true, "sort": true}
-    for _, step := range pipeline.Steps {
-        if !allowedTools[step.Tool] {
-            return fmt.Errorf("tool %s not allowed", step.Tool)
-        }
-    }
-    
-    // Выполняем только после валидации
-    return runValidatedPipeline(pipeline)
+// ХОРОШО: две разные проверки перед выполнением
+if !allowedCommands[cmd.Command] {
+    return fmt.Errorf("command %q is not allowed", cmd.Command)
 }
+if destructive(cmd.Command, cmd.Args) { // delete, drop, rollout undo...
+    return confirmWithHuman(cmd) // без подтверждения — не выполняется
+}
+return run(cmd)
 ```
 
 ## Мини-упражнения
@@ -1103,60 +609,62 @@ func chunkDocument(text string, chunkSize int) []string {
 - Функция разбивает документ на чанки заданного размера
 - Чанки не перекрываются (или перекрываются минимально)
 
-### Упражнение 3: Реализуйте поиск инструментов
+### Упражнение 3: Реализуйте поиск по каталогу скилов
 
-Реализуйте функцию поиска релевантных инструментов в каталоге:
+Runtime читает все `SKILL.md` и должен выбрать релевантные. Реализуйте функцию поиска:
 
 ```go
-func searchToolCatalog(query string, catalog []ToolDefinition, topK int) []ToolDefinition {
-    // Ищите по описанию и тегам
-    // Верните top-k наиболее релевантных инструментов
+type SkillDef struct {
+    Name        string // "k8s-debug"
+    Description string // "Debug Kubernetes pods — check status, logs, describe..."
+}
+
+func searchSkills(query string, skills []SkillDef, topK int) []SkillDef {
+    // Ищите по описаниям
+    // Верните top-k наиболее релевантных скилов
 }
 ```
 
 **Ожидаемый результат:**
-- Функция находит инструменты, релевантные запросу
-- Возвращает не более topK инструментов
-- Учитывает описание и теги инструментов
+- Функция находит скилы, релевантные запросу
+- Возвращает не более topK скилов
+- Учитывает описания скилов
 
-**Для продвинутых:** Реализуйте векторный поиск для инструментов (аналогично векторному поиску документов выше). Это особенно полезно для больших каталогов (1000+ инструментов).
+**Для продвинутых:** Реализуйте векторный поиск по описаниям (аналогично векторному поиску документов выше) — полезно, когда скилов десятки. Тот же механизм лежит в основе tool retrieval для действительно больших наборов разных инструментов ([Lab 13](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab13-tool-retrieval)).
 
-### Упражнение 4: Валидация пайплайна
+### Упражнение 4: Валидация exec-команды
 
-Реализуйте функцию валидации пайплайна перед выполнением:
+Реализуйте функцию валидации команды перед выполнением:
 
 ```go
-func validatePipeline(pipeline Pipeline, allowedTools map[string]bool) error {
-    // Проверьте risk level
-    // Проверьте allowlist инструментов
-    // Верните ошибку, если пайплайн небезопасен
+func validateCommand(command string, args []string, allowed map[string]bool) error {
+    // Проверьте, что command есть в allowlist
+    // Верните ошибку, если команда не разрешена
 }
 ```
 
 **Ожидаемый результат:**
-- Функция возвращает ошибку для dangerous пайплайнов
-- Функция возвращает ошибку, если используются неразрешенные инструменты
-- Функция возвращает nil для безопасных пайплайнов
+- Функция возвращает ошибку для команд вне allowlist
+- Функция возвращает nil для разрешенных команд
 
 ## Критерии сдачи / Чек-лист
 
 **Сдано:**
-- [x] Агент ищет в базе знаний перед выполнением действий
+- [x] Агент ищет в базе знаний, когда задача требует внутренних процедур
 - [x] Поисковые запросы конкретные и содержат ключевые слова
 - [x] Документы разбиты на чанки подходящего размера
-- [x] Инструмент поиска имеет четкое описание
-- [x] System Prompt инструктирует агента использовать базу знаний
-- [x] Для большого пространства инструментов используется tool retrieval (только релевантные tools в контексте)
-- [x] Пайплайны валидируются перед выполнением (risk level, allowlist)
-- [x] Опасные операции требуют подтверждения
+- [x] Инструмент поиска имеет четкое описание (что лежит в базе — модель решает сама, без «Always search» в промпте)
+- [x] Большое пространство действий оформлено скилами (`SKILL.md` + progressive disclosure) и `exec` с allowlist; tool retrieval — только для реально разных и многочисленных tool'ов
+- [x] Команды проходят allowlist перед выполнением; опасные операции требуют подтверждения
+- [x] Результат поиска укладывается в бюджет tool-результата (~128 KB); чанки хранятся с path/ID, чтобы полный документ можно было вынести в артефакт
 
 **Не сдано:**
 - [ ] Агент не ищет в базе знаний (использует только общие знания)
 - [ ] Поисковые запросы слишком общие (не находит нужную информацию)
 - [ ] Чанки слишком большие (не влезают в контекст)
-- [ ] Все инструменты передаются в контекст без фильтрации (1000+ tools)
+- [ ] Каталог из 20+ tool-обёрток над одной системой вместо скилов и `exec`
 - [ ] Используется универсальный `run_shell` без контроля безопасности
-- [ ] Пайплайны выполняются без валидации
+- [ ] Команды выполняются без allowlist; опасные — без подтверждения
 
 ## Прод-заметки
 
@@ -1165,14 +673,16 @@ func validatePipeline(pipeline Pipeline, allowedTools map[string]bool) error {
 - **Версионирование документов:** Отслеживайте версии документов и дату обновления (`updated_at`). Это помогает понять, какая версия использовалась в ответе.
 - **Freshness (актуальность):** Фильтруйте устаревшие документы (например, старше 30 дней) перед использованием в контексте.
 - **Grounding:** Требуйте от агента ссылаться на найденные документы в ответе. Это снижает галлюцинации и повышает доверие.
+- **Права на чтение:** `read` — главный инструмент доступа к знаниям, и он должен быть ограничен политикой: какие директории можно читать, что логируется и что попадает в контекст, решает runtime (FSHooks-политика), а не модель.
+- **Бюджет tool-результата:** Результат поиска — это обычный tool-результат: ориентир ~128 KB на результат ([гл. 13](../13-context-engineering/README.md)). Что не влезло — выдержка в контексте + полный документ в артефакте ([гл. 11](../11-state-management/README.md)); для этого храните чанки с `path`/`ID`.
 
 Подробнее о прод-готовности: [Глава 19: Observability](../19-observability-and-tracing/README.md), [Глава 23: Evals в CI/CD](../23-evals-in-cicd/README.md).
 
 ## Связь с другими главами
 
-- **Инструменты:** Как инструмент поиска интегрируется в агента, см. [Главу 03: Инструменты](../03-tools-and-function-calling/README.md). Проблема большого списка инструментов решается через tool retrieval (см. раздел "RAG для пространства действий" выше).
+- **Инструменты:** Как инструмент поиска интегрируется в агента, см. [Главу 03: Инструменты](../03-tools-and-function-calling/README.md). Большое пространство действий оформляется скилами и `exec` (раздел «Много инструментов ≠ нужен их каталог» выше; скилы — [гл. 09](../09-agent-architecture/README.md)).
 - **Автономность:** Как RAG работает в цикле агента, см. [Главу 04: Автономность](../04-autonomy-and-loops/README.md)
-- **Tool Servers:** Как получать каталог инструментов динамически через tool servers, см. [Главу 18: Протоколы Инструментов](../18-tool-protocols-and-servers/README.md)
+- **Tool Servers:** Как получать инструменты динамически через tool servers, см. [Главу 18: Протоколы Инструментов](../18-tool-protocols-and-servers/README.md)
 - **MCP Resources:** MCP предоставляет стандартный механизм для доступа к данным (Resources) — [Model Context Protocol](https://modelcontextprotocol.io/)
 
 ## Что дальше?
