@@ -1,58 +1,59 @@
 # 10. Planning and Workflow Patterns
 
-## Why This Chapter?
+## Why does this matter?
 
-Simple ReAct loops work well for straightforward tasks. Once the task becomes multi-step, you usually need planning: break the work into steps, respect dependencies, handle failures, and keep track of progress.
+Simple ReAct loops work fine for straightforward tasks. But as soon as a task becomes multi-step, you usually need planning: break the work into steps, account for dependencies, survive failures without losing progress.
 
-This chapter covers planning patterns that help agents handle complex, long-running work without getting lost.
+In this chapter we'll look at planning patterns that help agents handle complex and long-running tasks.
 
-### Real-World Case Study
+### A real-world case
 
-**Situation:** User asks: "Deploy new microservice: create VM, install dependencies, configure network, deploy application, configure monitoring."
+**Situation:** The user asks: "Deploy a new microservice: create a VM, install dependencies, set up networking, deploy the app, configure monitoring."
 
 **Problem:** A simple ReAct loop may:
-- Jump between steps randomly
-- Skip dependencies (try to deploy before creating VM)
-- Not track which steps are completed
-- Fail and start from scratch
+- Jump between steps at random
+- Skip dependencies (try to deploy before creating the VM)
+- Fail to track which steps are complete
+- Crash and start over from scratch
 
-**Solution:** Use a planning pattern: first create a plan (steps + dependencies), then execute it while tracking state and handling failures.
+**Solution:** The planning pattern: the agent first builds a plan (steps + dependencies), then executes it in order, tracking state and handling failures properly.
 
-## Theory in Simple Terms
+## The theory in plain words
 
-### What Is Planning?
+### What is planning?
 
-Planning is the process of breaking down a complex task into smaller, manageable steps with clear dependencies and execution order.
+Planning is the process of breaking a complex task into smaller, manageable steps with clear dependencies and an execution order.
 
 **Key components:**
-1. **Task decomposition** — Break down large tasks into steps
+1. **Task decomposition** — Break a large task into steps
 2. **Dependency graph** — Understand which steps depend on others
 3. **Execution order** — Determine the sequence (or parallel execution)
-4. **State tracking** — Know what's done, what's in progress, and what failed
+4. **State tracking** — Know what's done, what's in progress, what failed
 5. **Failure handling** — Retry, skip, or abort on errors
 
-### Planning Patterns
+### Planning patterns
 
 **Pattern 1: Plan→Execute**
-- Agent creates complete plan upfront
-- Executes steps sequentially
+- The agent builds a full plan upfront
+- Executes the steps sequentially
 - Simple, but inflexible
 
 **Pattern 2: Plan-and-Revise**
-- Agent creates initial plan
-- Revises plan as it learns (e.g., step failed, new information discovered)
+- The agent builds an initial plan
+- Revises the plan as it learns (e.g., a step failed, new information was discovered)
 - More adaptive, but more complex
 
 **Pattern 3: DAG/Workflow**
 - Steps form a directed acyclic graph
-- Some steps can execute in parallel
+- Some steps can run in parallel
 - Handles complex dependencies
+- This is an option for batch pipelines (CI, ETL, mass processing), not the default for an interactive agent
 
-## How It Works (Step by Step)
+## How it works (step by step)
 
-### Step 1: Task Decomposition
+### Step 1: Task decomposition
 
-Agent receives a high-level task and breaks it into steps:
+The agent receives a high-level task and breaks it into steps:
 
 ```go
 type Plan struct {
@@ -62,7 +63,7 @@ type Plan struct {
 type Step struct {
     ID          string
     Description string
-    Dependencies []string  // IDs of steps that must complete first
+    Dependencies []string  // IDs of steps that must finish first
     Status      StepStatus
     Result      any
     Error       error
@@ -79,76 +80,60 @@ const (
 )
 ```
 
-**Example:** "Deploy microservice" is broken into:
-1. Create VM (no dependencies)
-2. Install dependencies (depends on: Create VM)
-3. Configure network (depends on: Create VM)
-4. Deploy application (depends on: Install dependencies, Configure network)
-5. Configure monitoring (depends on: Deploy application)
+**Example:** "Deploy a microservice" breaks down into:
+1. Create a VM (no dependencies)
+2. Install dependencies (depends on: Create a VM)
+3. Set up networking (depends on: Create a VM)
+4. Deploy the app (depends on: Install dependencies, Set up networking)
+5. Configure monitoring (depends on: Deploy the app)
 
-### Step 2: Create Plan
+### Step 2: Create the plan
 
-Agent uses LLM for task decomposition:
+The agent uses the LLM to decompose the task — **in a single structured-output request**. The JSON Schema is generated from the Go `Plan` struct, and broken JSON from the model is fixed by a repair pass:
 
 ```go
-func createPlan(ctx context.Context, client *openai.Client, task string) (*Plan, error) {
-    prompt := fmt.Sprintf(`Break this task into steps with dependencies:
-Task: %s
-
-Return JSON with array of steps. Each step has: id, description, dependencies (array of step IDs).
-
-Example:
-{
-  "steps": [
-    {"id": "step1", "description": "Create VM", "dependencies": []},
-    {"id": "step2", "description": "Install dependencies", "dependencies": ["step1"]}
-  ]
-}`, task)
-
-    messages := []openai.ChatCompletionMessage{
-        {Role: "system", Content: "You are a planning agent. Break tasks into steps."},
-        {Role: "user", Content: prompt},
-    }
-
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    "gpt-4o-mini",
-        Messages: messages,
-        Temperature: 0, // Deterministic planning
+func createPlan(ctx context.Context, llm *llm.Client, task string) (*Plan, error) {
+    return llm.CompleteStructured(ctx, llm.StructuredRequest{
+        System: "You are a planning agent. Break tasks into steps with dependencies.",
+        User:   "Task: " + task,
+        // The response schema is generated from the Go Plan struct (json tags):
+        // steps[{id, description, dependencies}]
+        Into:        new(Plan),
+        Temperature: 0.2, // decomposition quality; "0 for determinism" is a myth
+        MaxRepair:   2,   // up to two repair attempts for broken JSON
     })
-    if err != nil {
-        return nil, err
-    }
-
-    // Parse JSON response into Plan
-    var plan Plan
-    json.Unmarshal([]byte(resp.Choices[0].Message.Content), &plan)
-    return &plan, nil
 }
 ```
 
-### Step 3: Execute Plan
+What matters here:
 
-Execute steps considering dependencies:
+- **One request → a typed object.** No manual `json.Unmarshal` of the raw response text: without repairing broken JSON (unclosed quotes, a ```json wrapper) parsing fails for no good reason.
+- **Schema from the Go struct.** Change `Plan` and the schema updates itself; there is no separate JSON contract that can drift out of sync.
+- **Temperature 0.2.** A low temperature is about the quality of repeatable decomposition, not about "determinism": an LLM is nondeterministic by nature.
+
+### Step 3: Execute the plan
+
+We execute the steps while respecting dependencies:
 
 ```go
 func executePlan(ctx context.Context, plan *Plan, executor StepExecutor) error {
     for {
-        // Find steps ready to execute (all dependencies completed)
+        // Find steps ready to run (all dependencies completed)
         readySteps := findReadySteps(plan)
         
         if len(readySteps) == 0 {
-            // Check if all completed or stuck
+            // Check whether everything is done or stuck
             if allStepsCompleted(plan) {
                 return nil
             }
             if allRemainingStepsBlocked(plan) {
                 return fmt.Errorf("plan blocked: some steps failed")
             }
-            // Wait for async steps or retry failed steps
+            // Wait for async steps or retry failed ones
             continue
         }
 
-        // Execute ready steps (can be parallel)
+        // Execute ready steps (they may be parallelizable)
         for _, step := range readySteps {
             step.Status = StepStatusRunning
             result, err := executor.Execute(ctx, step)
@@ -177,7 +162,7 @@ func findReadySteps(plan *Plan) []*Step {
             continue
         }
         
-        // Check if all dependencies are completed
+        // Check whether all dependencies are completed
         allDepsDone := true
         for _, depID := range step.Dependencies {
             dep := findStep(plan, depID)
@@ -195,49 +180,38 @@ func findReadySteps(plan *Plan) []*Step {
 }
 ```
 
-### Step 4: Failure Handling
+### Step 4: Failure handling
 
-Implement retry logic with exponential backoff:
+Transient errors (network, API limits) are not the planner's concern: the LLM client retries them itself, with exponential backoff and jitter (see [Chapter 04](../04-autonomy-and-loops/README.md)). At the plan level, what remains is a policy for a step that failed **after** all client-side retries:
 
 ```go
 type StepExecutor interface {
     Execute(ctx context.Context, step *Step) (any, error)
 }
 
-func executeWithRetry(ctx context.Context, executor StepExecutor, step *Step, maxRetries int) (any, error) {
-    var lastErr error
-    backoff := time.Second
-    
-    for attempt := 0; attempt <= maxRetries; attempt++ {
-        if attempt > 0 {
-            // Exponential backoff
-            time.Sleep(backoff)
-            backoff *= 2
-        }
-        
-        result, err := executor.Execute(ctx, step)
-        if err == nil {
-            return result, nil
-        }
-        
-        lastErr = err
-        // Check if error is retryable
-        if !isRetryableError(err) {
-            return nil, err
-        }
+// Plan-level policy: terminal errors (deadline, iteration limit)
+// are never retried — the run stops and is handed to a human.
+func onStepError(step *Step, err error) Decision {
+    if isTerminal(err) {
+        return Abort
     }
-    
-    return nil, fmt.Errorf("failed after %d attempts: %w", maxRetries, lastErr)
+    step.Retries++
+    if step.Retries <= maxStepRetries {
+        return Retry // retry the step; already-completed results are kept
+    }
+    return SkipOrAbort
 }
 ```
 
-### Step 5: Plan State Persistence
+Boundaries — the deadline for the whole run and the iteration limit — are terminal: planning does not override them. When they are exceeded, the run ends with an error and a message to the human, instead of being masked by endless retries. How to store progress for resumption — [Chapter 11](../11-state-management/README.md).
 
-**IMPORTANT:** State persistence for resuming execution is described in [State Management](../11-state-management/README.md). Here, only the plan state structure is described.
+### Step 5: Persisting plan state
+
+**IMPORTANT:** Saving state for resuming execution is covered in [State Management](../11-state-management/README.md). This section only describes the structure of the plan state.
 
 ```go
 // Plan state is used to track progress
-// Persistence and resumption described in State Management
+// Saving and resuming is covered in State Management
 type PlanState struct {
     PlanID    string
     Steps     []Step
@@ -245,11 +219,11 @@ type PlanState struct {
 }
 ```
 
-## LivePlan: Plan as Program State
+## LivePlan: The Plan as Program State
 
-In a typical implementation the plan lives inside messages — as text generated by the model. The problem: when context is condensed (summarised to save tokens), the plan is lost together with other old messages.
+In a typical implementation, the plan is stored in messages — as text generated by the model. The problem: during condense, the plan is lost along with the other old messages.
 
-In practice the plan lives **in a Go struct**, not in messages:
+In practice, the plan lives **in a Go struct**, not in messages:
 
 ```go
 type LivePlan struct {
@@ -275,12 +249,15 @@ const (
 )
 ```
 
-LivePlan is injected into the system prompt on every iteration:
+Where does the plan go in the context? **Not in the system prompt.** The system prompt must stay unchanged from iteration to iteration — otherwise the prompt cache breaks. The plan is dynamic, so it lives in the tail of the history:
+
+1. When the plan is created, its text is added to the history as a regular message (or a file plus a link to it).
+2. From then on, the plan is updated via a tool: the model calls `update_plan`, and the tool call's result — a fresh render of the plan — is inserted into the history before the next iteration.
 
 ```go
 func (p *LivePlan) Render() string {
     var sb strings.Builder
-    sb.WriteString("[PLAN]\n")
+    sb.WriteString("Plan (current):\n")
     sb.WriteString("Goal: " + p.Goal + "\n")
     for _, step := range p.Steps {
         sb.WriteString(fmt.Sprintf("%d. [%s] %s", step.ID, step.Status, step.Description))
@@ -293,69 +270,59 @@ func (p *LivePlan) Render() string {
 }
 ```
 
-The model updates the plan via a `update_plan` tool call. Step status changes automatically when a subagent runs:
+A plan update as a tool result in the history:
+
+```json
+{"role": "assistant", "tool_calls": [{"name": "update_plan",
+  "arguments": {"step": 2, "status": "completed", "result": "401 on /api/auth"}}]}
+{"role": "tool", "name": "update_plan",
+ "content": "Plan (current):\nGoal: ...\n1. [completed] ...\n2. [completed] ...\n3. [pending] ..."}
+```
+
+A step's status changes automatically when a subagent runs:
 - Before execution → `in_progress`
 - After success → `completed`
-- After error → `pending` (rollback)
+- After an error → `pending` (rollback)
 
-Rule: **only one step may be `in_progress` at a time**. When all steps are `completed` or `cancelled` the plan is automatically cleared, freeing space in the system prompt.
+Rule: **only one step in_progress at a time**. When all steps are `completed` or `cancelled`, the plan is automatically cleared, freeing up space in the history.
+
+**Anti-pattern:** inserting the LivePlan into the system prompt on every iteration. The system prompt must stay immutable — that's the condition for the prompt cache to work. Anything that changes from step to step (the plan, intermediate results) is appended to the end of the history as a message or via tool results.
+
+> **Comparison with Crush (Charmbracelet):** Crush stores the plan in `todos` — a UI checklist that lives in messages. It gets lost during summarization. Here the plan lives in a Go struct that survives condensation, and is rendered into the tail of the history.
 
 ## Task Routing: Choosing a Planning Strategy
 
-Not every task needs a plan. A simple question like "What Go version?" does not require decomposition. Task Routing determines the strategy before work begins:
+Not every task needs a plan. A simple question like "Which Go version is installed?" needs no decomposition. The decision rule:
 
-### 3-level routing
+- **Trivial question** (a single answer, no side effects) — answer right away, without a plan.
+- **Multi-step task** (tools, changes, dependencies) — build a plan.
 
-```go
-func routeTask(msg string, llmRouter Router) RoutingResult {
-    // Level 1: Pre-filter (no LLM)
-    if isSimpleRequest(msg) {
-        return RoutingResult{Strategy: "direct"}
-    }
-
-    // Level 2: LLM classification
-    result, err := llmRouter.Classify(msg)
-    if err == nil {
-        return result
-    }
-
-    // Level 3: Keyword fallback
-    return keywordFallback(msg)
-}
-
-func isSimpleRequest(msg string) bool {
-    words := strings.Fields(msg)
-    return len(words) <= 15 &&
-           len(msg) < 150 &&
-           containsFilePath(msg) &&
-           !containsBroadWords(msg) // "all files", "entire project", "refactoring"
-}
-```
+The decision itself can be delegated to the model (structured classification in a single request) or skipped entirely: an agent with `update_plan` will build a plan on its own once the task turns out to be complex. But hard heuristics like "len(words) <= 15 && no word 'refactoring'" are fragile — they break depending on phrasing and silently route complex tasks to `direct`.
 
 | Routing result | What the agent does |
 |-------------------|------------------|
 | `direct` | Executes the task immediately, without planning |
 | `plan` | Calls the `plan` tool first, then executes |
-| `plan_and_subagent` | Creates a plan and launches a subagent for each step |
+| `plan_and_subagent` | Builds a plan, runs a subagent for each step |
 
 ## Two Planning Modes
 
-| Mode | Who controls | When to use |
+| Mode | Who is in control | When to use |
 |-------|---------------|-------------------|
-| **Flexible (guided loop)** | LLM follows the plan in the system prompt | Medium tasks, adaptability needed |
-| **Strict (orchestrator)** | Go code iterates over steps | Large tasks, reliability needed |
+| **Soft (guided loop)** | The LLM follows the plan in the tail of the history | Default for an agent: mid-size tasks, adaptivity |
+| **Hard (orchestrator)** | Go code iterates over the steps | Batch pipelines (CI, ETL) — not the default for an agent |
 
-**Flexible mode:** the plan is injected into a `[PLAN]` section of the system prompt. The LLM decides which step to execute and updates statuses via `update_plan`.
+**Soft mode:** the plan lives at the end of the message history. The LLM itself decides which step to execute and updates statuses via `update_plan`.
 
-**Strict mode:** Go code picks the next `pending` step, forms the task, launches a subagent, receives the result, and updates the status. The LLM does not control the order — the runtime does.
+**Hard mode:** Go code takes the next `pending` step, builds the task, launches a subagent, gets the result, updates the status. The LLM does not control the order — the runtime does. This is reliable for reproducible batch pipelines, but for an interactive agent a hard orchestrator takes away adaptivity — don't make it the default.
 
-Task Routing selects the mode: `plan` → flexible, `plan_and_subagent` → strict.
+Task Routing picks the mode: `plan` → soft, `plan_and_subagent` → hard.
 
-## Common Errors
+## Common Mistakes
 
-### Error 1: No Dependency Tracking
+### Mistake 1: No dependency tracking
 
-**Symptom:** Agent tries to execute steps out of order, causing failures.
+**Symptom:** The agent tries to execute steps out of order, causing failures.
 
 **Cause:** Dependencies between steps are not tracked.
 
@@ -373,29 +340,29 @@ for _, step := range readySteps {
 }
 ```
 
-### Error 2: No State Persistence
+### Mistake 2: No state persistence
 
-**Symptom:** Agent starts from scratch after failure, losing progress.
+**Symptom:** The agent starts from scratch after a failure, losing progress.
 
-**Cause:** Plan state is not persisted.
+**Cause:** Plan state is not saved.
 
-**Solution:** Use techniques from [State Management](../11-state-management/README.md) to persist and resume plan execution.
+**Solution:** Use the techniques from [State Management](../11-state-management/README.md) to save and resume plan execution.
 
-### Error 3: Infinite Retries
+### Mistake 3: Endless retries
 
-**Symptom:** Agent retries failed step forever, wasting resources.
+**Symptom:** The agent retries a failed step forever, wasting resources.
 
 **Cause:** No retry limits or backoff.
 
-**Solution:** Implement maximum retry count and exponential backoff.
+**Solution:** Transient errors are retried by the LLM client (backoff with jitter, see [Chapter 04](../04-autonomy-and-loops/README.md)); at the plan level — a per-step retry limit, and the deadline and iteration limit are terminal: the run stops and is handed to a human.
 
-### Error 4: No Parallel Execution
+### Mistake 4: No parallel execution
 
-**Symptom:** Agent executes independent steps sequentially, wasting time.
+**Symptom:** The agent executes independent steps sequentially, wasting time.
 
-**Cause:** Steps that can execute in parallel are not identified.
+**Cause:** Steps that could run in parallel are not identified.
 
-**Solution:** Use `findReadySteps` to get all ready steps, execute them concurrently:
+**Solution:** Use `findReadySteps` to get all ready steps and execute them concurrently:
 
 ```go
 // Execute ready steps in parallel
@@ -410,149 +377,107 @@ for _, step := range readySteps {
 wg.Wait()
 ```
 
-### Error 5: Plan as Free Text
+### Mistake 5: The plan as free-form text
 
-**Symptom:** The model skips steps — starts Step 3 before finishing Step 2. There is no objective criterion for "step completed".
+**Symptom:** The model skips steps, starts Step 3 without finishing Step 2. There is no objective criterion for "step completed".
 
-**Cause:** The plan is generated as free text with no machine-readable structure. Step statuses are not tracked.
+**Cause:** The plan is generated as free-form text without a machine-readable structure. Step statuses are not tracked.
 
 **Solution:** Use a structured plan with explicit statuses:
+
 ```go
 // BAD: plan as text in messages
-plan := "1. Check logs\n2. Find error\n3. Fix\n4. Test"
+plan := "1. Check the logs\n2. Find the error\n3. Fix it\n4. Test"
 
-// GOOD: LivePlan with tracking
+// GOOD: a LivePlan with tracking
 plan := &LivePlan{
-    Goal: "Fix authorization error",
+    Goal: "Fix the authorization error",
     Steps: []PlanStep{
-        {ID: 1, Description: "Check nginx logs", Status: StepCompleted, Result: "401 on /api/auth"},
-        {ID: 2, Description: "Find root cause in code", Status: StepInProgress},
-        {ID: 3, Description: "Fix middleware", Status: StepPending},
+        {ID: 1, Description: "Check the nginx logs", Status: StepCompleted, Result: "401 on /api/auth"},
+        {ID: 2, Description: "Find the cause in the code", Status: StepInProgress},
+        {ID: 3, Description: "Fix the middleware", Status: StepPending},
         {ID: 4, Description: "Test", Status: StepPending},
     },
 }
 ```
 
-## Pattern: Controller + Processor (orchestrator + normalizer)
+## Pattern: Controller + Processor (Orchestrator + Normalizer)
 
-When a workflow grows, it's useful to separate two concerns:
+When a workflow is complex and there are many tools, it's tempting to split the roles: the **Controller** picks the next step, while the **Processor** normalizes tool results into "state patches" — `state_patch`, `known_facts`, `confidence: 0.9` — right inside the LLM context.
 
-- **Controller (orchestrator)** selects the next step: call a tool or respond to the user.
-- **Processor (analyzer/normalizer)** turns tool results and user answers into a structured state update (for example: "append facts", "replace plan", "add open questions").
+This is an anti-pattern. Fact scoring and state patches inside the context are hidden logic that bypasses the model: it can't be tested, it silently degrades under condensation, and it encourages manually "picking the relevant state." The agent's state should live outside the context — in Go structs and the database ([Chapter 11](../11-state-management/README.md)), and large tool results should live in artifacts outside the history, with only a brief excerpt in the context. Then the Controller becomes the ordinary agent loop from [Chapter 04](../04-autonomy-and-loops/README.md), and a separate Processor isn't needed.
 
-This reduces noise in the agent loop. The controller does not get buried in large outputs. The processor does not decide on side effects.
+## Exercises
 
-Mini-trace (read-only search + file read):
-
-1) Controller calls search.
-
-```json
-{
-  "tool_call": {
-    "name": "search_code",
-    "arguments": { "query": "type ClientError struct" }
-  }
-}
-```
-
-2) ToolRunner stores the raw output as an artifact and returns a short payload (top-k matches).
-
-3) Processor returns a `state_patch`:
-
-```json
-{
-  "replace_plan": [
-    "Read the file with the best match",
-    "Write a short explanation for the user"
-  ],
-  "append_known_facts": [
-    {
-      "key": "client_error_candidate",
-      "value": "pkg/errors/client_error.go:12",
-      "source": "tool",
-      "artifact_id": "srch_123",
-      "confidence": 0.9
-    }
-  ]
-}
-```
-
-4) Controller reads the file and produces the final answer.
-
-## Mini-Exercises
-
-### Exercise 1: Task Decomposition
+### Exercise 1: Task decomposition
 
 Implement a function that breaks a task into steps:
 
 ```go
 func decomposeTask(task string) (*Plan, error) {
-    // Use LLM to create plan
-    // Return Plan with steps and dependencies
+    // Use the LLM to create a plan
+    // Return a Plan with steps and dependencies
 }
 ```
 
 **Expected result:**
-- Plan contains logical steps
-- Dependencies correctly defined
-- Steps can execute in valid order
+- The plan contains logical steps
+- Dependencies are identified correctly
+- Steps can be executed in a valid order
 
-### Exercise 2: Dependency Resolution
+### Exercise 2: Dependency resolution
 
-Implement `findReadySteps` that returns steps whose all dependencies are completed:
-
-```go
-func findReadySteps(plan *Plan) []*Step {
-    // Your implementation
-}
-```
+Implement `findReadySteps` yourself, without peeking at the implementation from "Step 3" (signature: `func findReadySteps(plan *Plan) []*Step`). Then compare your version with the one from the chapter.
 
 **Expected result:**
-- Returns only steps with all satisfied dependencies
-- Handles cyclic dependencies (detects and errors)
+- Returns only steps whose dependencies are all satisfied
+- Handles cyclic dependencies (detects them and errors out)
 
-### Exercise 3: Plan Execution with Retries
+### Exercise 3: Plan execution with retries
 
 Implement plan execution with retry logic:
 
 ```go
 func executePlanWithRetries(ctx context.Context, plan *Plan, executor StepExecutor, maxRetries int) error {
-    // Execute plan with retry logic
-    // Handle failures correctly
+    // Execute the plan with retry logic
+    // Handle failures gracefully
 }
 ```
 
 **Expected result:**
-- Steps execute considering dependencies
-- Failed steps retry up to maxRetries
-- Plan completes or fails correctly
+- Steps are executed with dependencies taken into account
+- Failed steps are retried up to maxRetries times
+- The plan either completes or fails gracefully
 
-## Completion Criteria / Checklist
+## Acceptance Criteria / Checklist
 
-**Completed:**
-- [x] Can break complex tasks into steps
-- [x] Understand dependency graphs
-- [x] Can execute plans considering dependencies
-- [x] Handle failures with retries
-- [x] Persist plan state for resumption
+**Pass:**
+- [x] You can break complex tasks into steps
+- [x] You understand dependency graphs
+- [x] You can execute plans respecting dependencies
+- [x] You handle failures with retries
+- [x] You persist plan state for resumption
+- [x] You understand why the plan lives in the history tail, not in the system prompt
+- [x] You know when routing is needed to choose a strategy
 
-**Not completed:**
-- [ ] Step execution without dependency checks
+**Fail:**
+- [ ] Executing steps without checking dependencies
 - [ ] No state persistence
-- [ ] Infinite retries without limits
+- [ ] Endless retries without limits
 - [ ] Sequential execution when parallel is possible
+- [ ] A plan as free text with no status tracking
 
-## Connection with Other Chapters
+## Relation to Other Chapters
 
-- **[Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md)** — Planning extends ReAct loop for complex tasks
+- **[Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md)** — Planning extends the ReAct loop for complex tasks
 - **[Chapter 07: Multi-Agent Systems](../07-multi-agent/README.md)** — Planning can coordinate multiple agents
-- **[Chapter 11: State Management](../11-state-management/README.md)** — Reliable plan execution (idempotency, retries, persist)
+- **[Chapter 11: State Management](../11-state-management/README.md)** — Reliable plan execution (idempotency, retries, persistence)
 - **[Chapter 21: Workflow and State Management in Production](../21-workflow-state-management/README.md)** — Production workflow patterns
 
-**IMPORTANT:** Planning focuses on **task decomposition** and **dependency graphs**. Execution reliability (persist, retries, deadlines) is described in [State Management](../11-state-management/README.md).
+**IMPORTANT:** Planning focuses on **task decomposition** and **dependency graphs**. Execution reliability (persistence, retries, deadlines) is covered in [State Management](../11-state-management/README.md).
 
 ## What's Next?
 
-After mastering planning patterns, proceed to:
+Once you've mastered the planning patterns, move on to:
 - **[11. State Management](../11-state-management/README.md)** — Learn how to guarantee reliable plan execution
 

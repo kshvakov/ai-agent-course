@@ -1,43 +1,43 @@
 # 14. Ecosystem and Frameworks
 
-## Why This Chapter?
+## Why does this matter?
 
-When creating AI agents, you face a choice: write everything from scratch or use a framework? Both approaches have pros and cons, and understanding when to choose which is critical for long-term success.
+When building AI agents, you face a choice: write everything from scratch or use a framework? Both approaches have pros and cons, and understanding when to pick which is critical for long-term success.
 
-This chapter helps you make informed architecture decisions, avoid vendor lock-in, and use existing solutions when they fit.
+This chapter will help you make architectural decisions, avoid vendor lock-in, and use off-the-shelf solutions where they genuinely fit.
 
-### Real-World Case Study
+### A real-world case
 
-**Situation:** You need to create a DevOps agent. You can:
+**Situation:** You need to build a DevOps agent. You can:
 - Use a popular framework that provides everything out of the box
 - Build your own runtime tailored to your needs
 
 **Problem:**
-- Framework approach: Fast start, but you're locked into their abstractions. When custom logic is needed, you fight the framework.
-- Custom approach: Full control, but you reinvent the wheel. Every function (tool execution, memory, planning) requires implementation.
+- Framework approach: Fast start, but you are locked into their abstractions. When you need custom logic, you fight the framework.
+- Custom approach: Full control, but you reinvent the wheel. Every feature (tool execution, memory, planning) requires implementation.
 
-**Solution:** Understand tradeoffs. Choose framework when speed matters and requirements are standard. Choose custom when specific control is needed or there are unique constraints.
+**Solution:** Understand the trade-offs. Choose a framework when speed matters and requirements are standard. Choose custom when you need specific control or have unique constraints.
 
-## Theory in Simple Terms
+## The theory in plain words
 
-### What Are Agent Frameworks?
+### What are agent frameworks?
 
-Agent frameworks are libraries or platforms that provide the following:
-- **Tool execution infrastructure** — handling function calling, validation, error handling
+Agent frameworks are libraries or platforms that provide:
+- **Tool execution infrastructure** — function calling handling, validation, error handling
 - **Memory management** — context windows, summarization, state persistence
 - **Planning patterns** — ReAct loops, workflow orchestration, task decomposition
 - **Multi-agent coordination** — supervisor patterns, context isolation, routing
 
-**Takeaway:** Frameworks abstract common patterns, but they also impose constraints. Understanding these constraints helps you decide when to use them and when to build custom solutions.
+**The essence:** Frameworks abstract common patterns, but they also impose constraints. Understanding those constraints helps you decide when to use them and when to build custom.
 
-### Custom Runtime vs Framework
+### Custom runtime vs framework
 
-**Custom Runtime:**
+**Custom runtime:**
 - [x] Full control over every component
 - [x] No vendor lock-in
 - [x] Optimized for your specific use case
 - [ ] More code to write and maintain
-- [ ] Need to implement common patterns yourself
+- [ ] You implement common patterns yourself
 
 **Framework:**
 - [x] Fast development, proven patterns
@@ -49,283 +49,136 @@ Agent frameworks are libraries or platforms that provide the following:
 
 ## How to Choose?
 
-### Decision Criteria
+### Decision criteria
 
-**Choose Custom Runtime when:**
+**Choose a custom runtime when:**
 1. **Unique requirements** — Your use case doesn't fit standard patterns
-2. **Performance critical** — Need fine control over latency/cost
-3. **Minimal dependencies** — Want to avoid external dependencies
-4. **Learning goal** — Want to deeply understand internals
-5. **Long-term control** — Need to independently maintain and evolve system
+2. **Performance is critical** — You need fine-grained control over latency/cost
+3. **Minimal dependencies** — You want to avoid external dependencies
+4. **Learning goal** — You want to deeply understand the internals
+5. **Long-term control** — You need to maintain and evolve the system independently
 
-**Choose Framework when:**
+**Choose a framework when:**
 1. **Standard use case** — Your requirements match common patterns
-2. **Time to market** — Need to launch quickly
+2. **Time to market** — You need to ship quickly
 3. **Team familiarity** — Your team already knows the framework
-4. **Rapid prototyping** — Exploring ideas and need quick iterations
-5. **Community support** — Benefit from examples and community knowledge
+4. **Rapid prototyping** — You're exploring ideas and need fast iterations
+5. **Community support** — You benefit from community examples and knowledge
 
-### Portability Considerations
+### Portability considerations
 
-**Avoid vendor lock-in through:**
-- **Interface abstraction** — Define your interfaces for tools, memory, planning
-- **Minimal framework coupling** — Use framework for orchestration, but keep business logic separate
-- **Standard protocols** — Prefer standard formats (JSON Schema for tools, OpenTelemetry for observability)
-- **Gradual migration path** — Design so components can be changed later
+Vendor lock-in in Go is solved by a familiar pattern — **provider drivers registered via a blank import, as in `database/sql`**. The application depends on a small facade (`Client.Chat` / `Client.Stream`), while the concrete provider is plugged in by importing a driver and selected by a name string in the configuration. Switching providers means changing one line, not rewriting code.
 
-### Working with JSON Schema in Go
+Other things that help you avoid locking yourself in:
+- **Standard protocols** — JSON Schema for tools (ch. 03), MCP/A2A for external integrations (ch. 18), OpenTelemetry for observability
+- **Minimal coupling to the framework** — if you do take a framework, keep business logic separate from orchestration
+- **A gradual migration path** — design so that components can be swapped later
 
-When using JSON Schema for tool definitions, prefer Go packages for validation and generation instead of raw `json.RawMessage`. This ensures type safety and better error handling.
+> **How the real SDK does it.** Commercial Go SDKs for LLMs are built exactly this way: eight protocol drivers (Anthropic, OpenAI, Google, and others), an OpenAI-compatible driver serving several providers at once, and a model catalog living in a separate package. The application sees only the facade.
 
-**Example: Using `github.com/xeipuuv/gojsonschema` for validation:**
+### JSON schema and tools
 
-```go
-import (
-    "github.com/xeipuuv/gojsonschema"
-)
+A tool schema is part of the function calling protocol: the LLM receives it in the tool's description and generates arguments based on it. The format is standard JSON Schema (`type`, `properties`, `required`, `enum`); chapter 03 shows it in full, so we won't repeat it here.
 
-// Define tool schema as JSON Schema
-const pingToolSchema = `{
-  "type": "object",
-  "properties": {
-    "host": {
-      "type": "string",
-      "description": "Hostname or IP address to ping"
-    },
-    "count": {
-      "type": "integer",
-      "description": "Number of ping packets",
-      "default": 4,
-      "minimum": 1,
-      "maximum": 10
-    }
-  },
-  "required": ["host"]
-}`
-
-// Validate tool arguments against schema
-func validateToolArgs(schemaJSON string, args map[string]any) error {
-    schemaLoader := gojsonschema.NewStringLoader(schemaJSON)
-    documentLoader := gojsonschema.NewGoLoader(args)
-    
-    result, err := gojsonschema.Validate(schemaLoader, documentLoader)
-    if err != nil {
-        return fmt.Errorf("schema validation error: %w", err)
-    }
-    
-    if !result.Valid() {
-        errors := make([]string, 0, len(result.Errors()))
-        for _, desc := range result.Errors() {
-            errors = append(errors, desc.String())
-        }
-        return fmt.Errorf("validation failed: %s", strings.Join(errors, "; "))
-    }
-    
-    return nil
-}
-
-// Usage when executing tool
-func executePing(args map[string]any) (string, error) {
-    // Validate arguments before execution
-    if err := validateToolArgs(pingToolSchema, args); err != nil {
-        return "", err
-    }
-    
-    host := args["host"].(string)
-    count := 4
-    if c, ok := args["count"].(float64); ok {
-        count = int(c)
-    }
-    
-    // Execute ping...
-    return fmt.Sprintf("Pinged %s %d times", host, count), nil
-}
-```
-
-**Example: Using `github.com/invopop/jsonschema` for schema generation:**
+Rule of thumb: **don't write schemas by hand**. The SDK or your runtime generates the schema from the Go parameter struct via reflection — the struct remains the single source of truth, and the schema and code can never drift apart:
 
 ```go
-import (
-    "encoding/json"
-    "github.com/invopop/jsonschema"
-)
-
-// Define tool parameters as Go struct
-type PingParams struct {
-    Host  string `json:"host" jsonschema:"required,title=Host,description=Hostname or IP address to ping"`
-    Count int    `json:"count" jsonschema:"default=4,minimum=1,maximum=10,title=Count,description=Number of ping packets"`
+type DeployParams struct {
+    Service string `json:"service" jsonschema:"description=Service name"`
+    Env     string `json:"env"     jsonschema:"enum=staging|production"`
 }
 
-// Generate JSON Schema from struct
-func generateToolSchema(params any) (json.RawMessage, error) {
-    reflector := jsonschema.Reflector{
-        ExpandedStruct: true,
-        DoNotReference: false,
-    }
-    
-    schema := reflector.Reflect(params)
-    schemaJSON, err := json.Marshal(schema)
-    if err != nil {
-        return nil, fmt.Errorf("failed to marshal schema: %w", err)
-    }
-    
-    return json.RawMessage(schemaJSON), nil
-}
-
-// Usage: Generate schema for tool
-func registerPingTool() {
-    params := PingParams{}
-    schema, err := generateToolSchema(params)
-    if err != nil {
-        panic(err)
-    }
-    
-    tool := Tool{
-        Name:        "ping",
-        Description: "Ping a host to check connectivity",
-        Schema:      schema, // Use generated schema instead of raw JSON
-    }
-    
-    registry.Register("ping", tool)
-}
+// schema := reflector.Reflect(DeployParams{}) → a ready inputSchema for the tool
 ```
 
-**Advantages of using JSON Schema packages:**
-- **Type safety** — Generate schemas from Go structs
-- **Validation** — Validate arguments before tool execution
-- **Error messages** — Clear validation errors
-- **Maintainability** — Single source of truth (Go struct)
-- **Documentation** — Automatically generated schema descriptions
+Manual JSON Schema validation is justified only at the boundary with external, untrusted data — for example, when arguments arrive over the network from someone else's agent. For your own tools, `json.Unmarshal` into a Go struct is enough: it will itself report type mismatches and missing required fields.
 
-## Common Patterns in Frameworks
+## Patterns Common to All Frameworks
 
-Most frameworks implement similar patterns:
+Under the hood, all frameworks implement the same mechanisms you have already built in this course:
 
-### Pattern 1: Tool Registry
+| Pattern | What it is | Where in the course |
+|---------|---------|-------------|
+| **Tool Registry** | A `name → tool` map plus call dispatch | [Ch. 03](../03-tools-and-function-calling/README.md) |
+| **Agent Loop** | The "LLM → tool call → result → LLM" loop until the final answer | [Ch. 04](../04-autonomy-and-loops/README.md) |
+| **Message History** | A linear list of messages as the agent's memory | [Ch. 12](../12-agent-memory/README.md) |
 
-```go
-// Abstract interface (works with any framework or custom)
-type ToolRegistry interface {
-    Register(name string, tool Tool) error
-    Get(name string) (Tool, error)
-    List() []string
-}
+A separate warning concerns the **memory abstraction** (a `Memory` with `Store`/`Retrieve`/`Search` methods) that frameworks often offer in the name of "portability." In practice this is an anti-pattern: an agent's memory is a linear message history plus `condense` on context overflow ([ch. 12](../12-agent-memory/README.md)). A universal memory interface solves the problem of switching frameworks — a problem you don't have — and fails to solve the context overflow problem, which you do have. If a framework imposes such an abstraction, check its memory model before adopting it, not after.
 
-// Framework may provide:
-type FrameworkToolRegistry struct {
-    tools map[string]Tool
-}
+## Frameworks and the Ecosystem
 
-func (r *FrameworkToolRegistry) Register(name string, tool Tool) error {
-    r.tools[name] = tool
-    return nil
-}
-```
+### A survey of real frameworks
 
-**Takeaway:** Define your interfaces. Framework becomes an implementation detail.
+> **Disclaimer:** agent frameworks evolve quickly — major releases come out every few months, APIs break, strengths and weaknesses shift. The summary below is a snapshot as of the time of writing. Before choosing, check the latest documentation, recent releases, and real production experience (issue trackers, downgrade reports).
 
-### Pattern 2: Agent Loop
+**LangGraph (Python, LangChain).** Graph-based agents: every step is a graph node, and transitions are defined by conditions. Suited to complex workflows with branching and loops.
 
-```go
-// Abstract agent loop interface
-type AgentLoop interface {
-    Run(ctx context.Context, input string) (string, error)
-    AddTool(tool Tool) error
-    SetMemory(memory Memory) error
-}
+**CrewAI (Python).** Multi-agent systems: agents are grouped into "crews" with roles and tasks. Convenient for scenarios where several agents collaborate toward a shared goal.
 
-// Your code uses interface, not framework directly
-func processRequest(agent AgentLoop, userInput string) (string, error) {
-    return agent.Run(context.Background(), userInput)
-}
-```
+**AutoGen (Microsoft, Python).** Multi-agent systems with an emphasis on dialogue between agents. In v0.4 it was rewritten from scratch (a new core plus the AgentChat framework on top) — treat pre-v0.4 materials and tutorials with caution: it is effectively a different framework.
 
-**Takeaway:** Dependency injection allows changing implementations.
+**Semantic Kernel (Microsoft, .NET/Python).** An orchestrator that integrates LLMs with existing code through "plugins." Aimed at the enterprise and the Microsoft ecosystem.
 
-### Pattern 3: Memory Abstraction
+**OpenAI Agents SDK (Python/JS).** A lightweight SDK: an agent as a loop with tools, handoffs between agents, guardrails.
 
-```go
-// Abstract memory interface
-type Memory interface {
-    Store(key string, value any) error
-    Retrieve(key string) (any, error)
-    Search(query string) ([]any, error)
-}
+**Google ADK (Python/Java).** Google's Agent Development Kit, tightly integrated with Vertex AI.
 
-// Framework memory implements your interface
-type FrameworkMemory struct {
-    // Framework-specific implementation
-}
+**pydantic-ai (Python).** Typed agents: tool schemas are generated from pydantic models — the same idea as generating from a Go struct in [ch. 03](../03-tools-and-function-calling/README.md).
 
-func (m *FrameworkMemory) Store(key string, value any) error {
-    // Adapt framework API to your interface
-}
-```
+**Vercel AI SDK (TypeScript).** Agent primitives for the web stack.
 
-**Takeaway:** Your interfaces define the contract. Frameworks provide implementations.
+The list is not exhaustive: the market changes faster than books — verify currency at the time of reading.
 
-## Frameworks and Ecosystem
-
-### Overview of Real Frameworks
-
-In practice, most teams pick one of the popular frameworks. Here are the main players:
-
-**LangGraph (Python, LangChain).** Framework for building agents using state graphs. Each agent step is a graph node; transitions are defined by conditions. Best for complex workflows with branching and cycles.
-
-**CrewAI (Python).** Framework for multi-agent systems. Agents are organized into "crews" with roles and tasks. Convenient when multiple agents collaborate toward a common goal.
-
-**AutoGen (Microsoft, Python).** Framework for multi-agent systems focused on agent-to-agent dialogue. Agents communicate via messages, supports human-in-the-loop.
-
-**Semantic Kernel (Microsoft, .NET/Python).** Orchestrator framework that integrates LLMs with existing code through "plugins". Geared toward enterprise scenarios. Supports .NET and Python.
-
-### Comparison Table
-
-> **Disclaimer:** agent frameworks evolve fast — major releases ship every few months, APIs break, strengths and weaknesses shift. The table below is a snapshot at the time of writing. Before choosing one, check the latest documentation, recent releases, and real production reports (issue trackers, downgrade write-ups).
+### Comparison table
 
 | Framework | Language | Strengths | Weaknesses |
-|-----------|----------|-----------|------------|
+|-----------|------|----------------|---------------|
 | **LangGraph** | Python | Graph-based workflows, flexible state, streaming | Complex API, steep learning curve |
 | **CrewAI** | Python | Simple multi-agent coordination, roles | Less flexible for non-standard patterns |
-| **AutoGen** | Python | Conversational multi-agent systems, Microsoft backing | Heavyweight, hard to debug |
-| **Semantic Kernel** | .NET, Python | Enterprise-ready, Azure integration | Tied to Microsoft ecosystem |
+| **AutoGen** | Python | Conversational multi-agent systems, Microsoft backing | Heavyweight, hard to debug; v0.4 is effectively a new framework |
+| **Semantic Kernel** | .NET, Python | Enterprise-ready, Azure integration | Oriented toward the Microsoft ecosystem |
 
-### MCP Ecosystem
+### What about Go?
 
-MCP (Model Context Protocol) is an open protocol for connecting tools to LLMs. The MCP ecosystem is growing fast: catalogs of MCP servers are appearing for databases, file systems, APIs, browsers, and other integrations.
+There is no dominant agent framework in Go — and that's fine. The working choice of most Go teams: small facade libraries for LLM providers (the driver pattern described above) plus their own agent loop of 300–500 lines, which you write in [chapter 04](../04-autonomy-and-loops/README.md). It's a boring and verifiable solution: all the agent code is yours, debugging is ordinary, dependencies are minimal. A framework is justified when you specifically need its ready-made orchestration patterns, not "to avoid writing the loop by hand."
 
-The advantage of MCP is one protocol for all tools. An agent connects to an MCP server and gets access to its tools without writing custom integration code. For more details, see [Chapter 18: Tool Protocols and Tool Servers](../18-tool-protocols-and-servers/README.md).
+### The MCP ecosystem
 
-### A2A Ecosystem
+MCP (Model Context Protocol) is an open protocol for connecting tools to LLM agents: one protocol, and any MCP server works with any MCP client. The ecosystem of ready-made servers (databases, file systems, APIs, browsers) is growing fast. The protocol itself is covered in [Chapter 18: Tool Protocols and Tool Servers](../18-tool-protocols-and-servers/README.md).
 
-A2A (Agent-to-Agent) is a protocol from Google for inter-agent communication. Each agent publishes an "Agent Card" describing its capabilities. Other agents discover it and send tasks via a standard HTTP API.
+### The A2A ecosystem
 
-A2A solves the interoperability problem: agents from different teams and frameworks interact through a single protocol. For more details, see [Chapter 18: Tool Protocols and Tool Servers](../18-tool-protocols-and-servers/README.md).
+A2A (Agent-to-Agent) is an open protocol for agents to interact with each other: each agent publishes a discovery document describing its capabilities, and others find it and delegate tasks through a standard HTTP API. Details in [Chapter 18](../18-tool-protocols-and-servers/README.md).
 
-### Why This Course Teaches from Scratch
+### Skills
+
+A separate layer of the ecosystem is skills (Skills, [agentskills.io](https://agentskills.io/)): knowledge packages in the `SKILL.md` format with progressive disclosure — the agent loads an instruction only when a task calls for it. Supported by Cursor, Claude Code, VS Code, and others. Covered in detail in [Chapter 09: Anatomy of an Agent](../09-agent-architecture/README.md#skills).
+
+### Why this course teaches from scratch
 
 This course builds an agent from scratch for several reasons:
 
-1. **Understanding the foundation.** A framework hides details behind abstractions. When something breaks, you don't know where to look. By writing the agent loop, tool registry, and memory store yourself, you understand every component.
+1. **Understanding the foundation.** A framework hides details behind abstractions. When something breaks, you don't know where to look. Having written the agent loop, tool registry, and message history with your own hands, you understand every component.
 
-2. **Informed choice.** After implementing from scratch, you know exactly what problems a framework solves. The decision to "use LangGraph" or "write custom" becomes deliberate, not accidental.
+2. **Informed choices.** After implementing things from scratch, you know exactly which problems a framework solves. The decision "use LangGraph" or "write custom" becomes justified rather than accidental.
 
-3. **Portable knowledge.** Frameworks change. Knowledge of principles (agent loop, Function Calling, context management) transfers to any framework. Knowledge of a specific API does not.
+3. **Portability of knowledge.** Frameworks change. Knowing the principles (agent loop, function calling, context management) transfers to any framework. Knowing a specific API does not.
 
-4. **Go as an explicit language.** Most frameworks are written in Python. This course uses Go, which forces you to implement patterns explicitly — no decorator "magic" or metaprogramming.
+4. **Go as an explicit language.** Most frameworks are written in Python. This course uses Go, which forces you to implement patterns explicitly — without the "magic" of decorators and metaprogramming.
 
-5. **Simplicity over fashion.** Many "advanced" patterns from agent posts and surveys turn out to be unnecessary in practice. A linear message history, a single `condense` on overflow, a fixed system prompt, an iteration limit, repeat protection — that's enough for most tasks (see [Ch. 12](../12-agent-memory/README.md), [Ch. 13](../13-context-engineering/README.md)). Multi-level compression, message-importance scoring, dynamic prompts, heavy "memory frameworks" usually solve the wrong problem: they're expensive, they kill prompt cache, and they complicate debugging — while rarely paying off on real workloads. That doesn't mean they're always harmful — but before you adopt them, check the basics and confirm that a simple solution really isn't enough. When you write the runtime yourself, that difference is obvious.
+5. **Simplicity over fashion.** Many "advanced" patterns from agent reviews and blog posts turn out to be unnecessary in practice. A linear message history, a single `condense` on context overflow, a fixed system prompt, an iteration limit, repetition defense — that's enough for most tasks (see [ch. 12](../12-agent-memory/README.md), [ch. 13](../13-context-engineering/README.md)). Multi-level condensation, message importance scoring, dynamic prompts, and heavy "memory frameworks" usually solve the wrong problem: they are expensive, break the prompt cache, and complicate debugging, while rarely paying off under real workloads. This doesn't mean they are always harmful — but before adopting them, it's worth verifying the basic mechanisms and making sure the simple solution really isn't enough. When you write the runtime yourself, this difference is immediately visible.
 
-## Common Errors
+## Common Mistakes
 
-### Error 1: Vendor Lock-In
+### Mistake 1: Vendor lock-in
 
-**Symptom:** Your code is tightly coupled to framework API. Changing frameworks requires rewriting everything.
+**Symptom:** Your code is tightly coupled to the framework's API. Switching frameworks requires rewriting everything.
 
-**Cause:** Using framework types directly instead of defining your interfaces.
+**Cause:** Using framework types directly instead of defining your own interfaces.
 
 **Solution:**
 ```go
-// BAD: Direct dependency on framework
+// BAD: Direct dependency on the framework
 func processRequest(frameworkAgent *FrameworkAgent) {
     result := frameworkAgent.Execute(userInput)
 }
@@ -339,7 +192,7 @@ func processRequest(agent Agent, userInput string) (string, error) {
     return agent.Execute(userInput)
 }
 
-// Framework adapter implements your interface
+// A framework adapter implements your interface
 type FrameworkAdapter struct {
     agent *FrameworkAgent
 }
@@ -349,106 +202,59 @@ func (a *FrameworkAdapter) Execute(input string) (string, error) {
 }
 ```
 
-### Error 2: Over-Engineering Custom Runtime
+### Mistake 2: Over-engineering a custom runtime
 
 **Symptom:** You spend months building features that frameworks provide out of the box.
 
-**Cause:** Not evaluating if custom implementation is really needed.
+**Cause:** You don't evaluate whether a custom implementation is really needed.
 
-**Solution:** Start with framework for prototyping. Extract to custom only when hitting real limitations.
+**Solution:** Start with a framework for prototyping. Extract into custom code only when you hit real limitations.
 
-### Error 3: Ignoring Framework Limitations
+### Mistake 3: Ignoring framework limitations
 
-**Symptom:** You constantly fight the framework, trying to make it do things it wasn't designed for.
+**Symptom:** You constantly fight the framework, trying to make it do what it was never designed for.
 
-**Cause:** Don't understand framework design decisions and limitations.
+**Cause:** You don't understand the framework's design decisions and limitations.
 
-**Solution:** Read framework documentation carefully. If limitations are too strong, consider custom runtime.
+**Solution:** Read the framework documentation carefully. If the limitations are too severe, consider a custom runtime.
 
-### Error 4: No Migration Path
+### Mistake 4: No migration path
 
-**Symptom:** You're locked with framework even when it no longer fits your needs.
+**Symptom:** You are locked in with a framework even when it no longer fits your needs.
 
 **Cause:** Tight coupling makes migration impossible without rewriting everything.
 
-**Solution:** Design with interfaces from the start. Keep framework as implementation detail, not main dependency.
+**Solution:** Design with interfaces from the start. Keep the framework as an implementation detail, not the primary dependency.
 
-## Mini-Exercises
+## Exercises
 
-### Exercise 1: Define Tool Interface with JSON Schema
+### Exercise 1: The tool interface
 
-Create an abstract `Tool` interface that works independently of any framework, using JSON Schema for validation:
+Define a framework-independent `Tool` interface. The schema is generated from the Go parameter struct — no hand-written JSON needed:
 
 ```go
-import (
-    "context"
-    "encoding/json"
-    "github.com/invopop/jsonschema"
-    "github.com/xeipuuv/gojsonschema"
-)
-
 type Tool interface {
     Name() string
     Description() string
+    Schema() json.RawMessage // generated from the parameter struct (reflection)
     Execute(ctx context.Context, args map[string]any) (any, error)
-    Schema() json.RawMessage
-    ValidateArgs(args map[string]any) error
 }
 
-// Example implementation with JSON Schema validation
-type PingTool struct {
-    schema json.RawMessage
+type PingParams struct {
+    Host string `json:"host" jsonschema:"description=Hostname or IP"`
 }
 
-func (t *PingTool) Name() string {
-    return "ping"
-}
-
-func (t *PingTool) Description() string {
-    return "Ping a host to check connectivity"
-}
-
-func (t *PingTool) Schema() json.RawMessage {
-    return t.schema
-}
-
-func (t *PingTool) ValidateArgs(args map[string]any) error {
-    // Use gojsonschema for validation
-    schemaLoader := gojsonschema.NewBytesLoader(t.schema)
-    documentLoader := gojsonschema.NewGoLoader(args)
-    
-    result, err := gojsonschema.Validate(schemaLoader, documentLoader)
-    if err != nil {
-        return err
-    }
-    
-    if !result.Valid() {
-        return fmt.Errorf("validation failed: %v", result.Errors())
-    }
-    
-    return nil
-}
-
-func (t *PingTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-    // Validate before execution
-    if err := t.ValidateArgs(args); err != nil {
-        return nil, err
-    }
-    
-    // Execute tool...
-    return "pong", nil
-}
+// The schema comes from the struct; in Execute the arguments are unpacked into it via json.Unmarshal
 ```
 
-**Expected result:**
-- Interface doesn't depend on framework
-- Can be implemented by any framework adapter
-- Provides all necessary information for tool execution
-- Includes JSON Schema validation
+**Expected outcome:**
+- The interface is independent of any framework; a framework adapter can implement it
+- The schema comes from a Go struct, not hand-written JSON (single source of truth)
+- Argument validation is done via `json.Unmarshal` into the parameter struct
 
-### Exercise 2: Framework Adapter
+### Exercise 2: A framework adapter
 
-Create an adapter that wraps framework tool system to implement your `Tool` interface:
+Create an adapter that wraps a framework's tool system to implement your `Tool` interface:
 
 ```go
 type FrameworkToolAdapter struct {
@@ -456,63 +262,62 @@ type FrameworkToolAdapter struct {
 }
 
 func (a *FrameworkToolAdapter) Name() string {
-    // Adapt framework tool name
+    // Adapt the framework tool's name
 }
 
 func (a *FrameworkToolAdapter) Execute(ctx context.Context, args map[string]any) (any, error) {
-    // Convert your interface to framework API
+    // Convert your interface to the framework's API
 }
 ```
 
-**Expected result:**
-- Framework becomes implementation detail
+**Expected outcome:**
+- The framework becomes an implementation detail
 - Your code uses your interfaces
-- Easy to change frameworks later
+- Frameworks are easy to swap later
 
-### Exercise 3: Decision Matrix
+### Exercise 3: Decision matrix
 
-Create a decision matrix for choosing between custom runtime and framework:
+Create a decision matrix for choosing between a custom runtime and a framework:
 
 | Criterion | Custom Runtime | Framework |
-|----------|----------------|-----------|
+|----------|-------------------|-----------|
 | Development speed | ? | ? |
 | Flexibility | ? | ? |
 | Maintenance burden | ? | ? |
 | Vendor lock-in risk | ? | ? |
 
-Fill the matrix based on your specific requirements.
+Fill in the matrix based on your specific requirements.
 
-**Expected result:**
-- Clear understanding of tradeoffs
-- Informed decision for your use case
+**Expected outcome:**
+- A clear understanding of the trade-offs
+- A justified decision for your use case
 
-## Completion Criteria / Checklist
+## Acceptance Criteria / Checklist
 
 **Done:**
-- [x] You understand when to use a framework vs a custom runtime.
-- [x] You know how to avoid vendor lock-in through your own interfaces (Tool, Memory, AgentLoop).
-- [x] You can evaluate a framework against your requirements and stay calm about loud claims of "revolutionary" patterns.
-- [x] You understand the shared patterns that recur across all frameworks (Tool Registry, Agent Loop, Memory).
-- [x] When picking a framework, you double-check that the data is current (releases, issues, real production reports).
+- [x] You understand when to use frameworks vs a custom runtime.
+- [x] You know how to avoid vendor lock-in: a `database/sql`-style provider facade and your own interfaces (Tool).
+- [x] You can evaluate a framework against your requirements and stay calm about loud promises of "revolutionary" patterns.
+- [x] You understand the patterns common to all frameworks (Tool Registry, Agent Loop, message history).
+- [x] When choosing a framework, you check data freshness (releases, issues, real production feedback).
 
 **Not done:**
-- [ ] Picking a framework without evaluating requirements.
-- [ ] Tight coupling to the framework API (framework types leak everywhere into business logic).
-- [ ] No migration path if the framework turns out to be a wrong fit.
-- [ ] Ignoring framework limitations ("I'll force it to do what it wasn't designed for").
-- [ ] Blindly copying "advanced" patterns from other repos and blog posts without understanding the specific problem they solve.
+- [ ] Choosing a framework without evaluating requirements.
+- [ ] Tight coupling to the framework's API (framework types all over the business logic).
+- [ ] No migration path if the framework turns out to be a poor fit.
+- [ ] Ignoring framework limitations ("I'll make it do what it wasn't designed for").
+- [ ] Blindly copying "advanced" patterns from other people's repositories and blog posts without understanding what specific problem they solve.
 
-## Connection with Other Chapters
+## Relation to Other Chapters
 
-- **[Chapter 09: Agent Anatomy](../09-agent-architecture/README.md)** — understanding the agent's components helps you evaluate frameworks.
-- **[Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md)** — tool interfaces are key to portability.
-- **[Chapter 10: Planning and Workflow Patterns](../10-planning-and-workflows/README.md)** — frameworks often ship planning patterns.
-- **[Chapter 12: Agent Memory Systems](../12-agent-memory/README.md)** and **[Chapter 13: Context Engineering](../13-context-engineering/README.md)** — the simple memory and context model to measure any framework against before adopting it as an "advanced" solution.
-- **[Chapter 18: Tool Protocols and Tool Servers](../18-tool-protocols-and-servers/README.md)** — standard protocols (MCP, A2A) reduce vendor lock-in.
-- **[Agent Skills](https://agentskills.io/)** — open format for agent skills (`SKILL.md`), supported by Cursor, Claude Code, VS Code, and others. See [Chapter 09: Agent Anatomy](../09-agent-architecture/README.md#skills).
+- **[Chapter 09: Anatomy of an Agent](../09-agent-architecture/README.md)** — Understanding agent components helps you evaluate frameworks.
+- **[Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md)** — Tool interfaces are the key to portability.
+- **[Chapter 10: Planning and Workflow Patterns](../10-planning-and-workflows/README.md)** — Frameworks often provide planning patterns.
+- **[Chapter 12: Agent Memory Systems](../12-agent-memory/README.md)** and **[Chapter 13: Context Engineering](../13-context-engineering/README.md)** — The simple memory and context model against which you should measure any framework before taking it on as an "advanced" solution.
+- **[Chapter 18: Tool Protocols and Tool Servers](../18-tool-protocols-and-servers/README.md)** — Standard protocols (MCP, A2A) reduce vendor lock-in.
+- **[Agent Skills](https://agentskills.io/)** — An open format for agent skills (`SKILL.md`), supported by Cursor, Claude Code, VS Code, and others. See [Chapter 09: Anatomy of an Agent](../09-agent-architecture/README.md#skills).
 
 ## What's Next?
 
-After understanding the ecosystem, proceed to:
-- **[15. Real-World Case Studies](../15-case-studies/README.md)** — Study examples of real agents
-
+Having understood the ecosystem, move on to:
+- **[15. Case Studies from Real Practice](../15-case-studies/README.md)** — Study examples of real agents

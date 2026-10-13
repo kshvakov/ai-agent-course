@@ -1,41 +1,50 @@
 # 07. Multi-Agent Systems
 
-## Why This Chapter?
+## Why does this matter?
 
-A single "jack-of-all-trades" agent often gets confused with tools. When an agent has too many tools (20+), the model starts getting confused during selection and makes mistakes.
+When an agent accumulates a lot of tools (20+), the first impulse is to "hire a team": a Supervisor and narrow specialists. This is almost always the wrong answer. The right one is **skills and progressive disclosure** ([ch. 09](../09-agent-architecture/README.md)): the model sees one line per skill and pulls in the details itself, only when they are needed; long descriptions do not ride along in every request. The cheap solution to the same "too much of everything in the context" problem is RAG ([ch. 06](../06-rag/README.md)).
 
-It's more efficient to divide responsibility: create a team of narrow specialists, managed by a main agent (Supervisor). Each specialist knows only their tools and focuses on their area.
+Multi-agent setups solve a different problem — **context isolation and independent verification**:
 
-### Real-World Case Study
+1. **Review with a clean memory.** A model reviewing its own work agrees with itself: in its history it sees *why* it made a decision and checks its own justification, not the result. A subagent reviewer receives only the artifact (a diff, a report) and the criteria — no parent history.
+2. **Moving noisy reading out.** Searching logs, analyzing a codebase — dozens of `read`/`search` calls with large results. A subagent pumps them through its own short history and returns one page of conclusions to the parent, without bloating the parent's memory.
 
-**Situation:** You've created a DevOps agent with 15 tools: network checks, database work, service management, logs, metrics, security, etc.
+Splitting into "narrow specialists" is not the default answer to "many tools"; it is an exception that needs justification (when — see the Supervisor pattern below).
 
-**Problem:** The agent gets confused with tools. When a user asks "Check DB availability and find out version", the agent may call the wrong tool or skip a step.
+### A real-world case
 
-**Solution:** Multi-Agent system with Supervisor and specialists. Supervisor delegates the task to Network Expert for availability check and DB Expert for version retrieval. Each specialist focuses only on their area.
+**Situation:** You have built a DevOps agent with 15 tools: network checks, database work, service management, logs, metrics, security, and so on.
 
-> **Junior employee model.** Supervisor + specialists is "team lead + team". Each team member has their own set of tools and accesses; nobody gets the rights of "everyone else combined" — that's a basic hiring principle, not LLM-specific. Delegating a subtask to a sub-agent = delegating to a person: you pass along **only the necessary** access and context, and you get back a result, not "all of my tooling". See [Preface → Mental Model](../00-preface/README.md#mental-model-an-agent-is-a-new-employee) and [Ch. 17: Security and Governance](../17-security-and-governance/README.md).
+**Problem:** The agent gets confused among the tools. When the user asks "Check whether the DB is reachable and find out its version", the agent may call the wrong tool or skip a step.
 
-## Theory in Simple Terms
+**The first step is not multi-agent.** Remove the noise from the context: skills for groups of tools (ch. 09), progressive disclosure for descriptions. In most cases that is enough, and you end up with a single agent loop.
 
-### How Does Multi-Agent Work?
+**When Supervisor/Worker is actually justified:** the domains are genuinely different (network, DB, security), reading in each domain is noisy (dozens of calls with large results), and context isolation yields real savings. Then the Supervisor delegates: the Network Expert for the reachability check, the DB Expert for the version — not because "a team must have roles", but because each specialist pumps the noise through its own short history.
 
-1. **Supervisor receives a task** from the user
-2. **Supervisor analyzes the task** and decides which specialists are needed
-3. **Supervisor calls specialists** via tool calls
-4. **Specialists perform tasks** in isolated context
-5. **Results are returned to Supervisor**, who assembles the response
+> **Junior employee model.** Delegating to a subagent = delegating to a human: along with the task goes **only the necessary** context, what comes back is a report, not "my entire toolkit". A subagent is a pure function `task → result`: the parent's memory is not inherited. See [Preface → Mental Model](../00-preface/README.md#mental-model-an-agent-is-a-new-employee) and [Ch. 17: Security and Governance](../17-security-and-governance/README.md).
 
-**Takeaway:** Context isolation — each specialist receives only their task, not the entire Supervisor history. This saves tokens and helps focus attention.
+## The theory in plain words
 
-## Supervisor Pattern (Boss-Subordinate)
+### How does Multi-Agent work?
+
+1. **The Supervisor receives a task** from the user
+2. **The Supervisor analyzes the task** and decides which specialists are needed
+3. **The Supervisor invokes the specialists** via tool calls
+4. **The specialists do their work** in isolated contexts
+5. **The results return to the Supervisor**, which assembles the answer
+
+**The essence:** context isolation — each specialist sees only its own task, not the Supervisor's entire history. This saves tokens and keeps attention focused.
+
+## The Supervisor Pattern (Boss–Subordinate)
+
+> This is an exception pattern, not the default. It is justified when the domains are genuinely different and reading in each of them is noisy — then context isolation pays off. If the motivation is "the agent has many tools", the right answer is skills ([ch. 09](../09-agent-architecture/README.md)), not a Supervisor.
 
 **Architecture:**
 
-- **Supervisor:** Main brain. Has no tools, but knows who can do what.
-- **Workers:** Specialized agents with a narrow set of tools.
+- **Supervisor:** the main brain. It has no tools of its own, but it knows who can do what.
+- **Workers:** specialized agents with a narrow set of tools.
 
-**Context isolation:** Worker doesn't see the entire Supervisor conversation, only their task. This saves tokens and focuses attention.
+**Context isolation:** a Worker does not see the Supervisor's entire conversation, only its own task. This saves tokens and keeps attention focused.
 
 ```mermaid
 graph TD
@@ -49,216 +58,202 @@ graph TD
     Supervisor --> User
 ```
 
-## DevOps Example — Magic vs Reality
+## The DevOps Example — Magic vs Reality
 
-**Magic:**
-> Supervisor "thinks" and "delegates" tasks to specialists
+**The magic:**
+> The Supervisor "thinks" and "delegates" tasks to specialists
 
-**Reality:**
+**The reality:**
 
-### How Multi-Agent Works in Practice
+### How Multi-Agent works in practice
 
-**Step 1: Supervisor Receives Task**
+**Step 1: The Supervisor receives the task**
 
 ```go
-// Supervisor has tools to call Workers
-supervisorTools := []openai.Tool{
+// The Supervisor has tools for invoking Workers (neutral types — ch. 03)
+supervisorTools := []ToolDef{
     {
-        Function: &openai.FunctionDefinition{
-            Name: "ask_network_expert",
-            Description: "Ask the network specialist about connectivity, pings, ports",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "question": {"type": "string"}
-                },
-                "required": ["question"]
-            }`),
-        },
+        Name:        "ask_network_expert",
+        Description: "Ask the network specialist about connectivity, pings, ports",
+        Parameters: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "question": {"type": "string"}
+            },
+            "required": ["question"]
+        }`),
     },
     {
-        Function: &openai.FunctionDefinition{
-            Name: "ask_database_expert",
-            Description: "Ask the DB specialist about SQL, schemas, data",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "question": {"type": "string"}
-                },
-                "required": ["question"]
-            }`),
-        },
+        Name:        "ask_database_expert",
+        Description: "Ask the DB specialist about SQL, schemas, data",
+        Parameters: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "question": {"type": "string"}
+            },
+            "required": ["question"]
+        }`),
     },
 }
 
-supervisorMessages := []openai.ChatCompletionMessage{
+supervisorMessages := []Message{
     {Role: "system", Content: "You are a Supervisor. Delegate tasks to specialists."},
-    {Role: "user", Content: "Check if DB server is available, and if yes — find out version"},
+    {Role: "user", Content: "Проверь, доступен ли сервер БД, и если да — узнай версию"},
 }
 ```
 
-**Step 2: Supervisor Generates Tool Calls for Workers**
+**Step 2: The Supervisor generates tool calls for the Workers**
 
 ```go
-supervisorResp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    "gpt-4o",
+client, err := NewClient(...) // provider from the config (ch. 04)
+
+supervisorResp, err := client.Complete(ctx, Request{
+    Model:    "glm-5.3",
     Messages: supervisorMessages,
     Tools:    supervisorTools,
-})
+}) // the error is handled by the loop (ch. 04)
 
 supervisorMsg := supervisorResp.Choices[0].Message
 // supervisorMsg.ToolCalls = [
-//     {Function: {Name: "ask_network_expert", Arguments: "{\"question\": \"Check availability of db-host.example.com\"}"}},
-//     {Function: {Name: "ask_database_expert", Arguments: "{\"question\": \"What PostgreSQL version on db-host?\"}"}},
+//     {ID: "call_1", Name: "ask_network_expert", Arguments: "{\"question\": \"Проверь доступность db-host.example.com\"}"},
+//     {ID: "call_2", Name: "ask_database_expert", Arguments: "{\"question\": \"Какая версия PostgreSQL на db-host?\"}"},
 // ]
 ```
 
-**Why did Supervisor call both tools?**
-- Supervisor receives task "check availability" → links to Network Expert
-- Supervisor receives "find out version" → links to DB Expert
-- Supervisor understands sequence: first network, then DB
+**Why did the Supervisor call both tools?**
+- The Supervisor sees the task "check reachability" → associates it with the Network Expert
+- The Supervisor sees "find out the version" → associates it with the DB Expert
+- The Supervisor understands the sequence: network first, then the DB
 
-**Step 3: Runtime (Your Code) Calls Worker for Network Expert**
+**Step 3: The Runtime (your code) invokes the Worker for the Network Expert**
 
-> **Note:** Runtime is the agent code you write in Go. See [Chapter 00: Preface](../00-preface/README.md#runtime-execution-environment) for definition.
+> **Note:** The Runtime is the agent code that you write in Go. See [Chapter 00: Preface](../00-preface/README.md#runtime) for the definition.
 
 ```go
-// Runtime intercepts tool call "ask_network_expert"
+// The Runtime intercepts the "ask_network_expert" tool call
 func askNetworkExpert(question string) string {
-    // Create NEW context for Worker (isolation!)
-    workerMessages := []openai.ChatCompletionMessage{
+    client, err := NewClient(...) // provider from the config (ch. 04)
+
+    // Create a NEW context for the Worker (isolation!)
+    workerMessages := []Message{
         {Role: "system", Content: "You are a Network Specialist. Use ping tool to check connectivity."},
-        {Role: "user", Content: question},  // Only question, without entire Supervisor history!
+        {Role: "user", Content: question},  // Only the question, none of the Supervisor's history!
     }
     
-    // Worker has its own tools
-    workerTools := []openai.Tool{
+    // The Worker has its own tools
+    workerTools := []ToolDef{
         {
-            Function: &openai.FunctionDefinition{
-                Name: "ping",
-                Description: "Ping a host to check connectivity",
-                Parameters: json.RawMessage(`{
-                    "type": "object",
-                    "properties": {"host": {"type": "string"}},
-                    "required": ["host"]
-                }`),
-            },
+            Name:        "ping",
+            Description: "Ping a host to check connectivity",
+            Parameters: json.RawMessage(`{
+                "type": "object",
+                "properties": {"host": {"type": "string"}},
+                "required": ["host"]
+            }`),
         },
     }
     
-    // Run Worker as separate agent
-    workerResp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    "gpt-4o-mini",
+    // Run the Worker as a separate agent
+    workerResp, err := client.Complete(ctx, Request{
+        Model:    "glm-5.3-flash", // a cheaper model for the Worker: the task is narrow
         Messages: workerMessages,  // Isolated context!
         Tools:    workerTools,
     })
+    if err != nil {
+        return fmt.Sprintf("Error: %v", err) // an error is a result too, for the Supervisor
+    }
     
     workerMsg := workerResp.Choices[0].Message
-    // workerMsg.ToolCalls = [{Function: {Name: "ping", Arguments: "{\"host\": \"db-host.example.com\"}"}}]
+    // workerMsg.ToolCalls = [{ID: "call_1", Name: "ping", Arguments: `{"host": "db-host.example.com"}`}]
     
-    // Execute ping
+    // Run the ping
     pingResult := ping("db-host.example.com")  // "Host is reachable"
     
-    // Worker receives result and formulates response
+    // The Worker sees the result and formulates an answer
     workerMessages = append(workerMessages, workerMsg)
-    workerMessages = append(workerMessages, openai.ChatCompletionMessage{
-        Role:    "tool",
-        Content: pingResult,
+    workerMessages = append(workerMessages, Message{
+        Role:       "tool",
+        Content:    pingResult,
+        ToolCallID: "call_1",
     })
     
-    workerResp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    "gpt-4o-mini",
+    workerResp2, err := client.Complete(ctx, Request{
+        Model:    "glm-5.3-flash",
         Messages: workerMessages,
         Tools:    workerTools,
     })
+    if err != nil {
+        return fmt.Sprintf("Error: %v", err) // an error is a result too, for the Supervisor
+    }
     
-    // Return Worker's final response to Supervisor
+    // Return the Worker's final answer to the Supervisor
     return workerResp2.Choices[0].Message.Content  // "Host db-host.example.com is reachable"
 }
 ```
 
-**Key isolation point:**
-- Worker **doesn't see** entire Supervisor history
-- Worker receives only its question and its context
-- This saves tokens and focuses Worker's attention
+**The essence of isolation:**
+- The Worker does **not see** the Supervisor's entire history
+- The Worker sees only its own question and its own context
+- This saves tokens and keeps the Worker's attention focused
 
-**Step 4: Runtime (Your Code) Calls Worker for DB Expert**
+**Step 4: The Runtime (your code) invokes the Worker for the DB Expert**
 
-```go
-func askDatabaseExpert(question string) string {
-    // Similar to Network Expert, but with different tools
-    workerMessages := []openai.ChatCompletionMessage{
-        {Role: "system", Content: "You are a DB Specialist. Use SQL tools."},
-        {Role: "user", Content: question},  // Isolated context!
-    }
-    
-    workerTools := []openai.Tool{
-        {
-            Function: &openai.FunctionDefinition{
-                Name: "sql_query",
-                Description: "Execute a SELECT query",
-                Parameters: json.RawMessage(`{
-                    "type": "object",
-                    "properties": {"query": {"type": "string"}},
-                    "required": ["query"]
-                }`),
-            },
-        },
-    }
-    
-    // Worker generates SQL and executes
-    // Returns: "PostgreSQL 15.2"
-    return "PostgreSQL 15.2"
-}
-```
+The DB Expert is built identically to the Network Expert — the same loop "question → tool call → result → answer". Do not duplicate the implementation: one function `runWorker(cfg WorkerConfig, question string) string`, only the configuration changes.
 
-**Step 5: Worker Results Returned to Supervisor**
+| Parameter | Network Expert | DB Expert |
+|----------|----------------|-----------|
+| System prompt | "You are a Network Specialist. Use ping tool to check connectivity." | "You are a DB Specialist. Use SQL tools." |
+| Tools | `ping` (host) | `sql_query` (query, SELECT only) |
+| Model | glm-5.3-flash | glm-5.3-flash |
+| Returns | "Host db-host.example.com is reachable" | "PostgreSQL 15.2" |
+
+**Step 5: The Workers' results are returned to the Supervisor**
 
 ```go
-// Runtime adds results as tool messages
+// The Runtime appends the results as tool messages
 supervisorMessages = append(supervisorMessages, supervisorMsg)
-supervisorMessages = append(supervisorMessages, openai.ChatCompletionMessage{
+supervisorMessages = append(supervisorMessages, Message{
     Role:       "tool",
-    Content:    askNetworkExpert("Check availability of db-host.example.com"),  // "Host is reachable"
+    Content:    askNetworkExpert("Проверь доступность db-host.example.com"),  // "Host is reachable"
     ToolCallID: supervisorMsg.ToolCalls[0].ID,
 })
-supervisorMessages = append(supervisorMessages, openai.ChatCompletionMessage{
+supervisorMessages = append(supervisorMessages, Message{
     Role:       "tool",
-    Content:    askDatabaseExpert("What PostgreSQL version on db-host?"),  // "PostgreSQL 15.2"
+    Content:    askDatabaseExpert("Какая версия PostgreSQL на db-host?"),  // "PostgreSQL 15.2"
     ToolCallID: supervisorMsg.ToolCalls[1].ID,
 })
 ```
 
-**Step 6: Supervisor Collects Results and Responds**
+**Step 6: The Supervisor assembles the results and answers**
 
 ```go
-// Send Worker results to Supervisor
-supervisorResp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    "gpt-4o",
-    Messages: supervisorMessages,  // Supervisor receives results from both Workers!
+// Send the Workers' results to the Supervisor
+supervisorResp2, err := client.Complete(ctx, Request{
+    Model:    "glm-5.3",
+    Messages: supervisorMessages,  // The Supervisor sees both Workers' results!
     Tools:    supervisorTools,
-})
+}) // the error is handled by the loop (ch. 04)
 
 finalMsg := supervisorResp2.Choices[0].Message
-// finalMsg.Content = "DB server is available (ping successful). PostgreSQL version: 15.2"
+// finalMsg.Content = "Сервер БД доступен (ping успешен). Версия PostgreSQL: 15.2"
 ```
 
-**Why this isn't magic:**
+**What actually happens:**
 
-1. **Supervisor calls Workers as regular tools** — this isn't "delegation", but a tool call
+1. **The Supervisor invokes Workers as ordinary tools** — this is not "delegation", it is a tool call
 2. **Workers are separate agents** — each with its own context and tools
-3. **Context isolation** — Worker doesn't see Supervisor history, only its question
-4. **Runtime manages everything** — it intercepts Supervisor tool calls, runs Workers, collects results
+3. **Context isolation** — a Worker does not see the Supervisor's history, only its own question
+4. **The Runtime controls everything** — it intercepts the Supervisor's tool calls, launches the Workers, collects the results
 
-**Takeaway:** Multi-Agent isn't magic "commanding", but a mechanism for calling specialized agents via tool calls with context isolation.
+**The essence:** Multi-Agent is not "commanding", but a mechanism for invoking specialized agents via tool calls with context isolation.
 
-## Other Multi-Agent System Patterns
+## Other Multi-Agent Patterns
 
-Supervisor/Worker is the basic pattern. In practice, others are used as well.
+Supervisor/Worker is a pattern for genuinely different domains; by default it is a single agent loop + skills ([ch. 09](../09-agent-architecture/README.md)). Other patterns are also used in practice.
 
-### Pattern: Router Agent
+### Pattern: Router agent
 
-Router Agent receives a request and routes it to one matching specialist. Unlike Supervisor, Router **does not coordinate** multiple agents — it selects one.
+A Router Agent receives a request and directs it to one suitable specialist. Unlike a Supervisor, a Router does **not coordinate** several agents — it picks one.
 
 ```
 ┌──────┐     ┌────────┐     ┌────────────────┐
@@ -273,13 +268,15 @@ Router Agent receives a request and routes it to one matching specialist. Unlike
 **Implementation:**
 
 ```go
-// Router determines which agent should handle the request
-func routeRequest(query string, client *openai.Client) (string, error) {
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: "gpt-4o-mini", // Cheap model — classification task
-        Messages: []openai.ChatCompletionMessage{
+// The Router decides which agent to send the request to
+func routeRequest(ctx context.Context, query string) (string, error) {
+    client, err := NewClient(...) // provider from the config (ch. 04)
+
+    resp, err := client.Complete(ctx, Request{
+        Model: "glm-5.3-flash", // a cheap model — it's a classification task
+        Messages: []Message{
             {
-                Role: openai.ChatMessageRoleSystem,
+                Role: "system",
                 Content: `Classify the request and route to the correct specialist.
 Available specialists:
 - "network": connectivity, DNS, ports, network troubleshooting
@@ -287,9 +284,9 @@ Available specialists:
 - "security": access, vulnerabilities, incidents
 Return ONLY the specialist name.`,
             },
-            {Role: openai.ChatMessageRoleUser, Content: query},
+            {Role: "user", Content: query},
         },
-        Temperature: 0,
+        Temperature: 0.2, // quality: a stable routing choice
     })
     if err != nil {
         return "", err
@@ -298,46 +295,46 @@ Return ONLY the specialist name.`,
 }
 
 // Usage
-specialist, _ := routeRequest("Can't connect to PostgreSQL")
+specialist, _ := routeRequest(ctx, "Не могу подключиться к PostgreSQL")
 // specialist = "database"
-result := runSpecialist(specialist, query) // Run the matching agent
+result := runSpecialist(specialist, query) // Run the right agent
 ```
 
-**When Router beats Supervisor:**
-- Request belongs to a single domain (no coordination needed)
-- Minimal latency required (one LLM call for routing instead of several)
-- You have 10+ specialists — Router scales more easily
+**When a Router beats a Supervisor:**
+- The request belongs to a single domain (no coordination needed)
+- Minimal latency matters (one LLM call for routing instead of several)
+- You have 10+ specialists — a Router is easier to scale
 
-### Pattern: Handoffs (Context Transfer)
+### Pattern: Handoffs (context transfer)
 
-A Handoff is when one agent **transfers control** to another, including part of the context. Unlike Supervisor/Worker, there is no "boss" here — agents are peers.
+A handoff is when one agent **hands control** to another, including part of the context. Unlike Supervisor/Worker, there is no "boss" here — the agents are peers.
 
-**Warm handoff** — next agent receives full context:
+**Hot handoff** — the next agent receives the full context:
 
 ```go
 type Handoff struct {
-    FromAgent string                          // Who transfers
-    ToAgent   string                          // Who receives
-    Context   []openai.ChatCompletionMessage  // What is transferred
-    Reason    string                          // Why
+    FromAgent string    // Who is handing off
+    ToAgent   string    // Who receives it
+    Context   []Message // What is handed over
+    Reason    string    // Why
 }
 
-func performHandoff(h Handoff, client *openai.Client) (string, error) {
-    // Build context for receiving agent
-    handoffMessages := []openai.ChatCompletionMessage{
+func performHandoff(h Handoff) (string, error) {
+    // Build the context for the receiving agent
+    handoffMessages := []Message{
         {
-            Role: openai.ChatMessageRoleSystem,
+            Role: "system",
             Content: fmt.Sprintf(
                 "You are a %s specialist. You received a handoff from %s.\nReason: %s\nContinue the conversation.",
                 h.ToAgent, h.FromAgent, h.Reason,
             ),
         },
     }
-    // Append transferred context
+    // Append the handed-over context
     handoffMessages = append(handoffMessages, h.Context...)
 
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    "gpt-4o",
+    resp, err := client.Complete(ctx, Request{
+        Model:    "glm-5.3",
         Messages: handoffMessages,
         Tools:    getToolsForAgent(h.ToAgent),
     })
@@ -348,123 +345,90 @@ func performHandoff(h Handoff, client *openai.Client) (string, error) {
 }
 ```
 
-**Cold handoff** — next agent receives only a summary:
+**Cold handoff** — the next agent receives only a summary:
 
 ```go
-// Instead of full context, pass a compressed summary
+// Instead of the full context, pass a condensed description
 summary := summarizeConversation(messages)
 handoff := Handoff{
     FromAgent: "l1_support",
     ToAgent:   "l2_engineer",
-    Context: []openai.ChatCompletionMessage{
-        {Role: openai.ChatMessageRoleUser, Content: summary},
+    Context: []Message{
+        {Role: "user", Content: summary},
     },
     Reason: "Issue requires deeper investigation",
 }
 ```
 
-**When to use Handoffs:**
+**When to use handoffs:**
 - Escalation (L1 Support → L2 Engineer)
-- Domain switch (a network problem turns out to be a DB problem)
-- Long-running tasks with multiple stages
+- A domain switch (a network problem turned out to be a DB problem)
+- Long tasks with several stages
 
-### Pattern: Subagents (Agent Hierarchy)
+### Pattern: Subagents (agent hierarchy)
 
-A Subagent is an agent that another agent creates **dynamically** for a subtask. Unlike a Worker, a Subagent is created on the fly for a specific task.
+A subagent is an agent that a parent launches for a subtask. It is not a "role on a team" but a **pure function**: the input is a self-contained task, the output is a report, and the parent's memory is not inherited.
 
+There are only two justified reasons for a subagent (a detailed discussion in [ch. 09](../09-agent-architecture/README.md)):
+
+- **Review with a clean memory** — a model reviewing itself agrees with itself; a subagent reviewer sees only the artifact and the criteria, without the author's justifications.
+- **Moving noisy reading out** — dozens of `read`/`search` calls with large results stay in the subagent's short history; the parent receives a page of conclusions.
 ```go
-// Agent works on a task and realizes a subtask is needed
-func solveWithSubagent(task string, parentTools []openai.Tool) string {
-    // Parent agent decomposes the task
-    subtasks := decomposeTask(task)
-
-    var results []string
-    for _, subtask := range subtasks {
-        // Create a Subagent for each subtask
-        subResult := runSubagent(subtask, parentTools)
-        results = append(results, subResult)
+// Subagent: a minimal Config — a narrow prompt, read-only tools, its own limits.
+// The Run/RunResult/AgentConfig structures — ch. 04.
+func runSubagent(ctx context.Context, task string) (string, error) {
+    cfg := AgentConfig{
+        SystemPrompt: "You are a focused agent. Complete the specific task given to you.",
+        Tools:        readOnlyTools, // only read/list/search — no mutating tools
+        Limits:       Limits{MaxIterations: 15},
     }
-
-    // Combine results
-    return synthesizeResults(results)
-}
-
-func runSubagent(task string, tools []openai.Tool) string {
-    messages := []openai.ChatCompletionMessage{
-        {
-            Role:    openai.ChatMessageRoleSystem,
-            Content: "You are a focused agent. Complete the specific task given to you.",
-        },
-        {Role: openai.ChatMessageRoleUser, Content: task},
+    res := Run(ctx, cfg)
+    if res.Err != nil {
+        return "", res.Err
     }
-
-    // Subagent runs in its own loop with available tools
-    return runAgentLoop(messages, tools, 5) // maxIterations = 5
+    return res.Output, nil // a report as text; the parent's history is not inherited
 }
 ```
 
-### Typed Subagent Roles
+### When a subagent is justified (and when it is not)
 
-In practice, subagents are not universal — each has its own role with a specific set of tools and constraints:
+| Situation | Subagent? | Why |
+|----------|-----------|--------|
+| Reviewing your own work (a diff, a report, a plan) | ✅ | Clean memory: the reviewer does not see *why* the author made a decision |
+| Analyzing a codebase, searching logs, reading documentation | ✅ | Noisy reading does not bloat the parent's history |
+| A subtask boils down to 2–3 tool calls | ❌ | A regular tool call in the main loop |
+| "Splitting roles" within one task (planner, critic, writer, researcher...) | ❌ | Anti-pattern: several agents sharing one task do not work better than one, while coordination, latency and cost grow |
+| Too many tools in one domain | ❌ | That is a job for skills and progressive disclosure — [ch. 09](../09-agent-architecture/README.md) |
 
-| Role | Tools | MaxIter | CanPlan | Purpose |
-|------|-------|---------|---------|---------|
-| **explorer** | read, list, search, recall | 15 | no | Codebase exploration |
-| **coder** | read, list, search, edit, write, exec | 30 | yes | Implementing changes |
-| **architect** | read, list, search, recall | 20 | yes | Architectural analysis |
-| **reviewer** | read, list, search, exec | 15 | no | Code review |
-| **worker** | read, list, search | 15 | no | Specific task |
-| **thinker** | read, list, search, plan, subagent | 20 | yes | Analytics with delegation |
+A subagent has **no mutating external tools**: no `exec` with writes, no creating MRs, no deploys, no database changes. All writes are done by the parent after receiving the report — this keeps the audit of actions in a single history.
 
-```go
-type SubagentRole struct {
-    Name      string
-    Tools     []string
-    MaxIter   int
-    CanPlan   bool
-    CanSpawn  bool   // whether the subagent can create child subagents
-    System    string // specialized system prompt
-}
+### Depth control
 
-var roles = map[string]SubagentRole{
-    "explorer": {Tools: []string{"read", "list", "search", "recall"}, MaxIter: 15, CanPlan: false},
-    "coder":    {Tools: []string{"read", "list", "search", "edit", "write", "exec"}, MaxIter: 30, CanPlan: true},
-    "reviewer": {Tools: []string{"read", "list", "search", "exec"}, MaxIter: 15, CanPlan: false},
-}
-```
-
-### Depth Control
-
-Subagents can create child subagents, but the depth is limited:
+A subagent must not spawn subagents. Depth is limited explicitly — the standard maximum is one level of nesting:
 
 ```go
-const maxDepth = 3
+const maxDepth = 1
 
-func spawnSubagent(ctx context.Context, role string, task string) (string, error) {
+func spawnSubagent(ctx context.Context, task string) (string, error) {
     depth := getDepth(ctx)
     if depth >= maxDepth {
         return "", fmt.Errorf("max subagent depth %d reached", maxDepth)
     }
     ctx = withDepth(ctx, depth+1)
 
-    r := roles[role]
-    if depth == maxDepth-1 {
-        r.CanSpawn = false // at the penultimate level, disallow creating children
-    }
-
-    return runSubagent(ctx, r, task)
+    return runSubagent(ctx, task)
 }
 ```
 
-Depth is passed via `context.Value` — no global state needed.
+Depth is passed via `context.Value` — no global state. Each additional level multiplies the cost and makes debugging harder.
 
-### Pattern: Custom DAG Workflows
+### Pattern: Custom DAG workflows
 
-For tasks with complex dependencies — DAG (Directed Acyclic Graph). Agents execute in dependency order; independent ones run in parallel.
+For tasks with complex dependencies — a DAG (directed acyclic graph). Agents run in dependency order, and independent ones run in parallel.
 
 ```go
 type WorkflowStep struct {
-    AgentID      string   // Which agent executes
+    AgentID      string   // Which agent executes the step
     DependsOn    []string // Which steps it depends on
     Task         string   // The task
 }
@@ -473,13 +437,13 @@ type Workflow struct {
     Steps []WorkflowStep
 }
 
-// Example: Incident analysis
+// Example: incident analysis
 workflow := Workflow{
     Steps: []WorkflowStep{
-        {AgentID: "log_analyzer", DependsOn: nil, Task: "Analyze logs from the last hour"},
-        {AgentID: "metrics_checker", DependsOn: nil, Task: "Check CPU and memory metrics"},
-        {AgentID: "correlator", DependsOn: []string{"log_analyzer", "metrics_checker"}, Task: "Correlate results"},
-        {AgentID: "reporter", DependsOn: []string{"correlator"}, Task: "Write incident report"},
+        {AgentID: "log_analyzer", DependsOn: nil, Task: "Проанализируй логи за последний час"},
+        {AgentID: "metrics_checker", DependsOn: nil, Task: "Проверь метрики CPU и memory"},
+        {AgentID: "correlator", DependsOn: []string{"log_analyzer", "metrics_checker"}, Task: "Сопоставь результаты"},
+        {AgentID: "reporter", DependsOn: []string{"correlator"}, Task: "Составь отчёт об инциденте"},
     },
 }
 
@@ -490,18 +454,89 @@ workflow := Workflow{
 
 For more on workflow patterns, see [Chapter 10: Planning and Workflows](../10-planning-and-workflows/README.md).
 
-### A2A (Agent-to-Agent) Protocol
+### The 10-file rule
 
-In the patterns above, agents communicate through runtime (your code). [A2A](https://google.github.io/A2A/) is a **standardized protocol** for inter-agent communication, proposed by Google.
+A heuristic from real-world practice: **if a task requires reading more than 10 files, decompose it into subagents**.
+
+A single agent with 10+ files in context loses focus. Instead, use the map-reduce pattern:
+
+1. **List** — collect the list of files
+2. **Group** — group them by module/directory
+3. **Map** — run a subagent for each group
+4. **Reduce** — collect the results
+
+```go
+func analyzeProject(ctx context.Context, path string) (string, error) {
+    files := listFiles(path)
+    if len(files) <= 10 {
+        return analyzeDirect(ctx, files) // one agent can handle it
+    }
+
+    groups := groupByDirectory(files)
+    var results []string
+    for _, group := range groups {
+        result, err := spawnSubagent(ctx,
+            fmt.Sprintf("Analyze files in %s: %v", group.Dir, group.Files))
+        if err != nil {
+            continue
+        }
+        results = append(results, result)
+    }
+
+    return spawnSubagent(ctx,
+        "Combine analysis results:\n" + strings.Join(results, "\n---\n"))
+}
+```
+
+### Subagent context isolation
+
+A subagent is a **pure function**: `task → result`. It has no access to the parent's conversation. This is a deliberate restriction:
+
+- The parent **must pass in** everything needed: exact file paths, search criteria, the expected result format
+- The subagent **does not go through routing** — it does not need task classification; it has already received a specific assignment
+- The subagent **does not inherit the parent's memory**: it has its own clean history that starts with its `task` — so its output is not polluted by the parent's train of thought, and the parent does not pay in tokens for search noise
+
+```go
+// BAD: a vague task
+result, _ := spawnSubagent(ctx, "Изучи проект и найди проблемы")
+
+// GOOD: a concrete task with context and a completion criterion.
+// The subagent is read-only: it confirms the diagnosis and finds the spots; the parent fixes them.
+result, _ := spawnSubagent(ctx,
+    "Проверь JWT-валидацию в internal/auth/middleware.go:45: "+
+    "проверка expiry использует time.Now() вместо time.Now().UTC(). "+
+    "Подтверди проблему и найди все другие места с той же ошибкой. "+
+    "Верни список: файл:строка + обоснование")
+```
+
+### A clean-memory subagent for review
+
+Why reviewing via a separate subagent works better than "check your own result" in the same loop: a model reviewing its own work **agrees with itself** — in the history it sees *why* it made a decision and checks its own justification rather than the result. A reviewer subagent does not have that context.
+
+- **Input:** a self-sufficient assignment — the artifact (diff, report, plan) + review criteria ("look for leaks, races, forgotten error handling")
+- **Output:** a verdict + findings — a list of problems with locations; the reviewer does not "fix" anything
+- **Tools:** read-only only (read/search/list) — the parent fixes the code after receiving the findings
+
+```
+Parent: wrote a diff → SpawnSubagent(reviewCfg, diff + criteria)
+  Subagent (clean memory, read-only): reads the diff → findings
+Parent: reads the findings and fixes the code itself
+```
+
+> **How the real SDK does it.** There is no special "subagent" entity: it is the same agent loop started as a second Run with a minimal Config and a clean history. The sub-run is correlated with the parent run via a shared `run_id` in telemetry, so traces show the whole chain (ch. 19).
+
+### The A2A (Agent-to-Agent) protocol
+
+In the patterns above, agents communicate through the runtime (your code). [A2A](https://a2a-protocol.org/) is a **standardized protocol** for agent-to-agent communication. A Google initiative, developed since 2025 under the Linux Foundation.
 
 **Key concepts:**
 
-- **Agent Card** — JSON description of an agent: what it can do, what tasks it accepts.
-- **Task** — unit of work with a lifecycle: `submitted → working → completed/failed`.
+- **Agent Card** — a JSON description of an agent: what it can do, which tasks it accepts.
+- **Task** — a unit of work with a lifecycle: `submitted → working → completed/failed`.
 - **Message/Artifact** — data exchange between agents.
 
 ```go
-// Agent Card — agent description for other agents
+// Agent Card — a description of an agent for other agents
 type AgentCard struct {
     Name         string   `json:"name"`
     Description  string   `json:"description"`
@@ -510,7 +545,7 @@ type AgentCard struct {
     InputSchema  json.RawMessage `json:"input_schema"` // What data it accepts
 }
 
-// Task — unit of work
+// Task — a unit of work
 type A2ATask struct {
     ID      string `json:"id"`
     Status  string `json:"status"` // "submitted", "working", "completed", "failed"
@@ -518,7 +553,7 @@ type A2ATask struct {
     Output  string `json:"output,omitempty"`
 }
 
-// Client agent sends a task to another agent
+// A client agent sends a task to another agent
 func sendA2ATask(agentURL string, task A2ATask) (*A2ATask, error) {
     body, _ := json.Marshal(task)
     resp, err := http.Post(agentURL+"/tasks", "application/json", bytes.NewReader(body))
@@ -533,132 +568,62 @@ func sendA2ATask(agentURL string, task A2ATask) (*A2ATask, error) {
 }
 ```
 
-**When you need A2A:**
-- Agents run on **different servers** (microservice architecture)
+**When A2A is needed:**
+- Agents run on **different servers** (a microservice architecture)
 - Agents are written in **different languages** (Go + Python)
-- You need a **standard interface** for integrating with external agents
+- You need a **standard interface** for integration with external agents
 
 **When A2A is overkill:**
 - All agents in one process — use tool calls (Supervisor/Worker)
-- Prototype — start with plain functions
+- A prototype — start with plain functions
 
-For more on A2A, see [Chapter 18: Tool Protocols](../18-tool-protocols-and-servers/README.md#a2a-protocol).
+For more on A2A, see [Chapter 18: Tool Protocols](../18-tool-protocols-and-servers/README.md#a2a-agent-to-agent-protocol).
 
-### Scaling Multi-Agent Systems
+### Scaling multi-agent systems
 
-As load grows, a single Supervisor isn't enough.
+Worker pools and load balancing (round-robin, by load, by specialization) are a general engineering topic, not specific to agents: a task channel per Worker type plus a shared results channel is an ordinary Go worker pool. There are no differences from any other worker pool here. As the system grows, the main question quickly stops being "how to distribute tasks" and becomes "how to trace all of this" — see [Chapter 19: Observability and Tracing](../19-observability-and-tracing/README.md).
 
-**Worker Pool:**
+### Decision table: which pattern to use when
 
-```go
-type WorkerPool struct {
-    workers map[string]chan WorkerTask // Task channel for each Worker type
-    results chan WorkerResult
-}
-
-func (p *WorkerPool) Submit(agentType string, task string) {
-    p.workers[agentType] <- WorkerTask{Task: task, ResultCh: p.results}
-}
-```
-
-**Load balancing:**
-- Round-robin — distribute tasks evenly across Workers
-- By load — send to an idle Worker
-- By specialization — Router picks a Worker by task type
-
-### Decision Table: When to Use Which Pattern
-
-| Pattern | When to Use | Complexity |
-|---------|------------|------------|
-| Supervisor/Worker | Task requires coordinating multiple specialists | Medium |
-| Router | Request belongs to a single domain | Low |
-| Handoffs | Escalation, domain switch | Medium |
-| Subagents | Dynamic task decomposition | High |
+| Pattern | When to use | Complexity |
+|---------|-------------------|-----------|
+| Single loop + skills | Many tools in one domain (the default, see [ch. 09](../09-agent-architecture/README.md)) | Low |
+| Supervisor/Worker | Truly different domains, context isolation needed | Medium |
+| Router | A request belongs to a single domain | Low |
+| Handoffs | Escalation, a domain switch | Medium |
+| Subagents | Review with clean memory; moving noisy reading out | High |
 | DAG Workflow | Tasks with complex dependencies | High |
 | A2A | Distributed agents on different servers | High |
 
-### Rule of 10 Files
+## Common Mistakes
 
-A heuristic from production experience: **if a task requires reading more than 10 files, decompose it into subagents**.
+### Mistake 1: No context isolation
 
-A single agent with 10+ files in context loses focus. Instead, use a map-reduce pattern:
+**Symptom:** The Worker sees the Supervisor's entire history, which leads to context overflow and confusion.
 
-1. **List** — collect the list of files
-2. **Group** — group by modules/directories
-3. **Map** — spawn a subagent for each group
-4. **Reduce** — combine results
+**Cause:** The Worker receives the Supervisor's full message history instead of an isolated context.
 
+**Fix:**
 ```go
-func analyzeProject(ctx context.Context, path string) (string, error) {
-    files := listFiles(path)
-    if len(files) <= 10 {
-        return analyzeDirect(ctx, files) // a single agent can handle it
-    }
+// BAD: the Worker sees the Supervisor's entire history
+workerMessages := supervisorMessages  // The whole history!
 
-    groups := groupByDirectory(files)
-    var results []string
-    for _, group := range groups {
-        result, err := spawnSubagent(ctx, "explorer",
-            fmt.Sprintf("Analyze files in %s: %v", group.Dir, group.Files))
-        if err != nil {
-            continue
-        }
-        results = append(results, result)
-    }
-
-    return spawnSubagent(ctx, "architect",
-        "Combine analysis results:\n" + strings.Join(results, "\n---\n"))
-}
-```
-
-### Subagent Context Isolation
-
-A subagent is a **pure function**: `task → result`. It has no access to the parent's conversation. This is a deliberate constraint:
-
-- The parent **must provide** everything the subagent needs: exact file paths, search criteria, expected result format
-- The subagent **does not go through routing** — it doesn't need task classification, it already has a specific assignment
-- The subagent **does not have** the parent's Working Memory — a Nop object is used instead
-
-```go
-// BAD: vague task
-result := spawnSubagent(ctx, "coder", "Fix the auth bug")
-
-// GOOD: specific task with context
-result := spawnSubagent(ctx, "coder",
-    "Fix JWT validation in internal/auth/middleware.go:45. "+
-    "The token expiry check uses time.Now() instead of time.Now().UTC(). "+
-    "After fix, run: go test ./internal/auth/...")
-```
-
-## Common Errors
-
-### Error 1: No Context Isolation
-
-**Symptom:** Worker receives entire Supervisor history, leading to context overflow and confusion.
-
-**Cause:** Worker receives full Supervisor message history instead of isolated context.
-
-**Solution:**
-```go
-// BAD: Worker receives entire Supervisor history
-workerMessages := supervisorMessages  // Full history!
-
-// GOOD: Worker receives only its question
-workerMessages := []openai.ChatCompletionMessage{
+// GOOD: the Worker receives only its own question
+workerMessages := []Message{
     {Role: "system", Content: "You are a Network Specialist."},
-    {Role: "user", Content: question},  // Only question!
+    {Role: "user", Content: question},  // Only the question!
 }
 ```
 
-### Error 2: Supervisor Doesn't Know Who to Call
+### Mistake 2: The supervisor does not know whom to call
 
-**Symptom:** Supervisor doesn't call needed specialists or calls wrong ones.
+**Symptom:** The Supervisor does not call the right specialists, or calls the wrong ones.
 
-**Cause:** Tool descriptions for calling Workers are not clear enough.
+**Cause:** The tool descriptions for calling Workers are not clear enough.
 
-**Solution:**
+**Fix:**
 ```go
-// GOOD: Clear description of when to call each specialist
+// GOOD: A clear description of when to call each specialist
 {
     Name: "ask_network_expert",
     Description: "Ask the network specialist about connectivity, pings, ports, network troubleshooting. Use this when user asks about network issues, connectivity, or network-related problems.",
@@ -669,113 +634,117 @@ workerMessages := []openai.ChatCompletionMessage{
 },
 ```
 
-### Error 3: Worker Doesn't Return Result
+### Mistake 3: The worker does not return a result
 
-**Symptom:** Supervisor doesn't receive answer from Worker or receives empty answer.
+**Symptom:** The Supervisor does not receive an answer from the Worker, or receives an empty one.
 
-**Cause:** Worker doesn't complete its work or result isn't returned to Supervisor.
+**Cause:** The Worker does not finish its work, or the result is not returned to the Supervisor.
 
-**Solution:**
+**Fix:**
 ```go
-// GOOD: Worker completes work and returns result
+// GOOD: the Worker finishes its work and returns the result
 func askNetworkExpert(question string) string {
-    // ... Worker performs task ...
+    // ... the Worker performs the task ...
     
-    // Return Worker's final response
+    // Return the Worker's final answer
     return workerResp2.Choices[0].Message.Content  // "Host is reachable"
 }
 
-// Supervisor receives result
-supervisorMessages = append(supervisorMessages, openai.ChatCompletionMessage{
+// The Supervisor receives the result
+supervisorMessages = append(supervisorMessages, Message{
     Role:       "tool",
-    Content:    askNetworkExpert("..."),  // Worker result
+    Content:    askNetworkExpert("..."),  // The Worker's result
     ToolCallID: supervisorMsg.ToolCalls[0].ID,
 })
 ```
 
-### Error 4: Subagent Stuck in a Loop
+### Mistake 4: A subagent gets stuck in a loop
 
-**Symptom:** Subagent runs for a long time, consumes tokens, but returns no result. Logs show repeating tool calls.
+**Symptom:** The subagent runs for a long time, consumes tokens, but does not return a result. The logs show repeated tool calls.
 
-**Cause:** Vague task. The subagent doesn't know when the task is done and keeps exploring.
+**Cause:** A vague task. The subagent does not know when the task is solved and keeps exploring.
 
-**Solution:**
+**Fix:**
 ```go
-// BAD: vague task
-spawnSubagent(ctx, "explorer", "Study the project and explain how it's structured")
+// BAD: a vague task
+spawnSubagent(ctx, "Изучи проект и расскажи, как он устроен")
 
-// GOOD: specific task with completion criteria
-spawnSubagent(ctx, "explorer",
-    "Find all files with gRPC services in internal/. "+
-    "For each: file name, service name, list of methods. "+
-    "Return result in format: service_name: [method1, method2]")
+// GOOD: a concrete task with a completion criterion
+spawnSubagent(ctx,
+    "Найди все файлы с gRPC-сервисами в internal/. "+
+    "Для каждого: имя файла, имя сервиса, список методов. "+
+    "Верни результат в формате: service_name: [method1, method2]")
 ```
 
-In a production agent, when spawning subagents for project analysis, one of them got stuck in a loop of repeatedly reading the same files. The fix: restart with clearer instructions and add `MaxIter` for the specific role.
+A real case from Atlas: while running subagents to analyze a project, one of them got stuck in a loop of repeatedly reading files. The fix: a restart with clearer instructions and adding an iteration limit to the subagent's Config.
 
-## Mini-Exercises
+## Exercises
 
-### Exercise 1: Implement Context Isolation
+### Exercise 1: Implement context isolation
 
-Implement a function to create isolated context for Worker:
+Implement a function that creates an isolated context for a Worker:
 
 ```go
-func createWorkerContext(question string, workerRole string) []openai.ChatCompletionMessage {
-    // Create isolated context for Worker
-    // Only System Prompt and user question
+func createWorkerContext(question string, workerRole string) []Message {
+    // Create an isolated context for the Worker
+    // Only the System Prompt and the user's question
 }
 ```
 
 **Expected result:**
-- Worker receives only System Prompt and its question
-- Worker doesn't see Supervisor history
+- The Worker receives only the System Prompt and its own question
+- The Worker does not see the Supervisor's history
 
-### Exercise 2: Implement Supervisor with Two Specialists
+### Exercise 2: Implement a supervisor with two specialists
 
 Create a Supervisor with two specialists (Network Expert and DB Expert):
 
 ```go
-supervisorTools := []openai.Tool{
+supervisorTools := []ToolDef{
     // Your code here
 }
 ```
 
 **Expected result:**
-- Supervisor can call both specialists
-- Tool descriptions are clear and understandable
-- Supervisor correctly selects specialist for task
+- The Supervisor can call both specialists
+- The tool descriptions are clear and understandable
+- The Supervisor correctly picks the specialist for the task
 
-## Completion Criteria / Checklist
+## Acceptance Criteria / Checklist
 
-**Completed:**
-- [x] Supervisor correctly delegates tasks to specialists
-- [x] Workers operate in isolated context
-- [x] Worker results are returned to Supervisor
-- [x] Supervisor collects results and formulates final response
+**Passed:**
+- [x] The Supervisor correctly delegates tasks to specialists
+- [x] Workers operate in an isolated context
+- [x] Worker results are returned to the Supervisor
+- [x] The Supervisor collects the results and formulates the final answer
 - [x] Tool descriptions for calling Workers are clear
+- [x] You understand when a subagent is justified (review with clean memory, noisy reading) and when it is not
+- [x] You know the 10-file rule
 
-**Not completed:**
-- [ ] Worker receives entire Supervisor history (no isolation)
-- [ ] Supervisor doesn't know who to call (poor descriptions)
-- [ ] Worker doesn't return result to Supervisor
-- [ ] Supervisor doesn't collect results from Workers
+**Not passed:**
+- [ ] The Worker sees the Supervisor's entire history (no isolation)
+- [ ] The Supervisor does not know whom to call (poor descriptions)
+- [ ] The Worker does not return a result to the Supervisor
+- [ ] The Supervisor does not collect results from Workers
+- [ ] Subagents with no depth limit
+- [ ] Vague tasks for subagents
 
 ## Production Notes
 
-When using Multi-Agent systems in production:
+When using multi-agent systems in production:
 
-- **Correlation by `run_id`:** Use a single `run_id` for the entire chain Supervisor → Worker → Tool. This allows tracking the full request path in logs.
-- **Chain tracing:** Trace each step of the chain (Supervisor → Worker → Tool) for debugging. More: [Chapter 19: Observability and Tracing](../19-observability-and-tracing/README.md).
-- **Context isolation:** Each Worker must have its own isolated context (already described above). This is critical for preventing context overflow.
+- **Correlation by `run_id`:** Use a single `run_id` for the whole Supervisor → Worker → Tool chain. This lets you trace the full path of a request in the logs.
+- **Chain tracing:** Trace every step of the chain (Supervisor → Worker → Tool) for debugging. For more, see [Chapter 19: Observability and Tracing](../19-observability-and-tracing/README.md).
+- **Context isolation:** Each Worker must have its own isolated context (described above). This is critical for preventing context overflow.
 
-## Connection with Other Chapters
+## Relation to Other Chapters
 
-- **Tools:** How Supervisor calls Workers via tool calls, see [Chapter 03: Tools](../03-tools-and-function-calling/README.md)
-- **Autonomy:** How Supervisor manages the work loop, see [Chapter 04: Autonomy](../04-autonomy-and-loops/README.md)
-- **Architecture:** Agent components (Runtime, Memory, Planning) that multi-agent systems are built from, see [Chapter 09: Agent Architecture](../09-agent-architecture/README.md)
+- **Tools:** How the Supervisor calls Workers via tool calls — see [Chapter 03: Tools](../03-tools-and-function-calling/README.md)
+- **Autonomy:** How the Supervisor manages the working loop — see [Chapter 04: Autonomy](../04-autonomy-and-loops/README.md)
+- **Architecture:** The agent components (Runtime, Memory, Planning) that multi-agent systems are built from — see [Chapter 09: Anatomy of an Agent](../09-agent-architecture/README.md)
 
 ## What's Next?
 
-After studying Multi-Agent, proceed to:
+After multi-agent systems, move on to:
 - **[08. Evals and Reliability](../08-evals-and-reliability/README.md)** — how to test agents
 

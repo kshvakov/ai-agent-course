@@ -1,204 +1,222 @@
 # 03. Tools and Function Calling — The Agent's "Hands"
 
-> **Terminology Note:** This chapter uses the terms "Function Calling" (the API mechanism name) and "Tool Call" (a specific tool invocation). These are the same: a mechanism where the LLM returns a structured request to call a Go function. In agent code, we usually say "tool" (instrument), because it's a more general concept (a tool can be not only a Go function, but also an API call, command, etc.).
+> **A note on terminology:** this chapter uses "Function Calling" (the name of the mechanism in the API) and "Tool Call" (a specific tool invocation). They are the same thing: the mechanism by which an LLM returns a structured request to call a Go function. In agent code we usually say "tool", because it is a more general concept (a tool may be not only a Go function but also an API call, a shell command, etc.).
 
-## Why This Chapter?
+## Why does this matter?
 
-Tools turn an LLM from a talker into a worker. Without tools, an agent can only respond with text but cannot interact with the real world.
+Tools turn an LLM from a talker into a worker. Without tools an agent can only reply with text; it cannot interact with the real world.
 
-Function Calling is the mechanism that gives the model access to real actions: call Go functions, execute commands, and read data.
+Function Calling is the mechanism that gives the model access to real actions: calling Go functions, running commands, reading data.
 
-### Real-World Case Study
+### A real-world case
 
-**Situation:** You've created a chatbot for DevOps. A user writes: "Check server status web-01"
+**Situation:** you built a chatbot for DevOps. The user writes: "Check the status of server web-01"
 
-**Problem:** The bot cannot actually check the server. It only promises: "I will check the server status web-01..." — but that's just text.
+**Problem:** the bot cannot actually check the server. It only promises: "I will check the status of server web-01..." — but that's just text.
 
-**Solution:** Function Calling allows the model to call real Go functions. The model generates structured JSON with the function name and arguments, your code executes the function and returns the result back to the model.
+**Solution:** Function Calling lets the model call real Go functions. The model generates structured JSON with the function name and arguments; your code executes the function and returns the result back to the model.
 
-> **Junior employee model.** An agent's tool list is its "new-hire job description". What you didn't give them, they can't do; what you gave them, they can — and very fast. A minimal set of roles, explicit `ReadOnly` / `Parallel` flags and a risk category for each tool — same as for a human: "access only to what's needed for the job". See [Preface → Mental Model](../00-preface/README.md#mental-model-an-agent-is-a-new-employee) and [Ch. 17: Security and Governance](../17-security-and-governance/README.md).
+> **Junior employee model.** An agent's list of tools is the "job description of a new employee". What you didn't give them, they cannot do; what you gave them, they can — and very quickly. A minimal set of roles, explicit `ReadOnly` / `Parallel` flags and a risk category for each tool is the same idea as for a human: "access only to what the job requires". See [Preface → The mental model](../00-preface/README.md#mental-model-an-agent-is-a-new-employee) and [Ch. 17: Security and Governance](../17-security-and-governance/README.md).
 
-## Theory in Simple Terms
+## The theory in plain words
 
-### How Does Function Calling Work?
+### How does function calling work?
 
-1. **You describe a function** in JSON Schema format
-2. **The LLM receives the description** and decides: "I need to call this function"
+1. **You describe the function** in JSON Schema format
+2. **The LLM sees the description** and decides: "I need to call this function"
 3. **The LLM generates JSON** with the function name and arguments
 4. **Your code parses the JSON** and executes the real function
 5. **The result is returned** to the LLM for further processing
 
-## Function Calling — How It Works
+## Function Calling — How the Mechanism Works
 
-**Function Calling** is a mechanism where the LLM returns structured JSON with the function name and arguments instead of plain text.
+**Function Calling** is the mechanism by which the LLM returns not text but structured JSON with a function name and arguments.
 
-### Complete Cycle: From Definition to Execution
+### The full cycle: from definition to execution
 
-We'll walk through the **complete cycle** using the `ping` tool as an example:
+Let's walk through the **full cycle** using a `ping` tool as an example:
 
-#### Step 1: Tool Definition (Tool Schema)
+For the examples in this chapter we use neutral types layered over the native tool-calling API (OpenAI-compatible). This is exactly what goes into the HTTP request and comes back in the response — without binding to a specific SDK:
 
 ```go
-tools := []openai.Tool{
+// Tool description — goes into the "tools" field of the request.
+type ToolDef struct {
+    Name        string
+    Description string
+    Parameters  json.RawMessage // JSON Schema of the arguments
+}
+
+// A message in the history. Role: "system" | "user" | "assistant" | "tool".
+type Message struct {
+    Role       string
+    Content    string
+    ToolCallID string    // for role="tool": links the result to the call
+    ToolCalls  []ToolCall // for role="assistant": generated calls
+}
+
+// A single tool call generated by the model.
+type ToolCall struct {
+    ID        string
+    Name      string
+    Arguments string // JSON string
+}
+```
+
+#### Step 1: Defining the tool (tool schema)
+
+```go
+tools := []ToolDef{
     {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "ping",
-            Description: "Ping a host to check connectivity",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "host": {
-                        "type": "string",
-                        "description": "Hostname or IP address to ping"
-                    }
-                },
-                "required": ["host"]
-            }`),
-        },
+        Name:        "ping",
+        Description: "Ping a host to check connectivity",
+        Parameters: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "host": {
+                    "type": "string",
+                    "description": "Hostname or IP address to ping"
+                }
+            },
+            "required": ["host"]
+        }`),
     },
 }
 ```
 
-**What happens:** You describe the tool in JSON Schema format. This description gets sent to the model along with the request.
+**What happens:** we describe the tool in JSON Schema format. This description is sent to the model along with the request.
 
-#### Step 2: Request to the Model
+#### Step 2: The request to the model
 
 ```go
-messages := []openai.ChatCompletionMessage{
+messages := []Message{
     {Role: "system", Content: "You are a network admin. Use tools to check connectivity."},
-    {Role: "user", Content: "Check availability of google.com"},
+    {Role: "user", Content: "Check if google.com is reachable"},
 }
 
-req := openai.ChatCompletionRequest{
-    Model:    "gpt-4o-mini",
-    Messages: messages,
-    Tools:    tools,  // The model receives the tool descriptions!
-    Temperature: 0,
+client, err := NewClient(...) // provider from the config (ch. 04)
+
+req := Request{
+    Model:       "glm-5.3",
+    Messages:    messages,
+    Tools:       tools,  // The model sees the tool descriptions!
+    Temperature: 0.2, // quality: less variance in tool selection
 }
 
-resp, _ := client.CreateChatCompletion(ctx, req)
+resp, err := client.Complete(ctx, req) // the error is handled by the loop (ch. 04)
 msg := resp.Choices[0].Message
 ```
 
-**What happens:** The model receives the following:
-- System prompt (role and instructions)
-- User input (user's request)
-- **Tools schema** (description of available tools)
+`client.Complete` is a method of the neutral client; the full canonical types are in [chapter 04](../04-autonomy-and-loops/README.md).
 
-#### Step 3: Model Response (Tool Call)
+**What happens:** the model sees:
+- System prompt (the role and instructions)
+- User input (the user's request)
+- **Tools schema** (the descriptions of the available tools)
 
-The model **doesn't return text** like "I will check ping". Instead, it returns a **structured tool call**:
+#### Step 3: The model's response (tool call)
+
+The model **does not return text** like "I'll run a ping". It returns a **structured tool call**:
 
 ```go
 // msg.ToolCalls contains:
-[]openai.ToolCall{
+[]ToolCall{
     {
-        ID: "call_abc123",
-        Type: "function",
-        Function: openai.FunctionCall{
-            Name:      "ping",
-            Arguments: `{"host": "google.com"}`,
-        },
+        ID:        "call_abc123",
+        Name:      "ping",
+        Arguments: `{"host": "google.com"}`,
     },
 }
 ```
 
-**What happens:** The model **generates a tool_call** for the `ping` tool with JSON arguments. Nothing magical is happening here: the model reads `Description: "Ping a host to check connectivity"` and maps it to the user's request.
+**What happens:** the model **generated a tool_call** for the `ping` tool plus JSON with the arguments. There is no magic here: the model saw `Description: "Ping a host to check connectivity"` and matched it against the user's request.
 
-**How does the model choose between multiple tools?**
+**How does the model choose between several tools?**
 
-Let's expand the example by adding several tools:
+Let's extend the example with a few more tools:
 
 ```go
-tools := []openai.Tool{
+tools := []ToolDef{
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "ping",
-            Description: "Ping a host to check network connectivity. Use this when user asks about network reachability or connectivity.",
-        },
+        Name:        "ping",
+        Description: "Ping a host to check network connectivity. Use this when user asks about network reachability or connectivity.",
     },
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "check_http",
-            Description: "Check HTTP status code of a website. Use this when user asks about website availability or HTTP errors.",
-        },
+        Name:        "check_http",
+        Description: "Check HTTP status code of a website. Use this when user asks about website availability or HTTP errors.",
     },
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "traceroute",
-            Description: "Trace the network path to a host. Use this when user asks about network routing or path analysis.",
-        },
+        Name:        "traceroute",
+        Description: "Trace the network path to a host. Use this when user asks about network routing or path analysis.",
     },
 }
 
-userInput := "Check availability of google.com"
+userInput := "Check if google.com is reachable"
 ```
 
-**Selection process:**
+**The selection process:**
 
-1. The model receives **all three tools** and their `Description`:
+1. The model sees **all three tools** and their `Description`:
     - `ping`: "check network connectivity... Use this when user asks about network reachability"
     - `check_http`: "Check HTTP status... Use this when user asks about website availability"
     - `traceroute`: "Trace network path... Use this when user asks about routing"
 
-2. The model matches the request "Check availability of google.com" with descriptions:
-    - [x] `ping` — description contains "connectivity" and "reachability" → **chooses this one**
-    - [ ] `check_http` — about HTTP status, not network availability
-    - [ ] `traceroute` — about routing, not availability check
+2. The model matches the request "Check if google.com is reachable" against the descriptions:
+    - [x] `ping` — the description contains "connectivity" and "reachability" → **it picks this one**
+    - [ ] `check_http` — about HTTP status, not about network reachability
+    - [ ] `traceroute` — about routing, not about reachability checks
 
 3. The model returns a tool call for `ping`:
     ```json
     {"name": "ping", "arguments": "{\"host\": \"google.com\"}"}
     ```
 
-**Example with a different request:**
+**An example with a different request:**
 
 ```go
-userInput := "Check if the site google.com responds"
+userInput := "Check whether the google.com site is responding"
 
-// The model receives the same 3 tools
-// Matches:
-// - ping: about network availability → not quite right
-// - check_http: "Use this when user asks about website availability" → CHOOSES THIS
+// The model sees the same 3 tools
+// It matches:
+// - ping: about network reachability → not quite it
+// - check_http: "Use this when user asks about website availability" → PICKS THIS ONE
 // - traceroute: about routing → doesn't fit
 
 // The model returns:
 // {"name": "check_http", "arguments": "{\"url\": \"https://google.com\"}"}
 ```
 
-**Takeaway:** The model selects a tool based on **semantic matching** between the user's request and `Description`. The more precise and specific the `Description`, the better the model selects the right tool.
+**The point:** the model picks a tool based on the **semantic match** between the user's request and the `Description`. The more precise and specific the `Description`, the better the model picks the right tool.
 
-#### What Does the LLM Do, and What Does Runtime Do?
+#### What the LLM does vs. what the runtime does
 
-**LLM (model):**
-- Sees tool descriptions in `tools[]`
-- Generates JSON with tool name and arguments
-- Returns structured response in the `tool_calls` field
+**LLM (the model):**
+- Sees the tool descriptions in `tools[]`
+- Generates JSON with the tool name and arguments
+- Returns a structured response in the `tool_calls` field
 
 **Runtime (your code):**
 - Parses `tool_calls` from the model's response
-- Validates tool name (does it exist?)
-- Validates JSON arguments (are they correct?)
+- Validates the tool name (does it exist?)
+- Validates the argument JSON (is it well-formed?)
 - Executes the real Go function
-- Adds result to history (`messages[]`)
-- Sends updated history back to the model
+- Appends the result to the history (`messages[]`)
+- Sends the updated history back to the model
 
-**Important:** The LLM does not execute code. It only generates JSON with an execution request. Your Runtime executes the real code.
+**Important:** the LLM does not execute code. It only generates JSON with a request to execute. Your runtime executes the real code.
 
-#### Step 4: Validation (Runtime)
+#### Step 4: Validation (runtime)
 
 ```go
 // Check that the tool exists
-if msg.ToolCalls[0].Function.Name != "ping" {
-    return fmt.Errorf("unknown tool: %s", msg.ToolCalls[0].Function.Name)
+if msg.ToolCalls[0].Name != "ping" {
+    return fmt.Errorf("unknown tool: %s", msg.ToolCalls[0].Name)
 }
 
-// Validate JSON arguments
+// Validate the argument JSON
 var args struct {
     Host string `json:"host"`
 }
-if err := json.Unmarshal([]byte(msg.ToolCalls[0].Function.Arguments), &args); err != nil {
+if err := json.Unmarshal([]byte(msg.ToolCalls[0].Arguments), &args); err != nil {
     return fmt.Errorf("invalid JSON: %v", err)
 }
 
@@ -208,9 +226,9 @@ if args.Host == "" {
 }
 ```
 
-**What happens:** Runtime validates the call before execution. This is **critical** for security.
+**What happens:** the runtime validates the call before executing it. This is **critical** for security.
 
-#### Step 5: Tool Execution
+#### Step 5: Executing the tool
 
 ```go
 func executePing(host string) string {
@@ -225,98 +243,98 @@ func executePing(host string) string {
 result := executePing(args.Host)  // "PING google.com: 64 bytes from ..."
 ```
 
-**What happens:** Runtime executes the **real function** (in this case, the system command `ping`).
+**What happens:** the runtime executes the **real function** (in this case the system `ping` command).
 
-#### Step 6: Return Result to Model
+#### Step 6: Returning the result to the model
 
 ```go
-// Add result to history as a message with role "tool"
-messages = append(messages, openai.ChatCompletionMessage{
-    Role:       openai.ChatMessageRoleTool,
+// Append the result to the history as a message with role "tool"
+messages = append(messages, Message{
+    Role:       "tool",
     Content:    result,  // "PING google.com: 64 bytes from ..."
-    ToolCallID: msg.ToolCalls[0].ID,  // Link to the call
+    ToolCallID: msg.ToolCalls[0].ID,  // Link it to the call
 })
 
-// Send updated history to the model again
-resp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    "gpt-4o-mini",
+// Send the updated history to the model again
+resp2, err := client.Complete(ctx, Request{
+    Model:    "glm-5.3",
     Messages: messages,  // Now includes the tool result!
     Tools:    tools,
-})
+}) // the error is handled by the loop (ch. 04)
 ```
 
-**What happens:** The model receives the tool execution result and can:
-- Formulate a final response to the user
-- Call another tool if needed
+**What happens:** the model sees the result of the tool execution and can:
+- Compose the final answer for the user
+- Call another tool, if needed
 - Ask a clarifying question
 
-#### Step 7: Final Response
+#### Step 7: The final answer
 
 ```go
 finalMsg := resp2.Choices[0].Message
 if len(finalMsg.ToolCalls) == 0 {
-    // This is the final text response
-    fmt.Println(finalMsg.Content)  // "google.com is available, response time 10ms"
+    // This is the final text answer
+    fmt.Println(finalMsg.Content)  // "google.com is reachable, response time 10ms"
 }
 ```
 
-**What happens:** The model saw the `ping` result and formulated a clear response for the user.
+**What happens:** the model saw the `ping` result and composed a clear answer for the user.
 
-## End-to-End Protocol: Complete Request and Two Moves
+## The End-to-end Protocol: a Full Request and Two Runs
 
-Now let's break down the **complete protocol** from the agent developer's perspective: where everything is stored, how the request is assembled, and how runtime processes responses.
+Now let's walk through the **full protocol** from the point of view of an agent developer: where everything is stored, how the request is assembled, and how the runtime processes the responses.
 
-### Where Is Everything Stored in Agent Code?
+### Where is what stored in the agent's code?
 
 ```mermaid
 graph TB
-    A["System Prompt (in code/config)"] --> D[ChatCompletionRequest]
+    A["System Prompt (in code/config)"] --> D[Request: model + messages + tools]
     B["Tools Registry (in runtime code)"] --> D
-    C["User Input (from user)"] --> D
+    C["User Input (from the user)"] --> D
     D --> E[LLM API]
     E --> F{Response}
     F -->|tool_calls| G[Runtime validates]
     G --> H[Runtime executes]
-    H --> I[Adds tool result]
+    H --> I[Appends the tool result]
     I --> D
-    F -->|content| J[Final response]
+    F -->|content| J[Final answer]
 ```
 
-**Storage scheme:**
+**The storage layout:**
 
-1. **System Prompt** — stored in agent code (constant or config):
+1. **System Prompt** — stored in the agent's code (a constant or config):
     - Instructions (Role, Goal, Constraints)
     - Few-shot examples (if used)
-    - SOP (action algorithm)
+    - SOP (the operating procedure)
 
-2. **Tools Schema** — stored in **runtime registry** (not in the prompt!):
+2. **Tools Schema** — stored in the **runtime registry** (not in the prompt!):
     - Tool definitions (JSON Schema)
     - Tool handler functions
     - Validation and execution
 
 3. **User Input** — comes from the user:
-    - Current request
-    - Dialogue history (stored in `messages[]`)
+    - The current request
+    - The conversation history (stored in `messages[]`)
 
-4. **Tool Results** — generated by runtime:
-    - After tool execution
-    - Added to `messages[]` with `Role = "tool"`
+4. **Tool Results** — generated by the runtime:
+    - After the tool executes
+    - Appended to `messages[]` with `Role = "tool"`
 
-### Complete Protocol: JSON Requests and Responses (2 Moves)
+### The full protocol: JSON requests and responses (2 runs)
 
-**Move 1: Request with Multiple Tools**
+**Run 1: a request with several tools**
 
 ```json
 {
-  "model": "gpt-4o-mini",
+  "model": "glm-5.3",
   "messages": [
     {
       "role": "system",
-      "content": "You are a DevOps engineer. Use tools to check services.\n\nUsage examples:\nUser: \"Check nginx status\"\nAssistant: returns tool_call check_status(\"nginx\")\n\nUser: \"Restart server\"\nAssistant: returns tool_call restart_service(\"web-01\")"
+      "content": "You are a DevOps engineer. Use tools to check services.\n\nUsage examples:\nUser: \"Check the status of nginx\"\nAssistant: returns a tool_call check_status(\"nginx\")\n\nUser: \"Restart the server\"\nAssistant: returns a tool_call restart_service(\"web-01\")"
     },
     {
       "role": "user",
-      "content": "Check nginx status"
+      "content": "Check the status of nginx"
     }
   ],
   "tools": [
@@ -347,7 +365,7 @@ graph TB
           "properties": {
             "service_name": {
               "type": "string",
-              "description": "Service name to restart"
+              "description": "Name of the service to restart"
             }
           },
           "required": ["service_name"]
@@ -359,10 +377,10 @@ graph TB
 }
 ```
 
-**Where everything is:**
+**Where everything lives:**
 - **System Prompt** (instructions + few-shot examples) → `messages[0].content`
 - **User Input** → `messages[1].content`
-- **Tools Schema** (2 tools with full JSON Schema) → separate `tools[]` field
+- **Tools Schema** (2 tools with full JSON Schema) → the separate `tools[]` field
 
 **Response #1 (tool call):**
 
@@ -388,25 +406,25 @@ graph TB
 }
 ```
 
-**Runtime processes tool call:**
-1. Validates: `tool_calls[0].function.name` exists in registry
+**The runtime processes the tool call:**
+1. Validates: `tool_calls[0].function.name` exists in the registry
 2. Parses: `json.Unmarshal(tool_calls[0].function.arguments)` → `{"service": "nginx"}`
 3. Executes: `check_status("nginx")` → result: `"Service nginx is ONLINE"`
-4. Adds tool result to `messages[]`
+4. Appends the tool result to `messages[]`
 
-**Move 2: Request with Tool Result**
+**Run 2: Request with the tool result**
 
 ```json
 {
-  "model": "gpt-4o-mini",
+  "model": "glm-5.3",
   "messages": [
     {
       "role": "system",
-      "content": "You are a DevOps engineer. Use tools to check services.\n\nUsage examples:\nUser: \"Check nginx status\"\nAssistant: returns tool_call check_status(\"nginx\")\n\nUser: \"Restart server\"\nAssistant: returns tool_call restart_service(\"web-01\")"
+      "content": "You are a DevOps engineer. Use tools to check services.\n\nUsage examples:\nUser: \"Check the status of nginx\"\nAssistant: returns tool_call check_status(\"nginx\")\n\nUser: \"Restart the server\"\nAssistant: returns tool_call restart_service(\"web-01\")"
     },
     {
       "role": "user",
-      "content": "Check nginx status"
+      "content": "Check the status of nginx"
     },
     {
       "role": "assistant",
@@ -467,14 +485,14 @@ graph TB
 }
 ```
 
-**Where everything is:**
-- **System Prompt** → `messages[0].content` (same)
-- **User Input** → `messages[1].content` (same)
-- **Tool Call** → `messages[2]` (added by runtime after first response)
-- **Tool Result** → `messages[3].content` (added by runtime after execution)
-- **Tools Schema** → `tools[]` field (same)
+**Where everything lives:**
+- **System Prompt** → `messages[0].content` (same as before)
+- **User Input** → `messages[1].content` (same as before)
+- **Tool Call** → `messages[2]` (added by the runtime after the first response)
+- **Tool Result** → `messages[3].content` (added by the runtime after execution)
+- **Tools Schema** → the `tools[]` field (same as before)
 
-**Response #2 (final response):**
+**Response #2 (the final answer):**
 
 ```json
 {
@@ -482,28 +500,28 @@ graph TB
   "choices": [{
     "message": {
       "role": "assistant",
-      "content": "nginx is running normally, service ONLINE",
+      "content": "nginx is running fine, the service is ONLINE",
       "tool_calls": null
     }
   }]
 }
 ```
 
-### Evolution of messages[] Array (JSON)
+### Evolution of the messages[] array (JSON)
 
-**Before first request:**
+**Before the first request:**
 ```json
 [
   {"role": "system", "content": "You are a DevOps engineer..."},
-  {"role": "user", "content": "Check nginx status"}
+  {"role": "user", "content": "Check the status of nginx"}
 ]
 ```
 
-**After first request (runtime adds tool call):**
+**After the first request (the runtime adds the tool call):**
 ```json
 [
   {"role": "system", "content": "You are a DevOps engineer..."},
-  {"role": "user", "content": "Check nginx status"},
+  {"role": "user", "content": "Check the status of nginx"},
   {
     "role": "assistant",
     "content": null,
@@ -519,11 +537,11 @@ graph TB
 ]
 ```
 
-**After tool execution (runtime adds tool result):**
+**After the tool executes (the runtime adds the tool result):**
 ```json
 [
   {"role": "system", "content": "You are a DevOps engineer..."},
-  {"role": "user", "content": "Check nginx status"},
+  {"role": "user", "content": "Check the status of nginx"},
   {
     "role": "assistant",
     "content": null,
@@ -544,237 +562,157 @@ graph TB
 ]
 ```
 
-**After second request (model sees tool result and formulates response):**
+**After the second request (the model sees the tool result and formulates an answer):**
 - The model sees the full context (system + user + tool call + tool result)
-- Generates final response: `"nginx is running normally, service ONLINE"`
+- It generates the final answer: `"nginx is running fine, the service is ONLINE"`
 
-**Note:** For Go implementation examples, see [Lab 02: Tools](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab02-tools) and [Lab 04: Autonomy](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab04-autonomy)
+**Note:** For a Go implementation, see the examples in [Lab 02: Tools](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab02-tools) and [Lab 04: Autonomy](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab04-autonomy).
 
-### Key Points for Developers
+> **Note:** this lab is not yet revised (still on the old stack) — use it as a pointer; the canonical material is in this chapter.
 
-1. **System Prompt and Tools Schema are different things:**
-    - System Prompt — text in `Messages[0].Content` (can contain few-shot examples)
-    - Tools Schema — separate `Tools` field in the request (JSON Schema)
+### Key takeaways for the developer
 
-2. **Few-shot examples are inside System Prompt:**
-    - This is text showing the model the response format or tool selection
-    - Different from Tools Schema (which describes tool structure)
+1. **The System Prompt and the Tools Schema are different things:**
+    - The system prompt is the text in `Messages[0].Content` (it may contain few-shot examples)
+    - The tools schema is a separate `Tools` field in the request (JSON Schema)
 
-3. **Runtime manages the loop:**
-    - Validates `tool_calls`
-    - Executes tools
-    - Adds results to `messages`
-    - Sends next request
+2. **Few-shot examples live inside the system prompt:**
+    - This is text showing the model the response format or how to pick tools
+    - It is distinct from the tools schema (which describes the structure of the tools)
+
+3. **The runtime drives the loop:**
+    - Validates the `tool_calls`
+    - Executes the tools
+    - Appends the results to `messages`
+    - Sends the next request
 
 4. **Tools are not "inside the prompt":**
     - In the API they are passed as a separate `Tools` field
-    - The model sees them together with the prompt, but these are different parts of the request
+    - The model sees them alongside the prompt, but they are different parts of the request
 
-See how to write instructions and examples: **[Chapter 02: Prompting](../02-prompt-engineering/README.md)**
+For how to write instructions and examples, see **[Chapter 02: Prompting](../02-prompt-engineering/README.md)**
 
 Practice: **[Lab 02: Tools](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab02-tools)**, **[Lab 04: Autonomy](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab04-autonomy)**
 
-### Why Is This Not Magic?
+### What actually happens?
 
-**Key points:**
+**In short:**
 
-1. **The model receives descriptions of ALL tools** — it doesn't "know" about tools out of the box, it processes their `Description` in JSON Schema. The model selects the right tool by matching the user's request with descriptions.
+1. **The model sees the descriptions of ALL tools** — it doesn't "know" about the tools out of the box; it sees their `Description` in the JSON Schema. The model picks a tool by matching the user's request against the descriptions.
 
-2. **Selection mechanism is based on semantics** — the model looks for a match between:
-    - User's request ("Check availability")
-    - Tool description ("Use this when user asks about network reachability")
-    - Context of previous results (if any)
+2. **The selection mechanism is semantics-based** — the model looks for a match between:
+    - The user's request ("Check availability")
+    - The tool description ("Use this when user asks about network reachability")
+    - The context of previous results (if any)
 
-3. **The model returns structured JSON** — this is not text "I will call ping", but a specific tool call with tool name and arguments
+3. **The model returns structured JSON** — not text like "I'll call ping", but a concrete tool call with the tool name and arguments
 
-4. **Runtime does all the work** — parsing, validation, execution, returning result
+4. **The runtime does all the work** — parsing, validation, execution, returning the result
 
-5. **The model receives the result** — it processes the result as a new message in history and continues working
+5. **The model sees the result** — it receives the result as a new message in the history and continues working
 
 **Example of choosing between similar tools:**
 
 ```go
-tools := []openai.Tool{
+tools := []ToolDef{
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "check_service_status",
-            Description: "Check if a systemd service is running. Use this for Linux services like nginx, mysql, etc.",
-        },
+        Name:        "check_service_status",
+        Description: "Check if a systemd service is running. Use this for Linux services like nginx, mysql, etc.",
     },
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "check_http_status",
-            Description: "Check HTTP response code of a web service. Use this for checking if a website or API is responding.",
-        },
+        Name:        "check_http_status",
+        Description: "Check HTTP response code of a web service. Use this for checking if a website or API is responding.",
     },
 }
 
-// Request 1: "Check nginx status"
-// Model chooses: check_service_status (nginx is a systemd service)
+// Request 1: "Check the status of nginx"
+// The model picks: check_service_status (nginx is a systemd service)
 
-// Request 2: "Check if site example.com responds"
-// Model chooses: check_http_status (site is an HTTP service)
+// Request 2: "Check whether the site example.com responds"
+// The model picks: check_http_status (a website is an HTTP service)
 ```
 
-**Important:** If tool descriptions are too similar or unclear, the model may choose the wrong tool. Therefore, `Description` should be **specific and distinguishable**.
+**Note:** If tool descriptions are too similar or unclear, the model may pick the wrong tool. That's why `Description` must be **specific and distinguishable**. The full tool definition with the argument schema is in "Step 1" above; the full walkthrough of the JSON protocol is in the "The end-to-end protocol" section.
 
-**Example tool definition:**
+**The main point:** `Description` is the most important field! The LLM relies on it when deciding which tool to call.
+
+## The Cost of Tools in Context
+
+The `tools` block is not a one-time setting: it is sent **with every request** of the loop and paid for in tokens every time. As a rule of thumb, 4 compact tools already cost ~742 tokens — and that's just the schema, before the system prompt and history.
+
+Practical consequences:
+
+- **`Description` is the most important field, and also the most expensive line.** Every word in it is paid for on every run. Write densely: what the tool does, when to pick it, what it returns. Strike out anything that doesn't help the model choose.
+- **Check the budget before adding each tool.** A new tool must justify its tokens: if the model calls it once per hundred tasks, it probably doesn't belong in the permanent set (see the section "Many tools ≠ you need a catalog of them" in [Chapter 06: RAG](../06-rag/README.md)).
+- **The number and size of descriptions is design question #1.** More than 20 tools with long descriptions is a signal to rethink the design: perhaps you don't need tool wrappers but skills and `exec` with progressive disclosure (see [Chapter 09: Agent Architecture](../09-agent-architecture/README.md) and [Chapter 06: RAG](../06-rag/README.md)).
+
+> **How the real SDK does it.** Descriptions are not written by hand: a tool is declared via a typed constructor, and the JSON Schema is generated from the Go input struct — the schema and the code simply cannot drift apart. The execution result is an object with two versions of the content: the full one for the UI and audit, and a filtered one for the model.
+
+## Tool Examples Across Domains
+
+Tools from different domains are built the same way — only the `Description` and the argument schema change. A summary of typical examples:
+
+| Domain | Tool | Description gist | Note |
+|-------|------------|---------------|-------------|
+| DevOps | `check_service_status` | Check if a systemd service is running | read-only |
+| DevOps | `restart_service` | Restart a systemd service | downtime — requires confirmation |
+| DevOps | `read_logs` | Read the last N lines of service logs | read-only |
+| Support | `search_kb` | Search knowledge base for solutions | read-only |
+| Support | `draft_reply` | Draft a reply to the ticket | draft, not sending |
+| Data | `sql_select` | Execute a SELECT query on the database | SELECT-only enforced in code, not in words |
+| Data | `describe_table` | Get table schema and column information | read-only |
+| Security | `query_siem` | Query security events | read-only |
+| Security | `isolate_host` | Isolate a host from the network | destructive — requires confirmation |
+
+Two examples where the wording of `Description` decides everything:
 
 ```go
-tools := []openai.Tool{
-    {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "ping",
-            Description: "Ping a host to check connectivity",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "host": {
-                        "type": "string",
-                        "description": "Hostname or IP address to ping"
-                    }
-                },
-                "required": ["host"]
-            }`),
-        },
-    },
+// DevOps: a destructive operation — the description explains the consequences
+{
+    Name:        "restart_service",
+    Description: "Restart a systemd service. This interrupts the service and may cause downtime for users; the tool returns the new service status.",
+    Parameters:  `{"service_name": "string"}`,
+}
+
+// Security: a dangerous tool — the description says what it does and why it requires confirmation
+{
+    Name:        "isolate_host",
+    Description: "Cut a host off from the network to contain an active security incident. This severs all connections on the host; execution requires confirmation through the agent's Confirm mechanism.",
+    Parameters:  `{"host": "string"}`,
 }
 ```
 
-**Important:** `Description` is the most important field! The LLM relies on it when deciding which tool to call.
+Note that confirmation for `isolate_host` is enforced by the **runtime code** (the Confirm callback and the mandatory `confirmed_by` argument), not by a plea in the Description. For a detailed treatment see [Chapter 05: Safety and HITL](../05-safety-and-hitl/README.md); the full collection of tools by domain is in [Chapter 15: Case Studies](../15-case-studies/README.md).
 
-## Tool Examples in Different Domains
+## Handling Tool Errors
 
-### DevOps
-
-```go
-// Check service status
-{
-    Name: "check_service_status",
-    Description: "Check if a systemd service is running",
-    Parameters: {"service_name": "string"}
-}
-
-// Restart service
-{
-    Name: "restart_service",
-    Description: "Restart a systemd service. WARNING: This will cause downtime.",
-    Parameters: {"service_name": "string"}
-}
-
-// Read logs
-{
-    Name: "read_logs",
-    Description: "Read the last N lines of service logs",
-    Parameters: {"service": "string", "lines": "number"}
-}
-```
-
-### Support
-
-```go
-// Get ticket
-{
-    Name: "get_ticket",
-    Description: "Get ticket details by ID",
-    Parameters: {"ticket_id": "string"}
-}
-
-// Search knowledge base
-{
-    Name: "search_kb",
-    Description: "Search knowledge base for solutions",
-    Parameters: {"query": "string"}
-}
-
-// Draft reply
-{
-    Name: "draft_reply",
-    Description: "Draft a reply to the ticket",
-    Parameters: {"ticket_id": "string", "message": "string"}
-}
-```
-
-### Data Analytics
-
-```go
-// SQL query (read-only!)
-{
-    Name: "sql_select",
-    Description: "Execute a SELECT query on the database. ONLY SELECT queries allowed.",
-    Parameters: {"query": "string"}
-}
-
-// Describe table
-{
-    Name: "describe_table",
-    Description: "Get table schema and column information",
-    Parameters: {"table_name": "string"}
-}
-
-// Check data quality
-{
-    Name: "check_data_quality",
-    Description: "Check for nulls, duplicates, outliers in a table",
-    Parameters: {"table_name": "string"}
-}
-```
-
-### Security
-
-```go
-// Query SIEM
-{
-    Name: "query_siem",
-    Description: "Query security information and event management system",
-    Parameters: {"query": "string", "time_range": "string"}
-}
-
-// Isolate host (requires confirmation!)
-{
-    Name: "isolate_host",
-    Description: "CRITICAL: Isolate a host from the network. Requires confirmation.",
-    Parameters: {"host": "string"}
-}
-
-// Check IP reputation
-{
-    Name: "check_ip_reputation",
-    Description: "Check if an IP address is known malicious",
-    Parameters: {"ip": "string"}
-}
-```
-
-## Tool Error Handling
-
-If a tool returns an error, the agent must see and handle it.
+If a tool returns an error, the agent must see it and handle it.
 
 **Example:**
 
 ```go
-// Agent calls ping("nonexistent-host")
+// The agent calls ping("nonexistent-host")
 result := ping("nonexistent-host")
 // result = "Error: Name or service not known"
 
-// Add error to history
-messages = append(messages, ChatCompletionMessage{
-    Role:    "tool",
-    Content: result,  // The model will see the error!
+// Append the error to the history
+messages = append(messages, Message{
+    Role:       "tool",
+    Content:    result,  // The model will see the error!
     ToolCallID: call.ID,
 })
 
-// The model will receive the error and can:
-// 1. Try another host
-// 2. Inform the user about the problem
+// The model receives the error and can:
+// 1. Try a different host
+// 2. Report the problem to the user
 // 3. Escalate the issue
 ```
 
-**Important:** An error is also a result! Don't hide errors from the model.
+**Remember:** an error is a result too! Don't hide errors from the model.
 
-## Tool Call Validation
+## Validating Tool Calls
 
-Before executing a tool, you need to validate the arguments.
+Before executing a tool, you need to validate its arguments.
 
 **Validation example:**
 
@@ -794,9 +732,15 @@ func executeTool(name string, args json.RawMessage) (string, error) {
             return "", fmt.Errorf("service_name is required")
         }
         
-        // Security check
-        if params.ServiceName == "critical-db" {
-            return "", fmt.Errorf("Cannot restart critical service without confirmation")
+        // Security check: allowlist, not denylist.
+        // We explicitly list what may be restarted; everything else is rejected.
+        var allowedServices = map[string]bool{
+            "nginx":    true,
+            "redis":    true,
+            "worker":   true,
+        }
+        if !allowedServices[params.ServiceName] {
+            return "", fmt.Errorf("service %q is not in the restart allowlist; restart is permitted only for explicitly allowed services", params.ServiceName)
         }
         
         return restartService(params.ServiceName), nil
@@ -805,176 +749,35 @@ func executeTool(name string, args json.RawMessage) (string, error) {
 }
 ```
 
-## Repairing tool call arguments (when JSON/schema is invalid)
+## Repairing Tool-Call Arguments (When the JSON/schema is Invalid)
 
-In production, you will occasionally get:
+In production this happens regularly: the model sometimes returns:
 
-- syntactically invalid JSON (missing braces, broken quotes),
-- valid JSON that still fails your JSON Schema (wrong types, missing required fields).
+- syntactically invalid JSON (a missing `}`, broken quotes, etc.),
+- valid JSON that **fails** your JSON Schema (wrong fields/types).
 
-When this happens, do not execute the tool "as is". Add a **repair step**: a separate LLM call (or a dedicated mode/model) that takes:
-
-- the tool name,
-- the tool arguments JSON Schema,
-- the original arguments string,
-
-and returns **only the fixed JSON**, without explanations.
-
-Skeleton:
+Fix the first category deterministically — **with a resilient parser such as `jsonrepair`** — before giving up on the model. Typical breakages (trailing commas, single quotes, unclosed brackets, wrapping in a ```json fence) are fixed by the parser without an LLM call:
 
 ```go
-if !json.Valid([]byte(call.Function.Arguments)) {
-    // 1) repaired := repairWithLLM(call.Function.Arguments, toolSchema)
-    // 2) validate again (json.Valid + schema)
-    // 3) execute only if validation passes; otherwise fail closed
-}
-```
-
-Key rule: the repair step must not change intent. It only fixes the format to match the schema.
-
-## Model Selection Strategy for Different Stages
-
-### Why Use Different Models?
-
-In the examples above, we used a single model (`GPT3Dot5Turbo`) for every stage: both tool selection and result analysis. In a tutorial, that's fine. In production, it's not.
-
-Different stages of the agent's work require different capabilities:
-
-| Stage | What the Model Does | Required Capability | Suitable Model |
-|-------|---------------------|---------------------|----------------|
-| Tool Selection | Matches the request to tool descriptions | Instruction following, structured output | Fast and cheap (GPT-4o-mini, Claude Haiku) |
-| Argument Generation | Fills in the JSON Schema for arguments | JSON generation, schema adherence | Fast and cheap |
-| Result Analysis | Analyzes tool output, formulates a response | Reasoning, information synthesis | Powerful (GPT-4o, Claude Sonnet) |
-| Complex Planning | Decides which tools to call and in what order | Planning, multi-step reasoning | Powerful |
-
-**Bottom line:** Tool selection is a simple classification task. Result analysis is a reasoning task. Paying for GPT-4o at the "pick ping from three tools" stage is wasteful.
-
-### How It Works — Magic vs Reality
-
-**Magic (how it's usually explained):**
-> "Use the best model for everything. It'll handle it."
-
-**Reality (how it actually works):**
-
-An agent makes 5–15 LLM calls per task. If each call costs $0.01 (GPT-4o) instead of $0.0002 (GPT-4o-mini), the difference is 50x per task. At 10,000 tasks per day, that's $1,000 vs $20.
-
-In practice: use a cheap model where the task is simple, a powerful one where reasoning is needed.
-
-### Implementation: ModelRouter
-
-```go
-// ModelSelector picks a model depending on the agent's current stage.
-type ModelSelector struct {
-    ToolCallModel   string // Model for tool selection and argument generation
-    AnalysisModel   string // Model for result analysis and final response
-    ComplexModel    string // Model for complex tasks (planning, multi-tool)
-}
-
-func NewModelSelector() *ModelSelector {
-    return &ModelSelector{
-        ToolCallModel: "gpt-4o-mini",      // Fast, cheap, good at following instructions
-        AnalysisModel: "gpt-4o",            // Powerful, good at reasoning
-        ComplexModel:  "gpt-4o",            // For complex planning
-    }
-}
-
-// SelectModel determines which model to use for the current iteration.
-// needsToolCall: whether we expect a tool call on this step.
-// toolCount: number of available tools (affects selection complexity).
-func (ms *ModelSelector) SelectModel(needsToolCall bool, toolCount int) string {
-    if !needsToolCall {
-        // Result analysis stage — needs a powerful model
-        return ms.AnalysisModel
-    }
-    if toolCount > 20 {
-        // Many tools — complex selection, needs a powerful model
-        return ms.ComplexModel
-    }
-    // Regular tool call — a cheap model is enough
-    return ms.ToolCallModel
-}
-```
-
-### How to Determine the Stage?
-
-Runtime knows which stage the agent is at. The rule is simple:
-
-```go
-func isToolCallExpected(messages []openai.ChatCompletionMessage) bool {
-    if len(messages) == 0 {
-        return true // First call — most likely needs a tool call
-    }
-    lastMsg := messages[len(messages)-1]
-
-    // If the last message is a tool result,
-    // the model will analyze the result.
-    // But it MAY call another tool.
-    if lastMsg.Role == openai.ChatMessageRoleTool {
-        return true // Could be a tool call or a final response
-    }
-    return true
-}
-```
-
-**Important nuance:** In practice, you don't always know in advance whether the model will call a tool or respond with text. A simpler strategy is often used — **switch after N tool calls**:
-
-```go
-// Simple strategy: first N iterations use a cheap model,
-// the final iteration (when tool calls stop) uses a powerful one.
-func (ms *ModelSelector) SelectByIteration(iteration int, lastResponseHadToolCalls bool) string {
-    if lastResponseHadToolCalls {
-        // Still running tools — cheap model
-        return ms.ToolCallModel
-    }
-    // Tools are done — switch to powerful model for the final response
-    return ms.AnalysisModel
-}
-```
-
-### Usage in the Agent Loop
-
-```go
-selector := NewModelSelector()
-lastHadToolCalls := true // First iteration — expect a tool call
-
-for i := 0; i < maxIterations; i++ {
-    model := selector.SelectByIteration(i, lastHadToolCalls)
-
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    model,  // Different model at different stages!
-        Messages: messages,
-        Tools:    tools,
-    })
+args := call.Arguments
+if !json.Valid([]byte(args)) {
+    repaired, err := jsonrepair.Repair(args) // deterministic repair
     if err != nil {
-        return fmt.Errorf("LLM call failed: %w", err)
+        // couldn't repair — return a clear error message as the result for the model
+        return "Error: invalid arguments JSON, re-send as valid JSON matching the schema", nil
     }
-
-    msg := resp.Choices[0].Message
-    messages = append(messages, msg)
-    lastHadToolCalls = len(msg.ToolCalls) > 0
-
-    if !lastHadToolCalls {
-        fmt.Printf("[model=%s] Final: %s\n", model, msg.Content)
-        break
-    }
-
-    fmt.Printf("[model=%s] Tool calls: %d\n", model, len(msg.ToolCalls))
-    // ... execute tools ...
+    args = repaired
 }
+// then the usual validation: json.Unmarshal + schema check
 ```
 
-### When You DON'T Need Different Models
+If the JSON is syntactically sound but fails the schema, you can return the error to the model once, with the schema text, and ask it to retry the call. The key rule: repair **does not change the intent**, it fixes the format.
 
-- **Prototype / MVP:** A single model is simpler. Optimize later.
-- **Low volume:** If the agent makes 1–2 calls per day, the savings don't justify the complexity.
-- **Critical consistency:** Some tasks require one model to "remember" its reasoning across iterations. Switching models can break the chain of thought.
-
-For more on cost and optimization, see [Chapter 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md).
+> **How the real SDK does it.** Sometimes the model "leaks": it emits a tool call as plain text in `content` instead of the `tool_calls` field. Mature SDKs include recovery parsers that recognize such leaked calls in the text and reconstruct them into full-fledged tool calls. This is a fallback path for model glitches, not the normal mode of operation — don't design around it.
 
 ## Tool Descriptions in .md Files
 
 In production agents, tool descriptions are stored **in separate .md files**, not in Go code:
-
 ```
 internal/agent/tool/
 ├── read/
@@ -1003,14 +806,13 @@ func (t *ReadTool) Description() string { return description }
 ```
 
 Advantages:
-
-- **Markdown is easier to edit** — no need to change Go code to improve a description
-- **Descriptions are reviewed separately from code** — a product manager can improve the description without knowing Go
+- **Markdown is easier to edit** — you don't need to touch Go code to improve the description
+- **Descriptions get reviewed separately from code** — a product manager can improve a description without knowing Go
 - **Single Source of Truth** — `Tool.Description()` is the only source of the description
 
-### Anti-pattern: Duplicate Descriptions
+### Anti-pattern: duplicate description
 
-A common mistake: the tool description is duplicated in the system prompt **and** in the tool definitions API. The model receives contradictory instructions:
+A common mistake: the tool description is duplicated in the system prompt **and** in the API tool definitions. The model receives contradictory instructions:
 
 ```
 // In system.md (system prompt):
@@ -1020,308 +822,290 @@ A common mistake: the tool description is duplicated in the system prompt **and*
 "Use ONLY when you need the user to pick from options. For free-text, just ask in your message."
 ```
 
-The model receives **mutually exclusive** instructions. For Raw providers (Qwen, DeepSeek) the description may appear **three times**: system prompt + tool definition + `<tools>` injection.
+The model receives **mutually exclusive** instructions. For raw providers (Qwen, DeepSeek) the description may end up in **three** places: system prompt + tool definition + `<tools>` injection.
 
-**Rule:** The system prompt contains **behavioral rules and workflow**, but **not tool descriptions**. Descriptions belong only in the Tool API.
+**Rule:** the system prompt contains **behavior rules and workflow**, but **not tool descriptions**. Descriptions go only through the Tool API.
 
-## Common Errors
+## Fallbacks Instead of Routing
 
-### Error 1: Model Doesn't Generate tool_call
+### When you do NOT need different models
 
-**Symptom:** Agent receives a text response from the model instead of `tool_calls`. The model responds with text instead of calling a tool.
+This is the core of the section, so let's start with it:
 
-**Cause:** 
-- The model is not trained on function calling
-- Poor tool description (`Description` is unclear)
-- `Temperature > 0` (too random)
+- **Prototype / MVP:** one model is simpler. Optimize later.
+- **Few calls:** if the agent makes 1-2 calls a day, the savings won't justify the complexity.
+- **Critical consistency:** some tasks require the same model to "remember" its reasoning between iterations. Switching models can break the chain of reasoning.
 
-**Solution:**
+For the main agent loop, pick **one** model (GLM-5.3 or Fable 5.1) and don't overcomplicate things.
+
+### Why stage-based routing is over-engineering
+
+The idea of "a cheap model for tool selection, a powerful one for analyzing results" sounds reasonable, but in practice it breaks the agent:
+
+1. **It kills the prompt cache.** Each model has its own prompt cache. Switching models within a single run resets the cacheable prefix (system prompt + tools + history) — and that prefix is exactly what gives you the main savings in long loops. The savings on the "cheap iteration" turn into paying for the full prefix again.
+2. **It makes testing harder.** Agent behavior starts to depend on which model handled which iteration. Reproducing a bug becomes much harder.
+3. **A stage cannot be predicted.** You don't know in advance whether the model will call a tool or answer with text — the "router" is just guessing anyway.
+
+### The right shape: primary + explicit fallbacks
+
+Instead of stage-based routing — one primary model and an **explicit list of fallbacks**. On a transient error (timeout, 429/5xx) or context overflow, the request is retried against the fallback model:
+
+```go
+type ModelConfig struct {
+    Primary  string   // the main model of the loop
+    Fallbacks []string // fallbacks, in order
+}
+
+cfg := ModelConfig{
+    Primary:   "glm-5.3",
+    Fallbacks: []string{"fable-5.1"}, // a different model, same tool-calling protocol
+}
+```
+
+Rules:
+
+- each fallback triggers **at most once per run** — otherwise the agent will get stuck looping on repeated errors;
+- fallbacks are about availability (transient errors, context overflow), not about "saving on a simple iteration";
+- all models in the chain must support the same tools protocol, so `messages[]` can be carried over without conversion.
+
+### Where the cheap model belongs
+
+A cheap model (GLM-5.3 Flash) belongs not in the main loop but at **auxiliary nodes outside it** — places with no long cacheable prefix where the task really is simple:
+
+- classification of incoming requests,
+- structured output for field extraction.
+
+Condense is the exception: summarization runs on the same model with the same cacheable prefix, so the head is read from a warm cache ([ch. 20](../20-cost-latency-engineering/README.md), [ch. 13](../13-context-engineering/README.md)).
+
+The main loop — GLM-5.3 or Fable 5.1; auxiliary nodes — GLM-5.3 Flash.
+
+For more on cost and optimization, see [Chapter 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md).
+
+## Common Mistakes
+
+### Mistake 1: The model doesn't generate a tool_call
+
+**Symptom:** The agent receives a text response from the model instead of `tool_calls`. The model answers with text instead of calling a tool.
+
+**Cause:**
+- The model wasn't trained on function calling
+- Poor tool description (unclear `Description`)
+- `Temperature` too high — worse instruction following during tool selection
+
+**Fix:**
 ```go
 // GOOD: Use a model with tools support
 // Check via Lab 00: Capability Check
 
-// GOOD: Improve Description
+// GOOD: Improve the Description
 Description: "Check the status of a server by hostname. Use this when user asks about server status or availability."
 
-// GOOD: Temperature = 0
-Temperature: 0,  // Deterministic behavior
+// GOOD: Low Temperature — quality, less variance in tool selection
+Temperature: 0.2,
 ```
 
-### Error 2: Broken JSON in Arguments
+### Mistake 2: Broken JSON in arguments
 
-**Symptom:** `json.Unmarshal` returns an error. JSON in arguments is incorrect.
+**Symptom:** `json.Unmarshal` returns an error. The JSON in the arguments is invalid.
 
-**Cause:** Model generates incorrect JSON (missing brackets, wrong format).
+**Cause:** The model generates invalid JSON (missing brackets, wrong format).
 
-**Solution:**
+**Fix:**
 ```go
-// GOOD: Validate JSON before parsing
-if !json.Valid([]byte(call.Function.Arguments)) {
+// GOOD: Validate the JSON before parsing
+if !json.Valid([]byte(call.Arguments)) {
     return "Error: Invalid JSON", nil
 }
 
-// GOOD: Temperature = 0 for deterministic JSON
-Temperature: 0,
+// GOOD: Low Temperature — fewer errors in JSON generation
+Temperature: 0.2,
 ```
 
-### Error 3: Tool Hallucinations
+### Mistake 3: Tool hallucinations
 
-**Symptom:** Agent calls a non-existent tool. Model generates a tool_call with a name that's not in the list.
+**Symptom:** The agent calls a tool that doesn't exist. The model generates a tool_call with a name that isn't in the list.
 
-**Cause:** Model doesn't see a clear list of available tools or the list is too large.
+**Cause:** The model doesn't see a clear list of available tools, or the list is too large.
 
-**Solution:**
+**Fix:**
 ```go
-// GOOD: Validate tool name before execution
+// GOOD: Validate the tool name before executing
 allowedFunctions := map[string]bool{
     "get_server_status": true,
     "ping":              true,
 }
-if !allowedFunctions[call.Function.Name] {
+if !allowedFunctions[call.Name] {
     return "Error: Unknown function", nil
 }
 ```
 
-**Note:** If you have a large tool space (hundreds or thousands of tools), use **tool retrieval** — dynamically select only relevant tools before planning. For more details, see [Chapter 06: RAG](../06-rag/README.md#rag-for-action-space-tool-retrieval).
+**Note:** If you have a large tool space (hundreds or thousands), reconsider the design first: skills + exec instead of a catalog of wrappers (see [Chapter 06: RAG](../06-rag/README.md)). **Tool retrieval** — dynamically selecting relevant tools before planning — is a last resort for when tools are genuinely diverse and numerous.
 
-### Error 4: Poor Tool Description
+### Mistake 4: Poor tool description
 
-**Symptom:** Model selects the wrong tool or doesn't select one at all.
+**Symptom:** The model picks the wrong tool, or doesn't pick one at all.
 
-**Cause:** `Description` is too general or doesn't contain keywords from the user's request.
+**Cause:** The `Description` is too generic or lacks keywords from the user's request.
 
-**Solution:**
+**Fix:**
 ```text
-// BAD
+// BAD:
 Description: "Ping a host"
 
-// GOOD
+// GOOD:
 Description: "Ping a host to check network connectivity. Use this when user asks about network reachability or connectivity."
 ```
 
-### Error 5: Duplicate Tool Description
+### Mistake 5: Duplicated tool description
 
-**Symptom:** The model behaves unpredictably — sometimes it uses the tool, sometimes it writes the question as plain text. Different providers produce different behavior.
+**Symptom:** The model behaves unpredictably — sometimes it uses the tool, sometimes it writes the question as text. Different providers show different behavior.
 
 **Cause:** The tool description is duplicated in the system prompt and in the tool definition. The descriptions contradict each other.
 
-**Solution:**
+**Fix:**
 ```go
 // BAD: description in two places
 systemPrompt := "Use read tool to read files. Always read before editing."
 readTool := Tool{Description: "Read a file from the filesystem. Returns file content."}
 
 // GOOD: description only in the tool definition
-systemPrompt := "Before editing, always read the file first." // behavioral rule, not a description
+systemPrompt := "Before editing, always read the file first." // a rule, not a description
 readTool := Tool{Description: "Read a file. Returns content with line numbers."}
 ```
 
-## Mini-Exercises
+## Exercises
 
-### Exercise 1: Create a Tool
+### Exercise 1: Create a tool
 
 Create a `check_disk_usage` tool that checks disk usage:
 
 ```go
-tools := []openai.Tool{
+tools := []ToolDef{
     {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "check_disk_usage",
-            Description: "...",  // Your code here
-            Parameters:  json.RawMessage(`{
-                // Your code here
-            }`),
-        },
+        Name:        "check_disk_usage",
+        Description: "...",  // Your code here
+        Parameters:  json.RawMessage(`{
+            // Your code here
+        }`),
     },
 }
 ```
 
 **Expected result:**
-- `Description` contains keywords: "disk", "usage", "space"
-- JSON Schema is correct
-- Required fields are specified in `required`
+- `Description` contains the keywords: "disk", "usage", "space"
+- The JSON Schema is correct
+- Required fields are listed in `required`
 
-### Exercise 2: Argument Validation
+### Exercise 2: Argument validation
 
 Implement an argument validation function for a tool:
 
 ```go
-func validateToolCall(call openai.ToolCall) error {
-    // Check tool name
-    // Check JSON validity
-    // Check required fields
+func validateToolCall(call ToolCall) error {
+    // Check the tool name
+    // Check the JSON validity
+    // Check the required fields
 }
 ```
 
 **Expected result:**
-- Function returns an error if tool name is unknown
-- Function returns an error if JSON is incorrect
-- Function returns an error if required fields are missing
+- The function returns an error if the tool name is unknown
+- The function returns an error if the JSON is invalid
+- The function returns an error if required fields are missing
 
-## Completion Criteria / Checklist
+## Acceptance Criteria / Checklist
 
-**Completed:**
-- [x] `Description` is specific and clear (contains keywords)
-- [x] JSON Schema is correct
-- [x] Required fields are specified in `required`
+**Passed:**
+- [x] `Description` is concrete and clear (contains keywords)
+- [x] The JSON Schema is correct
+- [x] Required fields are listed in `required`
 - [x] Argument validation is implemented
 - [x] Errors are handled and returned to the agent
 - [x] Critical tools require confirmation
-- [x] Model successfully generates tool_call
+- [x] The model successfully generates a tool_call
 
-**Not completed:**
-- [ ] Model doesn't generate tool_call (poor description or unsuitable model)
+**Failed:**
+- [ ] The model doesn't generate a tool_call (poor description or unsuitable model)
 - [ ] JSON in arguments is broken (no validation)
-- [ ] Model calls a non-existent tool (no name validation)
-- [ ] `Description` is too general (model cannot select the right tool)
+- [ ] The model calls a non-existent tool (no name validation)
+- [ ] `Description` is too generic (the model can't pick the right tool)
+- [ ] The tool description is duplicated in the system prompt and the tool definition
 
-## Connection with Other Chapters
+## Relation to Other Chapters
 
-- **LLM Physics:** Why the model chooses tool call instead of text, see [Chapter 01: LLM Physics](../01-llm-fundamentals/README.md)
-- **Prompting:** How to describe tools so the model uses them correctly, see [Chapter 02: Prompting](../02-prompt-engineering/README.md)
-- **Loop:** How tool results are returned to the model, see [Chapter 04: Autonomy](../04-autonomy-and-loops/README.md)
-- **MCP:** Standard protocol for connecting tools to agents — [Model Context Protocol](https://modelcontextprotocol.io/). Details in [Chapter 18: Tool Protocols](../18-tool-protocols-and-servers/README.md)
+- **LLM physics:** Why the model chooses a tool call instead of text — see [Chapter 01: LLM Fundamentals](../01-llm-fundamentals/README.md)
+- **Prompting:** How to describe tools so the model uses them correctly — see [Chapter 02: Prompt Engineering](../02-prompt-engineering/README.md)
+- **The loop:** How tool results are returned to the model — see [Chapter 04: Autonomy](../04-autonomy-and-loops/README.md)
+- **MCP:** The standard protocol for connecting tools to agents — [Model Context Protocol](https://modelcontextprotocol.io/). Details in [Chapter 18: Tool Protocols](../18-tool-protocols-and-servers/README.md)
 
-## Complete Example: From Start to Finish
+## Full Example: a Compact Working Loop
 
-Here's a minimal working example of an agent with one tool:
+The full walkthrough of the JSON protocol (requests, responses, the evolution of `messages[]`) was already given above in the "End-to-end protocol" section — here is just a compact working loop on the neutral types from the beginning of the chapter:
 
 ```go
-package main
+// Agent loop with a single tool. client is a neutral client (ch. 04):
+// Complete is a call to your LLM provider
+// (OpenAI-compatible tool-calling endpoint).
+func runAgent(ctx context.Context, client Client) error {
+    tools := []ToolDef{{
+        Name:        "check_status",
+        Description: "Check the status of a server by hostname. Use this when user asks about server status.",
+        Parameters:  json.RawMessage(`{"type":"object","properties":{"hostname":{"type":"string","description":"Server hostname"}},"required":["hostname"]}`),
+    }}
 
-import (
-    "context"
-    "encoding/json"
-    "fmt"
-    "os"
-    
-    "github.com/sashabaranov/go-openai"
-)
-
-func main() {
-    // 1. Initialize client
-    config := openai.DefaultConfig(os.Getenv("OPENAI_API_KEY"))
-    if baseURL := os.Getenv("OPENAI_BASE_URL"); baseURL != "" {
-        config.BaseURL = baseURL // For local models
-    }
-    client := openai.NewClientWithConfig(config)
-    
-    // 2. Define tool
-    tools := []openai.Tool{
-        {
-            Type: openai.ToolTypeFunction,
-            Function: &openai.FunctionDefinition{
-                Name:        "check_status",
-                Description: "Check the status of a server by hostname. Use this when user asks about server status.",
-                Parameters: json.RawMessage(`{
-                    "type": "object",
-                    "properties": {
-                        "hostname": {
-                            "type": "string",
-                            "description": "Server hostname"
-                        }
-                    },
-                    "required": ["hostname"]
-                }`),
-            },
-        },
-    }
-    
-    // 3. Start agent
-    ctx := context.Background()
-    userInput := "Check server status web-01"
-    
-    messages := []openai.ChatCompletionMessage{
+    messages := []Message{
         {Role: "system", Content: "You are a DevOps engineer. Use tools to check services."},
-        {Role: "user", Content: userInput},
+        {Role: "user", Content: "Check the status of server web-01"},
     }
-    
-    // 4. Agent loop
+
     for i := 0; i < 10; i++ {
-        resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-            Model:       "gpt-4o-mini",
+        resp, err := client.Complete(ctx, Request{
+            Model:       "glm-5.3",
             Messages:    messages,
             Tools:       tools,
-            Temperature: 0, // Deterministic behavior
+            Temperature: 0.2, // quality: less variance in tool selection
         })
         if err != nil {
-            fmt.Printf("Error: %v\n", err)
-            return
+            return fmt.Errorf("LLM call failed: %w", err)
         }
-        
+
         msg := resp.Choices[0].Message
         messages = append(messages, msg)
-        
-        // 5. Check: is this a tool_call or final response?
-        if len(msg.ToolCalls) == 0 {
-            // Final response
-            fmt.Printf("Agent: %s\n", msg.Content)
-            break
+
+        if len(msg.ToolCalls) == 0 { // final answer
+            fmt.Println("Agent:", msg.Content)
+            return nil
         }
-        
-        // 6. Execute tool (Runtime)
-        for _, toolCall := range msg.ToolCalls {
-            if toolCall.Function.Name != "check_status" {
-                result := fmt.Sprintf("Error: Unknown tool %s", toolCall.Function.Name)
-                messages = append(messages, openai.ChatCompletionMessage{
-                    Role:       openai.ChatMessageRoleTool,
-                    Content:    result,
-                    ToolCallID: toolCall.ID,
-                })
-                continue
-            }
-            
-            // Parse arguments
-            var args struct {
-                Hostname string `json:"hostname"`
-            }
-            if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
-                result := fmt.Sprintf("Error: Invalid JSON: %v", err)
-                messages = append(messages, openai.ChatCompletionMessage{
-                    Role:       openai.ChatMessageRoleTool,
-                    Content:    result,
-                    ToolCallID: toolCall.ID,
-                })
-                continue
-            }
-            
-            // Execute real function
-            result := checkStatus(args.Hostname)
-            
-            // Add result to history
-            messages = append(messages, openai.ChatCompletionMessage{
-                Role:       openai.ChatMessageRoleTool,
+
+        for _, call := range msg.ToolCalls { // runtime: validate and execute
+            result := executeTool(call) // an error is a result too, for the model
+            messages = append(messages, Message{
+                Role:       "tool",
                 Content:    result,
-                ToolCallID: toolCall.ID,
+                ToolCallID: call.ID,
             })
         }
     }
+    return fmt.Errorf("iteration limit reached")
 }
 
-// Real function called by Runtime
-func checkStatus(hostname string) string {
-    // In a real application, there would be an API call or command here
-    return fmt.Sprintf("Server %s is ONLINE", hostname)
+func executeTool(call ToolCall) string {
+    if call.Name != "check_status" {
+        return fmt.Sprintf("Error: unknown tool %s", call.Name)
+    }
+    var args struct {
+        Hostname string `json:"hostname"`
+    }
+    if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+        return fmt.Sprintf("Error: invalid arguments: %v", err)
+    }
+    return fmt.Sprintf("Server %s is ONLINE", args.Hostname) // in real life — an API or a command
 }
 ```
 
-**What happens:**
-1. Agent receives request "Check server status web-01"
-2. Model sees the `check_status` tool and generates tool_call
-3. Runtime parses tool_call, validates and executes `checkStatus("web-01")`
-4. Result is added to history
-5. Model sees the result and formulates final response
-
-**Run:**
-```bash
-export OPENAI_API_KEY="your-key"
-export OPENAI_BASE_URL="http://localhost:1234/v1"  # For local models
-go run main.go
-```
+**Running it:** `go run main.go` — the key and endpoint of your LLM provider are set via environment variables.
 
 ## What's Next?
 
-After studying tools, proceed to:
+Once you've covered tools, move on to:
 - **[04. Autonomy and Loops](../04-autonomy-and-loops/README.md)** — how the agent works in a loop
-

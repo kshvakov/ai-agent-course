@@ -1,152 +1,150 @@
 # 16. Best Practices and Application Areas
 
-## Why This Chapter?
+## Why does this matter?
 
-This chapter covers practical best practices for building and maintaining agents, plus where they tend to work best.
+In this chapter we'll cover best practices for building and maintaining agents, as well as the areas where they usually work best.
 
-Knowing theory and examples is good, but without understanding best practices, you may make common mistakes and create an inefficient or unsafe agent.
+Knowing the theory and examples is good, but without understanding best practices you can make typical mistakes and build an ineffective or unsafe agent.
 
-### Real-World Case Study
+### A real-world case
 
-**Situation:** You've created a DevOps agent and launched it in production. After a week, the agent deleted the production database without confirmation.
+**Situation:** You built a DevOps agent and deployed it to production. A week later, the agent deleted the production database without confirmation.
 
-**Problem:** You didn't implement input validation and security checks. The agent performed a dangerous action without confirmation.
+**Problem:** You didn't implement input validation and safety checks. The agent executed a dangerous action without confirmation.
 
-**Solution:** Following best practices (validation, safety checks, evals) prevents such problems. Here we'll focus on what makes agents safer and more efficient in practice.
+**Solution:** The deletion should have been a destructive tool: a dry run (plan: "will delete the prod database, 42 tables") + a Confirm callback with `confirmed_by` ([ch. 05](../05-safety-and-hitl/README.md)). Then even a broken prompt can't lead to losing the database — the mechanics are enforced by code. Validation, safety checks, and evals — below, in order.
 
-## Best Practices: Creating Agents
+## Best Practices: Building Agents
 
-### 1. Start Simple
+### 1. Start simple
 
-**Bad:** Immediately trying to create a complex agent with many tools and multi-step planning.
+**BAD:** Trying to build a complex agent with many tools and multi-step planning right away.
 
-**Good:** Start with a simple agent with 2-3 tools, then gradually add functionality.
+**GOOD:** Start with a simple agent with 2–3 tools, then gradually add functionality.
 
-**Evolution example:**
+**Example of evolution** (using the neutral `ToolDef` from [ch. 03](../03-tools-and-function-calling/README.md)):
 
 ```go
 // Stage 1: Simple agent (1 tool)
-tools := []openai.Tool{
-    {Function: &openai.FunctionDefinition{Name: "check_status", ...}},
+tools := []ToolDef{
+    {Name: "check_status", Description: "Check if a service is running."},
 }
 
 // Stage 2: Add tools
-tools = append(tools, 
-    {Function: &openai.FunctionDefinition{Name: "read_logs", ...}},
-    {Function: &openai.FunctionDefinition{Name: "restart_service", ...}},
+tools = append(tools,
+    ToolDef{Name: "read_logs", Description: "Read the last N lines of service logs."},
+    ToolDef{Name: "restart_service", Description: "Restart a service: drops open connections. Confirmed via the Confirm mechanism (chapter 05)."},
 )
+// restart_service is declared in the registry with Confirm: true
 
 // Stage 3: Add complex logic (SOP, planning)
 systemPrompt = addSOP(systemPrompt, incidentSOP)
 ```
 
-### 2. Clearly Define Responsibility Boundaries
+### 2. Clearly define boundaries of responsibility
 
 **Problem:** The agent tries to do everything and gets confused.
 
-**Solution:** Clearly define what the agent MUST do and what it MUST NOT do.
+**Solution:** Describe the area of responsibility along with the reasons. The boundary itself is enforced by the tool allowlist ([ch. 05](../05-safety-and-hitl/README.md), [ch. 17](../17-security-and-governance/README.md)): whatever isn't in the allowlist, the model can't call.
 
 ```text
 You are a DevOps engineer.
 
-YOUR RESPONSIBILITY ZONE:
-- Check service status
-- Read logs
-- Restart services (with confirmation)
-- Basic problem diagnosis
+Your area of responsibility:
+- Checking service status
+- Reading logs
+- Restarting services (the on-call engineer confirms the call via Confirm)
+- Basic problem diagnostics
 
-YOU MUST NOT:
-- Change configuration without confirmation
-- Delete data
-- Perform operations on production without explicit permission
+Out of scope:
+- Changing configuration and deleting data: you have no such tools,
+  the runtime will reject the call with an "unknown tool" error
+- Operations on production without the on-call engineer's approval
 ```
 
-### 3. Use Detailed Tool Descriptions
+The model noticeably better follows rules it understands than rules shouted in caps. But remember: the prompt *explains* the boundaries — the allowlist *enforces* them.
 
-**Bad:**
+### 3. Use detailed tool descriptions
+
+**BAD:**
 ```go
-{
-    Name: "check",
+ToolDef{
+    Name:        "check",
     Description: "Check something",
 }
 ```
 
-**Good:**
+**GOOD:**
 ```go
-{
-    Name: "check_service_status",
-    Description: "Check if a systemd service is running. Use this when user asks about service status, availability, or whether a service is up/down. Returns 'active', 'inactive', or 'failed'.",
+ToolDef{
+    Name:        "check_service_status",
+    Description: "Check if a systemd service is running. Use when the user asks about service status, availability, or whether a service is up/down. Returns 'active', 'inactive', or 'failed'.",
 }
 ```
 
-**Why this is important:** The model selects tools based on `Description`. The more accurate the description, the better the selection.
+**Why it matters:** The model picks tools based on the `Description`. The more precise the description (what it does, when to use it, what it returns, how risky it is), the better the choice. For dangerous tools, the description explains the risk — while the confirmation mechanics are enforced by the `Confirm` flag in code, not by text ([ch. 05](../05-safety-and-hitl/README.md)).
 
-### 4. Always Validate Input Data
+### 4. Always validate input
 
-**Critical for security:**
+**Critical for safety:**
 
 ```go
-func executeTool(name string, args json.RawMessage) (string, error) {
-    // 1. Check that tool exists
-    if !isValidTool(name) {
+func executeTool(name string, args json.RawMessage, confirmedBy string) (string, error) {
+    // 1. The tool exists and is allowed in this run (allowlist)
+    tool, ok := toolsByName[name]
+    if !ok {
         return "", fmt.Errorf("unknown tool: %s", name)
     }
-    
+
     // 2. Parse and validate arguments
     var params ToolParams
     if err := json.Unmarshal(args, &params); err != nil {
         return "", fmt.Errorf("invalid JSON: %v", err)
     }
-    
+
     // 3. Check required fields
     if params.ServiceName == "" {
         return "", fmt.Errorf("service_name is required")
     }
-    
-    // 4. Sanitize input data
+
+    // 4. Sanitize input
     params.ServiceName = sanitize(params.ServiceName)
-    
-    // 5. Security check
-    if isCriticalService(params.ServiceName) && !hasConfirmation() {
-        return "", fmt.Errorf("requires confirmation")
+
+    // 5. Confirmation is a property of the tool, not text in the prompt (ch. 05)
+    if tool.Confirm && confirmedBy == "" {
+        return "refused: this tool requires confirmed_by — a human id from an authenticated session", nil
     }
-    
-    return execute(name, params)
+
+    return execute(tool, params)
 }
 ```
 
-### 5. Implement Loop Protection
+The key difference from the naive version: the danger check relies on the `tool.Confirm` flag and the `confirmed_by` argument that the runtime fills in after a human decision ([ch. 05](../05-safety-and-hitl/README.md)). Searching for "yes" in the history (`hasConfirmationInHistory`) doesn't protect you: untrusted text ends up in the history.
 
-**Problem:** The agent may repeat the same action infinitely.
+### 5. Implement protection against loops
 
-**Solution:**
+**Problem:** The agent can repeat the same action indefinitely.
+
+**Solution:** Run boundaries are set in the loop config, not as a constant inside the function body (the Config/Run pattern, [ch. 04](../04-autonomy-and-loops/README.md)):
 
 ```go
-const maxIterations = 10
-
-func runAgent(ctx context.Context, userInput string) {
-    messages := []openai.ChatCompletionMessage{...}
-    seenActions := make(map[string]int)
-    
-    for i := 0; i < maxIterations; i++ {
-        // Check for repeating actions
-        if i > 2 {
-            lastAction := getLastAction(messages)
-            seenActions[lastAction]++
-            if seenActions[lastAction] > 2 {
-                return fmt.Errorf("agent stuck in loop: %s", lastAction)
-            }
-        }
-        
-        resp, _ := client.CreateChatCompletion(...)
-        // ... rest of code
-    }
+cfg := AgentConfig{
+    Limits: Limits{
+        MaxIterations: 10,
+        Deadline:      time.Hour,  // run deadline — a terminal boundary
+        TokenBudget:   100_000,
+    },
+    Loop: newLoopDetector(), // N identical calls in a row → block, 2N → terminal
 }
+
+res := Run(ctx, cfg) // RunResult is returned even on a terminal error
 ```
 
-### 6. Log Everything
+Detecting repeated actions is the loop's job, not your business logic's. A full treatment of limits and recovery is in [ch. 04](../04-autonomy-and-loops/README.md) and [ch. 09](../09-agent-architecture/README.md).
 
-**Important for debugging and audit:**
+### 6. Log everything
+
+**Important for debugging and auditing:**
 
 ```go
 type AgentLog struct {
@@ -160,36 +158,40 @@ type AgentLog struct {
 }
 
 func logAgentRun(log AgentLog) {
-    // Log to file, DB, or monitoring system
+    // Log to a file, a DB, or a monitoring system
     logger.Info("Agent run", "log", log)
 }
 ```
 
-### 7. Use Evals from the Start
+What to log and how to store history so it can be reconstructed and replayed — [ch. 11: State Management](../11-state-management/README.md); tracing and metrics — [ch. 19: Observability](../19-observability-and-tracing/README.md).
 
-**Don't postpone testing:**
+### 7. Use evals from the very beginning
+
+**Don't put off testing:**
 
 ```go
-// Create basic eval suite immediately
+// Create a basic eval suite right away
 tests := []EvalTest{
     {Name: "Basic tool call", Input: "...", Expected: "..."},
     {Name: "Safety check", Input: "...", Expected: "..."},
 }
 
-// Run after every change
-func afterPromptChange() {
-    metrics := runEvals(tests)
-    if metrics.PassRate < 0.9 {
+// Run it after every change
+func afterPromptChange(ctx context.Context) {
+    metrics := collectMetrics(ctx, tests) // ch. 08: eval run metrics
+    if metrics.PassRate < 90 {            // percentages (×100), consistent with ch. 08
         panic("Regression detected!")
     }
 }
 ```
 
+A safety check in the suite is not "the model politely asks for confirmation" but "the loop paused the run and passed `confirmed_by`" — test the mechanics, not the wording ([ch. 08](../08-evals-and-reliability/README.md)).
+
 ## Best Practices: Maintaining Agents
 
-### 1. Version Prompts
+### 1. Version your prompts
 
-**Problem:** After changing prompt, agent works worse, but you don't know what exactly changed.
+**Problem:** After a prompt change the agent started working worse, but you don't know exactly what changed.
 
 **Solution:**
 
@@ -208,28 +210,28 @@ promptVersions := []PromptVersion{
     {Version: "1.1", Prompt: systemPromptV2, CreatedAt: ..., Notes: "Added SOP for incidents"},
 }
 
-// Can rollback to previous version
+// You can roll back to a previous version
 func rollbackPrompt(version string) {
     prompt := findPromptVersion(version)
     systemPrompt = prompt.Prompt
 }
 ```
 
-### 2. Monitor Metrics
+### 2. Monitor metrics
 
 **Track key metrics:**
 
 ```go
 type AgentMetrics struct {
-    RequestsPerDay    int
-    AvgLatency        time.Duration
+    RequestsPerDay      int
+    AvgLatency          time.Duration
     AvgTokensPerRequest int
-    PassRate          float64
-    ErrorRate         float64
-    MostUsedTools     map[string]int
+    PassRate            float64
+    ErrorRate           float64
+    MostUsedTools       map[string]int
 }
 
-func collectMetrics() AgentMetrics {
+func collectProductionMetrics() AgentMetrics {
     // Collect metrics from logs
     return AgentMetrics{
         RequestsPerDay: countRequests(today),
@@ -241,54 +243,66 @@ func collectMetrics() AgentMetrics {
 
 **Alerts:**
 - Pass Rate dropped below 80%
-- Latency increased more than 50%
-- Errors increased
-- Agent loops more often than usual
+- Latency grew by more than 50%
+- Errors became more frequent
+- The agent gets stuck in loops more often than usual
 
-### 3. Regularly Update Evals
+### 3. Update evals regularly
 
-**Add new tests as problems are discovered:**
+**Add new tests as you discover problems:**
 
 ```go
-// Discovered problem: agent doesn't request confirmation for critical actions
+// Discovered a problem: the agent calls restart without enough diagnostics
 newTest := EvalTest{
-    Name:     "Critical action requires confirmation",
-    Input:    "Delete production database",
+    Name:     "Restart requires completed diagnosis",
+    Input:    "Trouble with the database, figure it out",
+    // The expectation follows the checker contract of ch. 08: Confirm pauses the run,
+    // the model gathers more evidence and only then repeats the call
     Expected: "ask_confirmation",
 }
 
 tests = append(tests, newTest)
 ```
 
-### 4. Document Decisions
+### 4. Document decisions
 
-**Maintain documentation:**
+**Keep documentation.** A typical mistake in such records is fixing the problem "in the prompt". The right fix is in the code; the prompt merely explains the reason:
 
 ```markdown
 ## Known Issues
 
-### Issue: Agent doesn't request confirmation
+### Issue: The agent performed restarts without confirmation
 **Date:** 2026-01-06
-**Symptoms:** Agent performs critical actions without confirmation
-**Solution:** Added explicit confirmation check in System Prompt
+**Symptoms:** The agent restarted services at the first mention of the word "restart" in a ticket
+**Fix:** Restart is declared a mutating tool with the Confirm flag: the loop pauses
+the run and asks the on-call engineer outside the model; the decision is passed into
+the call as confirmed_by (ch. 05). The prompt was extended with an explanation of why
+the pause exists — so the model builds its plan around it instead of trying to
+"bypass" it.
 **Status:** Fixed in version 1.2
 ```
 
-### 5. A/B Testing Prompts
+Why "adding a request to the prompt" is not a fix: an instruction to the model is not a system invariant. It isn't followed under injection, it gets "forgotten" in exceptional cases, and nothing stops the model from generating "yes" on the user's behalf. See [ch. 05](../05-safety-and-hitl/README.md).
+
+### 5. A/B testing prompts
 
 **Compare different versions:**
 
 ```go
-func abTestPrompt(promptA, promptB string, tests []EvalTest) {
-    metricsA := runEvalsWithPrompt(promptA, tests)
-    metricsB := runEvalsWithPrompt(promptB, tests)
-    
-    fmt.Printf("Prompt A: Pass Rate %.1f%%, Avg Latency %v\n", 
+func abTestPrompt(ctx context.Context, promptA, promptB string, tests []EvalTest) string {
+    // The evals contract of ch. 08: swap the system prompt + two collectMetrics runs
+    systemPrompt = promptA
+    metricsA := collectMetrics(ctx, tests)
+
+    systemPrompt = promptB
+    metricsB := collectMetrics(ctx, tests)
+
+    fmt.Printf("Prompt A: Pass Rate %.1f%%, Avg Latency %v\n",
         metricsA.PassRate, metricsA.AvgLatency)
-    fmt.Printf("Prompt B: Pass Rate %.1f%%, Avg Latency %v\n", 
+    fmt.Printf("Prompt B: Pass Rate %.1f%%, Avg Latency %v\n",
         metricsB.PassRate, metricsB.AvgLatency)
-    
-    // Choose best option
+
+    // Pick the better variant
     if metricsB.PassRate > metricsA.PassRate {
         return promptB
     }
@@ -296,328 +310,180 @@ func abTestPrompt(promptA, promptB string, tests []EvalTest) {
 }
 ```
 
-## Application Areas
+## Production Operations Practices
 
-### Where Agents Are Most Effective
+Once an agent has survived its first releases, four practices come to the fore.
 
-#### 1. DevOps and Infrastructure
+**Context budgets** ([ch. 13](../13-context-engineering/README.md)):
+- ~128 KB per tool result: whatever doesn't fit is truncated with a marker, and the full output goes into an artifact ([ch. 11](../11-state-management/README.md));
+- a limit on images per session: images are token-expensive and don't shrink during condensing;
+- limit tool parallelism by the memory of **child processes**: `go test` or a browser inside a tool consumes RAM outside the runtime — cap their count, otherwise you get OOM on the host, not in the loop.
 
-**What agents do well:**
-- [x] Monitoring and diagnosis (check status, read logs)
-- [x] Automating routine tasks (restart services, clean logs)
-- [x] Incident management (triage, gather information, apply fixes)
-- [x] Configuration management (check, apply changes with confirmation)
+**Secrets:**
+- secrets come from the vault at build/startup time, not from an env passed wholesale; if env is unavoidable — allowlist the variables that make it into the process;
+- tool output goes through redaction **by default**: anything resembling a secret is masked, and the full output goes into an artifact with restricted access.
 
-**Example tasks:**
-- "Check status of all services"
-- "Find cause of service X failure"
-- "Clean logs older than 7 days"
-- "Apply configuration to server Y"
+**Review by a subagent with clean memory:** the final answer (a PR, a report, a plan) is checked by a separate agent with a read-only subset of tools (the parent does the writing after receiving the subagent's output — an invariant of [ch. 09](../09-agent-architecture/README.md)), a clean history, and the instruction "find the mistake" — it hasn't inherited the author's confidence in their own plan.
 
-**Limitations:**
-- [ ] Complex architectural decisions (require human expertise)
-- [ ] Production changes without explicit confirmation
-- [ ] Critical operations (delete data, change network configuration)
+**Guard tests and dashboards:** invariants ("a destructive call without confirmed_by is impossible", "the allowlist hasn't grown") are fixed by guard tests in CI ([ch. 23](../23-evals-in-cicd/README.md)); behavior is tracked by dashboards of metrics and traces ([ch. 19](../19-observability-and-tracing/README.md)). The system, not the users, should catch regressions.
 
-**Case Study: Virtual Machine (VM) Management**
+> **How the real SDK does it.** Redaction and the budget on tool results are runtime properties, not agreements with the model: the filter and truncation are applied to the result before it is written to the history, and the full version is stored in an artifact with separate access. There are simply no secrets in the process env — they are pulled in by a resolver at startup and never enter the context.
 
-**Situation:** A company has a large fleet of virtual machines distributed across multiple hosts and clusters. VM operations happen frequently: need to view VM lists, check which hosts they're placed on, assess resource availability for capacity planning, create new VMs, or modify settings (CPU, memory, disk size).
+> **How the real SDK does it.** The reviewer subagent is the same loop launched as a second Run with a minimal Config and an empty history; correlation with the parent run is a shared `run_id` in telemetry ([ch. 07](../07-multi-agent/README.md)). Parallel tools are limited by a semaphore in the runtime, not by a "please don't rush" in the prompt.
 
-**Problem:** All these operations require an engineer who:
-- May be unavailable when needed (blocking other processes)
-- Must manually gather information from multiple sources
-- May make errors in routine operations
-- Spends time on simple but frequent tasks
+## Areas of Agent Application
 
-**Solution:** The agent takes over routine operations and becomes a **full executor**, not just an assistant:
+### Where agents are most effective
 
-**Typical tasks the agent handles:**
+#### 1. DevOps and infrastructure
 
-1. **Inventory and placement:**
-    - "Show list of all VMs"
-    - "Which hosts are VMs from project X placed on?"
-    - "How many VMs are on host web-01?"
+**GOOD:** diagnostics from metrics and logs, incident management (triage, information gathering), routine operations through an allowlist.
 
-2. **Capacity planning:**
-    - "Are there enough resources in the cluster to create 5 new VMs?"
-    - "Which host has the most available resources?"
-    - "How much memory is available in the production cluster?"
+**Examples:** "Check the status of all services", "Find the cause of service X going down", "Clean up logs older than 7 days".
 
-3. **VM creation and modification:**
-    - "Create a VM with 4 CPU, 8GB RAM, 100GB disk"
-    - "Increase memory of VM app-01 to 16GB"
-    - "Expand disk of VM db-01 by 50GB"
+**Boundaries:** architectural decisions, any write operations without the on-call engineer's approval — that's Confirm mechanics, not a prompt.
 
-**Tools for VM management:**
+**Case study: managing virtual machines**
+
+A fleet of VMs across dozens of hosts: inventory, capacity planning, creation and modification. The engineer is the bottleneck: unavailable, manually collects information from different sources, makes mistakes in routine work.
+
+The agent handles typical tasks: inventory ("Which hosts have project X's VMs?"), capacity ("Are there enough resources for 5 new VMs?"), modification ("Increase app-01's memory to 16GB").
 
 ```go
-tools := []openai.Tool{
-    {
-        Function: &openai.FunctionDefinition{
-            Name: "list_vms",
-            Description: "Get list of all virtual machines. Use for inventory and finding VMs by name or project.",
-        },
-    },
-    {
-        Function: &openai.FunctionDefinition{
-            Name: "get_vm_placement",
-            Description: "Get VM placement information: which host/cluster the VM is on. Use for checking load distribution.",
-        },
-    },
-    {
-        Function: &openai.FunctionDefinition{
-            Name: "get_cluster_capacity",
-            Description: "Get information about available cluster resources (CPU, memory, disk). Use for capacity planning before creating new VMs.",
-        },
-    },
-    {
-        Function: &openai.FunctionDefinition{
-            Name: "create_vm",
-            Description: "CRITICAL: Create a new virtual machine. Requires confirmation. Parameters: name, CPU, memory, disk size, host/cluster.",
-        },
-    },
-    {
-        Function: &openai.FunctionDefinition{
-            Name: "resize_vm",
-            Description: "CRITICAL: Modify VM resources (CPU, memory). Requires confirmation. May affect production workloads.",
-        },
-    },
-    {
-        Function: &openai.FunctionDefinition{
-            Name: "expand_disk",
-            Description: "CRITICAL: Expand VM disk. Requires confirmation. Operation is irreversible.",
-        },
-    },
+tools := []ToolDef{
+    {Name: "list_vms", Description: "List virtual machines. Use for inventory and finding VMs by name or project."},
+    {Name: "get_vm_placement", Description: "Get VM placement: host and cluster. Use to check load distribution."},
+    {Name: "get_cluster_capacity", Description: "Get the cluster's available resources (CPU, memory, disk). Use for capacity planning before creating new VMs."},
+    {Name: "create_vm", Description: "Create a VM (name, CPU, memory, disk, host). Consumes cluster resources and enters billing — runs after confirmation by the engineer via Confirm (ch. 05)."},
+    {Name: "resize_vm", Description: "Change the resources of a running VM: requires restarting it and interrupts the services on it. Runs after confirmation via Confirm."},
+    {Name: "expand_disk", Description: "Expand a VM's disk: irreversible and consumes storage capacity. Runs after confirmation via Confirm."},
 }
 ```
 
-**SOP for critical operations (VM creation/modification):**
+The SOP for modifying a VM: capacity → parameter validation (the runtime checks that CPU/RAM/disk are correct before execution) → a Confirm pause and the engineer's decision → execution → verification → report. All operations are logged for auditing; evals check that creation and modification never happen without `confirmed_by`.
 
-```text
-SOP for creating/modifying VMs:
-1. Check capacity: Are there enough resources in cluster/host?
-2. Validation: Verify parameter correctness (CPU, memory, disk)
-3. Confirmation: Request explicit user confirmation
-4. Execution: Create/modify VM
-5. Verification: Verify operation completed successfully
-6. Notification: Notify user of result
-```
+**Result:** the routine goes to the agent, the engineer stays for complex decisions; critical operations go through runtime validation and confirmation.
 
-**Safety and Best Practices:**
+#### 2. Customer support
 
-- **Confirmation for critical operations:** VM creation and resource modifications require explicit confirmation (see [Chapter 05: Safety](../05-safety-and-hitl/README.md))
-- **Parameter validation:** Runtime validates CPU/RAM/disk correctness before execution
-- **Evals for critical operations:** Tests verify agent requests confirmation for VM creation/modification
-- **Logging:** All operations are logged for audit and debugging
-- **Monitoring:** Resource usage and cost of created VMs are tracked
+**GOOD:** typical knowledge-base queries, gathering context (software version, OS, browser), escalation.
 
-**Result:** The agent takes over routine VM management operations, freeing engineers for more complex tasks. At the same time, critical operations (creation, resource modifications) require confirmation and go through runtime validation, ensuring safety and control.
+**Examples:** "The user can't log in", "Find a solution for the payment problem".
 
-#### 2. Customer Support
+**Boundaries:** emotional support, legal questions, complex technical problems — escalate to a human.
 
-**What agents do well:**
-- [x] Processing typical requests (FAQ, knowledge base)
-- [x] Gathering problem information (software version, OS, browser)
-- [x] Escalating complex cases
-- [x] Generating responses based on knowledge base
+#### 3. Data analytics
 
-**Example tasks:**
-- "User can't log into system"
-- "Find solution for payment problem"
-- "Gather information about ticket #12345"
+**GOOD:** SQL from natural language, data quality checks, reports, trends.
 
-**Limitations:**
-- [ ] Emotional support (requires human empathy)
-- [ ] Complex technical problems (require expertise)
-- [ ] Legal questions
+**Examples:** "Show sales for the month by region", "Why did sales fall in region X?".
 
-#### 3. Data Analytics
-
-**What agents do well:**
-- [x] Formulating SQL queries from natural language
-- [x] Data quality checks
-- [x] Report generation
-- [x] Trend analysis
-
-**Example tasks:**
-- "Show sales for last month by region"
-- "Check data quality in sales table"
-- "Why did sales drop in region X?"
-
-**Limitations:**
-- [ ] Data modification (only read-only operations)
-- [ ] Complex statistical analysis (requires expertise)
-- [ ] Result interpretation (requires business context)
+**Boundaries:** read-only only — a connection from an account with SELECT privileges, not a prohibition in the prompt; interpreting results in a business context is a human's job.
 
 #### 4. Security (SOC)
 
-**What agents do well:**
-- [x] Security alert triage
-- [x] Evidence collection (logs, metrics, traffic)
-- [x] Attack pattern analysis
-- [x] Incident report generation
+**GOOD:** alert triage, evidence gathering, attack pattern analysis, incident reports.
 
-**Example tasks:**
-- "Triage alert about suspicious activity"
-- "Gather evidence for incident #123"
-- "Check IP address reputation"
+**Examples:** "Triage the suspicious-activity alert", "Check the reputation of this IP".
 
-**Limitations:**
-- [ ] Critical actions (host isolation) require confirmation
-- [ ] Complex investigations (require expertise)
-- [ ] Blocking decisions (require context)
+**Boundaries:** host isolation and blocking — dry run + Confirm + `confirmed_by`; the real boundary is process isolation and host permissions ([ch. 17](../17-security-and-governance/README.md)).
 
-#### 5. Product Operations
+#### 5. Product operations
 
-**What agents do well:**
-- [x] Release plan preparation
-- [x] Dependency checking
-- [x] Documentation generation
-- [x] Task coordination
+**GOOD:** release plans, dependency checks, documentation.
 
-**Example tasks:**
-- "Prepare release plan for feature X"
-- "Check dependencies for release Y"
-- "Create release notes for version 2.0"
+**Examples:** "Prepare a release plan for feature X", "Create release notes for version 2.0".
 
-**Limitations:**
-- [ ] Strategic decision making (requires business context)
-- [ ] Team management (requires human interaction)
+**Boundaries:** strategic decisions and approvals belong to stakeholders; the agent prepares, it doesn't decide.
 
-### When NOT to Use Agents
+### When NOT to use agents
 
-#### 1. Critical Operations Without Confirmation
+#### 1. Critical operations without a confirmation mechanism
 
-**Bad:**
-```go
-// Agent deletes production database without confirmation
-agent.Execute("Delete database prod")
-```
+**BAD:** a destructive tool without a category — the agent deletes the production database on its own because "the prompt asked it to be careful".
 
-**Good:**
-```go
-// Agent requests confirmation
-agent.Execute("Delete database prod")
-// → "Are you sure? This action is irreversible. Type 'yes' to confirm."
-```
+**GOOD:** deletion is declared destructive: first a dry run (plan: "will delete the prod database, 42 tables"), then a Confirm pause and `confirmed_by` from a human in an authenticated session ([ch. 05](../05-safety-and-hitl/README.md)).
 
-#### 2. Tasks Requiring Creativity
+#### 2. Tasks that require creativity
 
-**Agents struggle with:**
-- Interface design
-- Marketing copy writing (requires creativity and audience understanding)
-- Architectural decisions (requires deep expertise)
+Agents handle interface design, marketing copy, and architectural decisions poorly — anywhere that requires creativity, taste, and deep expertise.
 
-#### 3. Tasks with High Uncertainty
+#### 3. Tasks with high uncertainty
 
-**Agents work better when:**
-- There are clear success criteria
-- There is SOP or action algorithm
-- Tools are available to get information
+Best case: clear success criteria, SOPs, and tools for gathering information. Worst case: no criteria, intuition required, or no access to the data.
 
-**Agents work worse when:**
-- No clear success criteria
-- Intuition and experience required
-- No access to needed information
+#### 4. Tasks that require empathy
 
-#### 4. Tasks Requiring Empathy
+Agents don't understand users' emotions and don't provide emotional support — that stays with humans.
 
-**Agents cannot:**
-- Understand user emotions
-- Provide emotional support
-- Make decisions based on human relationships
+## Common Mistakes
 
-## Common Errors
+Most common mistakes are already covered in the relevant chapters — here's a summary and where to go:
 
-### Error 1: No Input Validation
+| Mistake | Covered in |
+|---|---|
+| No input validation | [Ch. 03](../03-tools-and-function-calling/README.md), [Ch. 09](../09-agent-architecture/README.md) |
+| No protection against loops | [Ch. 04](../04-autonomy-and-loops/README.md) |
+| No logging or history recovery | [Ch. 11](../11-state-management/README.md) |
+| No monitoring or tracing | [Ch. 19](../19-observability-and-tracing/README.md) |
+| No evals | [Ch. 08](../08-evals-and-reliability/README.md) |
 
-**Symptom:** Agent performs dangerous actions with incorrect data or without security checks.
+Three mistakes deserve a detailed walkthrough here — because they happen to teams that have already read everything else:
 
-**Cause:** Runtime doesn't validate input data before executing tools.
+### Walkthrough 1: confirmation was fixed "in the prompt"
 
-**Solution:**
-```go
-// GOOD: Always validate input data
-func executeTool(name string, args json.RawMessage) (string, error) {
-    // 1. Check tool existence
-    // 2. Parse and validate JSON
-    // 3. Check required fields
-    // 4. Sanitize data
-    // 5. Security check
-}
-```
+**Symptom:** An incident with an unconfirmed deletion; the changelog says "added an explicit request to confirm dangerous actions to the system prompt"; a month later the incident repeats.
 
-### Error 2: No Loop Protection
+**Cause:** An instruction to the model is not a system invariant. It isn't followed under injection ([ch. 05](../05-safety-and-hitl/README.md)), and the "yes" in the history may not have been written by a human.
 
-**Symptom:** Agent repeats the same action infinitely.
+**Solution:** A Confirm flag on the tool + `confirmed_by` as a mandatory argument. The prompt explains the reason for the pause so the model builds its plan around it. The test for this is a guard test: a destructive call with an empty `confirmed_by` must be refused.
 
-**Cause:** No iteration limit and no detection of repeating actions.
+### Walkthrough 2: secrets leak through tool output
 
-**Solution:**
-```go
-// GOOD: Loop protection
-const maxIterations = 10
-seenActions := make(map[string]int)
+**Symptom:** Tokens are visible in traces and history: `kubectl get secret` returned a base64 string, and a week later it turned up in an exported log.
 
-for i := 0; i < maxIterations; i++ {
-    if i > 2 && seenActions[lastAction] > 2 {
-        return fmt.Errorf("agent stuck in loop")
-    }
-    // ...
-}
-```
+**Cause:** The tool result went into the history as-is, and the process env contained all the secrets at once.
 
-### Error 3: No Logging
+**Solution:** Redaction by default for all tool results (anything resembling a secret is masked), the full output goes into an artifact with restricted access; secrets come from the vault at startup, env variables — via an allowlist. Details in [ch. 17](../17-security-and-governance/README.md).
 
-**Symptom:** When there's a problem, you can't understand what happened and why.
+### Walkthrough 3: users find regressions, not CI
 
-**Cause:** Agent actions are not logged.
+**Symptom:** A minor prompt change ("reworded the boundaries") dropped the Pass Rate from 92% to 61%, but it was discovered two weeks later through complaints.
 
-**Solution:**
-```go
-// GOOD: Log all actions
-type AgentLog struct {
-    Timestamp   time.Time
-    UserInput   string
-    ToolCalls   []ToolCall
-    ToolResults []ToolResult
-    FinalAnswer string
-    TokensUsed  int
-    Latency     time.Duration
-}
+**Cause:** Evals were run manually before releases; there were no guard tests for invariants.
 
-logAgentRun(log)
-```
+**Solution:** Evals in CI on every PR ([ch. 23](../23-evals-in-cicd/README.md)) + a metrics dashboard with alerts ([ch. 19](../19-observability-and-tracing/README.md)). The rule is simple: if the regression is visible on the dashboard, you found out first.
 
-## Completion Criteria / Checklist
+## Acceptance Criteria / Checklist
 
-**Completed (production ready):**
-- [x] System prompt clearly defines responsibility boundaries
+**Done (production readiness):**
+- [x] The system prompt explains boundaries along with the reasons
 - [x] All tools have detailed descriptions
-- [x] Input validation implemented
-- [x] Loop protection implemented
-- [x] Critical operations require confirmation
-- [x] All actions are logged
-- [x] Metrics monitoring configured (Pass Rate, Latency, Errors)
-- [x] Basic eval suite created
-- [x] Prompt A/B testing conducted
-- [x] Known limitations documented
+- [x] Input validation is implemented (allowlist + schema + sanitization)
+- [x] Limits are set in the loop config (iterations, deadline, budget)
+- [x] Critical operations — a Confirm flag + `confirmed_by`, not a line in the prompt
+- [x] Logging of all actions and metric monitoring
+- [x] Budgets: ~128 KB per tool result, an image limit, parallelism limits
+- [x] Secrets: vault at build time, redaction of tool output by default
+- [x] A basic eval suite exists; guard tests of invariants run in CI
+- [x] A/B testing of prompts and documented decisions
 
-**Not completed:**
-- [ ] No input validation
-- [ ] No loop protection
-- [ ] No action logging
-- [ ] No metrics monitoring
-- [ ] No evals for quality checks
+**Not done:**
+- [ ] Dangerous actions rely on a request in the prompt
+- [ ] No loop limits, or they are hardcoded as a constant in the function body
+- [ ] No budgets on tool results and no redaction
+- [ ] No evals and no monitoring — users find regressions
 
-## Connection with Other Chapters
+## Relation to Other Chapters
 
-- **Safety:** How to implement safety checks, see [Chapter 05: Safety](../05-safety-and-hitl/README.md)
-- **Evals:** How to test agents, see [Chapter 08: Evals](../08-evals-and-reliability/README.md)
+- **Loop and limits:** the Config/Run pattern, see [Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md)
+- **Safety:** the Confirm callback and `confirmed_by`, see [Chapter 05: Safety](../05-safety-and-hitl/README.md)
+- **Evals:** how to test agents, see [Chapter 08: Evals](../08-evals-and-reliability/README.md)
+- **Context:** budgets and truncation, see [Chapter 13: Context Engineering](../13-context-engineering/README.md)
+- **Observability and CI:** see [Chapter 19: Observability](../19-observability-and-tracing/README.md) and [Chapter 23: Evals in CI/CD](../23-evals-in-cicd/README.md)
 
 ## What's Next?
 
-After studying best practices, proceed to:
-- **[17. Security and Governance](../17-security-and-governance/README.md)** — security and agent management
-- **[Appendix: Reference Guides](../appendix/README.md)** — glossary, checklists, templates
-
+After studying best practices, move on to:
+- **[17. Security and Governance](../17-security-and-governance/README.md)** — securing and governing agents
+- **[Appendix: Reference](../appendix/README.md)** — glossary, checklists, templates

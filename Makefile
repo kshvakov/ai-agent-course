@@ -6,7 +6,7 @@ PYTHON := $(VENV_BIN)/python
 PIP := $(VENV_BIN)/pip
 MKDOCS := $(VENV_BIN)/mkdocs
 
-.PHONY: help venv install prepare serve setup clean-venv
+.PHONY: help venv install prepare build serve setup clean-venv
 
 help: ## Show help for available targets
 	@echo ""
@@ -16,6 +16,7 @@ help: ## Show help for available targets
 	@echo "Examples:"
 	@echo "  make setup    # create .venv and install dependencies"
 	@echo "  make prepare  # build docs (.mkdocs/scripts/prepare_docs.py)"
+	@echo "  make build    # full build: prepare + mkdocs build + anchor fix/check"
 	@echo "  make serve    # run mkdocs locally"
 	@echo ""
 
@@ -28,6 +29,11 @@ install: venv ## Install dependencies (requirements.txt) into the venv
 
 prepare: install ## Prepare documentation (python .mkdocs/scripts/prepare_docs.py)
 	@"$(PYTHON)" .mkdocs/scripts/prepare_docs.py
+
+build: prepare ## Full build: mkdocs build + anchor fix + anchor check (same as CI)
+	@"$(MKDOCS)" build
+	@"$(PYTHON)" .mkdocs/scripts/fix_anchor_slashes.py build/site
+	@"$(PYTHON)" .mkdocs/scripts/check_site_anchors.py build/site
 
 serve: prepare ## Run local MkDocs server
 	@"$(MKDOCS)" serve

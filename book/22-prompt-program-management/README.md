@@ -1,36 +1,42 @@
 # 22. Prompt and Program Management
 
-## Why This Chapter?
+## Why does this matter?
 
-You changed the prompt, and the agent got worse. But you can't figure out what exactly changed, or roll back. Without prompt management, you lose control over agent behavior.
+You changed a prompt, and the agent started working worse. But you cannot tell what exactly changed, or roll it back. Without prompt management, you lose control over agent behavior.
 
 In production, prompts are **code**. They define agent behavior just like functions and conditionals. They deserve the same treatment: versioning, testing, rollback, monitoring.
 
-### Real-World Case Study
+### A real-world case
 
-**Situation:** You updated the system prompt to improve response quality. A day later, users complain that the agent handles incidents worse.
+**Situation:** You updated the system prompt to improve answer quality. A day later, users complain the agent got worse at handling incidents.
 
-**Problem:** No prompt versioning. You don't know which version was running yesterday. You can't roll back.
+**Problem:** No prompt versioning. You don't know which version worked yesterday. You can't roll back.
 
-**Solution:** A centralized prompt registry with versions. Evals validate each version before deployment. A/B testing shows which version performs better. Rollback is one command.
+**Solution:** A centralized prompt store with versions. Evals validate each version before deploy. A/B testing shows which version performs better. Rollback is a single command.
 
-## Theory in Simple Terms
+## The theory in plain words
 
-### Prompt as Artifact
+### A prompt as an artifact
 
-A prompt is not "text in code." It's an **artifact** that:
+A prompt is not "text in the code". It is an **artifact** that:
 - Changes more often than code
-- Affects behavior unpredictably (small change → big effect)
+- Affects behavior unpredictably (a tiny change → a big effect)
 - Must be tested on every change
-- Must be linked to specific runs/traces for debugging
+- Must be tied to specific runs/traces for debugging
 
-### What Are Prompt Regressions?
+### What are prompt regressions?
 
-A prompt regression is agent quality degradation after a prompt change. A single word can break behavior. Evals catch regressions before deployment.
+A prompt regression is a degradation of agent quality after a prompt change. One word can break behavior. Evals catch regressions before deploy.
 
-## How It Works (Step by Step)
+### Skills as part of prompt management
 
-### Step 1: Centralized Prompt Registry
+Skills ([chapter 09](../09-agent-architecture/README.md)) are the same prompt management, extended to large bodies of knowledge. A `SKILL.md` file is versioned like code: it lives in git and changes go through PRs with a mandatory eval run — the same rules as for the system prompt. The difference is independence: skills are attached and detached without touching the system prompt itself. Progressive disclosure ([chapter 13](../13-context-engineering/README.md)) keeps the prefix cheap: only skill names and short descriptions go into the system prompt, while the agent loads the full content on demand. Large knowledge moves out of the system prompt into skills — a shorter prefix, a more stable cache, more flexible behavior.
+
+> **How the real SDK does it.** The agent's prompt is assembled from sections (PromptSection): first the immutable system prompt, then the skills section — names and descriptions only. The full body of a skill enters the conversation history once the agent picks it. The run metadata records the versions of both the system prompt and every skill used.
+
+## How it works (step by step)
+
+### Step 1: Centralized prompt store
 
 All prompts live in one place with metadata:
 
@@ -48,8 +54,8 @@ type PromptVersion struct {
     Author      string            `json:"author"`
     CreatedAt   time.Time         `json:"created_at"`
     Description string            `json:"description"` // What changed
-    Tags        map[string]string `json:"tags"`        // "model": "gpt-4o", "domain": "devops"
-    IsActive    bool              `json:"is_active"`   // Currently used in production
+    Tags        map[string]string `json:"tags"`        // "model": "glm-5.3", "domain": "devops"
+    IsActive    bool              `json:"is_active"`   // Whether it's used in production
 }
 
 func (r *PromptRegistry) Get(promptID, version string) (*PromptVersion, error) {
@@ -58,7 +64,7 @@ func (r *PromptRegistry) Get(promptID, version string) (*PromptVersion, error) {
         return nil, fmt.Errorf("prompt %s not found", promptID)
     }
     for i := len(versions) - 1; i >= 0; i-- {
-        if version == "latest" || versions[i].Version == version {
+        if versions[i].Version == version {
             return &versions[i], nil
         }
     }
@@ -77,29 +83,17 @@ func (r *PromptRegistry) Rollback(promptID, toVersion string) error {
 }
 ```
 
-### Step 2: Versioning with Semantic Versioning
+Note: `Get` requires an **exact** version. Which version to use is decided by the deploy-time configuration, not the runtime (why — see "Common Mistakes", mistake 1). The "active" version in the registry is a label for humans and for rollback, not a runtime addressing mechanism.
+
+### Step 2: Versioning with semantic versioning
 
 Apply semver to prompts:
 
 - **MAJOR** (1.0 → 2.0): Structural change (new role, new response format)
-- **MINOR** (1.0 → 1.1): Adding instructions (new edge case, clarification)
+- **MINOR** (1.0 → 1.1): Adding instructions (a new edge case, a clarification)
 - **PATCH** (1.0.0 → 1.0.1): Typo fix, formatting
 
-```go
-// Diff between versions
-func (r *PromptRegistry) Diff(promptID, v1, v2 string) string {
-    pv1, _ := r.Get(promptID, v1)
-    pv2, _ := r.Get(promptID, v2)
-
-    // Line-by-line comparison
-    lines1 := strings.Split(pv1.Content, "\n")
-    lines2 := strings.Split(pv2.Content, "\n")
-
-    var diff strings.Builder
-    // ... standard diff algorithm ...
-    return diff.String()
-}
-```
+The diff between versions can be any line-based algorithm; its elegance doesn't matter — what matters is that the diff is visible to a human: in the PR and in the registry UI. A prompt change without a visible diff is the same as deploying code without a diff in the PR.
 
 ### Step 3: Templating
 
@@ -117,7 +111,7 @@ func (pt *PromptTemplate) Render(vars map[string]string) (string, error) {
         return "", err
     }
 
-    // Merge defaults with provided variables
+    // Merge defaults with the passed variables
     merged := make(map[string]string)
     for k, v := range pt.Defaults {
         merged[k] = v
@@ -151,14 +145,14 @@ prompt, _ := tmpl.Render(map[string]string{
 })
 ```
 
-### Step 4: Prompt Playground
+### Step 4: Prompt playground (testing prompts)
 
-A Prompt Playground is an environment for testing prompts before deployment. You can run a prompt against several test inputs and see the results.
+A Prompt Playground is an environment for testing prompts before deploy. You can try a prompt against several test inputs and see the results.
 
 ```go
 type PlaygroundRequest struct {
     PromptVersion string   `json:"prompt_version"`
-    TestInputs    []string `json:"test_inputs"`   // Test queries
+    TestInputs    []string `json:"test_inputs"`   // Test inputs
     Model         string   `json:"model"`
 }
 
@@ -170,17 +164,25 @@ type PlaygroundResult struct {
     HasError bool    `json:"has_error"`
 }
 
-func runPlayground(req PlaygroundRequest, client *openai.Client) []PlaygroundResult {
-    prompt, _ := registry.Get("system", req.PromptVersion)
+// LLMClient — a provider-neutral interface (canonical version in chapter 04)
+type LLMClient interface {
+    Complete(ctx context.Context, req Request) (*Response, error)
+}
+
+func runPlayground(ctx context.Context, req PlaygroundRequest, llm LLMClient) []PlaygroundResult {
+    prompt, err := registry.Get("system", req.PromptVersion) // exact version
+    if err != nil {
+        return nil
+    }
     var results []PlaygroundResult
 
     for _, input := range req.TestInputs {
         start := time.Now()
-        resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-            Model: req.Model,
-            Messages: []openai.ChatCompletionMessage{
-                {Role: openai.ChatMessageRoleSystem, Content: prompt.Content},
-                {Role: openai.ChatMessageRoleUser, Content: input},
+        resp, err := llm.Complete(ctx, Request{
+            Model: req.Model, // e.g. "glm-5.3" or "fable-5.1"
+            Messages: []Message{
+                {Role: "system", Content: prompt.Content},
+                {Role: "user", Content: input},
             },
         })
 
@@ -192,7 +194,7 @@ func runPlayground(req PlaygroundRequest, client *openai.Client) []PlaygroundRes
             result.HasError = true
         } else {
             result.Output = resp.Choices[0].Message.Content
-            result.Tokens = resp.Usage.TotalTokens
+            result.Tokens = resp.Usage.PromptTokens + resp.Usage.CompletionTokens
         }
         results = append(results, result)
     }
@@ -200,9 +202,9 @@ func runPlayground(req PlaygroundRequest, client *openai.Client) []PlaygroundRes
 }
 ```
 
-### Step 5: A/B Testing Prompts
+### Step 5: A/B testing prompts
 
-Test two prompt versions in parallel on live traffic:
+We test two prompt versions side by side on real traffic:
 
 ```go
 type ABTest struct {
@@ -214,7 +216,7 @@ type ABTest struct {
 }
 
 func (ab *ABTest) SelectVersion(requestID string) string {
-    // Deterministic selection based on requestID (for reproducibility)
+    // Deterministic choice based on requestID (for reproducibility)
     hash := fnv.New32a()
     hash.Write([]byte(requestID))
     bucket := float64(hash.Sum32()) / float64(math.MaxUint32)
@@ -234,8 +236,13 @@ abTest := ABTest{
 }
 
 selectedVersion := abTest.SelectVersion(runID)
-prompt, _ := registry.Get("incident_sop", selectedVersion)
+prompt, err := registry.Get("incident_sop", selectedVersion)
+if err != nil {
+    return fmt.Errorf("prompt version %s not found: %w", selectedVersion, err)
+}
 ```
+
+Rules of the experiment: both versions are pinned in the A/B test config, the choice is deterministic and happens **once — at the start of the run**. From then on, the prompt version is a constant of the run: the system prompt doesn't change mid-run, the cacheable prefix stays stable ([chapter 02](../02-prompt-engineering/README.md)), and the run's trace is reproducible: `runID → prompt_version` is unambiguous.
 
 **Metrics for comparison:**
 
@@ -249,19 +256,19 @@ type ABMetrics struct {
 }
 ```
 
-### Step 6: MCP for Prompts
+### Step 6: MCP for prompts
 
-An MCP server can serve prompts to agents. This is useful when multiple agents share common prompts:
+An MCP server can serve prompts to agents. This is useful when several agents share the same prompts:
 
 ```go
-// MCP server exposes prompts as resources
+// The MCP server exposes prompts as resources
 type PromptMCPServer struct {
     registry *PromptRegistry
 }
 
-// Agent requests a prompt via MCP
+// The agent requests a prompt via MCP
 func (s *PromptMCPServer) GetResource(uri string) (string, error) {
-    // URI: "prompt://incident_sop/latest"
+    // URI: "prompt://incident_sop/1.1.0" — the version comes from the agent's config, not "current"
     parts := strings.Split(uri, "/")
     promptID := parts[1]
     version := parts[2]
@@ -273,43 +280,17 @@ func (s *PromptMCPServer) GetResource(uri string) (string, error) {
 }
 ```
 
-For more on MCP, see [Chapter 18: Tool Protocols and Servers](../18-tool-protocols-and-servers/README.md).
+For more on MCP, see [Chapter 18: Tool Protocols](../18-tool-protocols-and-servers/README.md).
 
-### Step 7: Link to Traces
+### Step 7: Link to traces
 
-Every agent run records which prompt version was used. This lets you tie behavior to a specific version:
-
-```go
-type RunMetadata struct {
-    RunID         string `json:"run_id"`
-    PromptID      string `json:"prompt_id"`
-    PromptVersion string `json:"prompt_version"`
-    Model         string `json:"model"`
-    Timestamp     time.Time
-}
-
-func logRunMetadata(runID string, prompt *PromptVersion, model string) {
-    metadata := RunMetadata{
-        RunID:         runID,
-        PromptID:      prompt.PromptID,
-        PromptVersion: prompt.Version,
-        Model:         model,
-        Timestamp:     time.Now(),
-    }
-    // Write to the trace
-    tracing.LogMetadata(metadata)
-}
-
-// Now when investigating an incident:
-// "Which prompt version was used in run_id=abc123?"
-// → prompt_id=incident_sop, version=1.1.0
-```
+Every run writes into the trace metadata: `run_id`, `prompt_id`, `prompt_version`, `model`, timestamp. A single `tracing.LogMetadata(...)` call at the start of the run — and incident questions become a query: "which prompt version was running in run `abc123`?" → `prompt_id=incident_sop, version=1.1.0`. Without this link, a user complaint is unresolvable: you don't even know which prompt produced the bad behavior.
 
 For more on tracing, see [Chapter 19: Observability and Tracing](../19-observability-and-tracing/README.md).
 
-## Minimal Code Example
+## Mini code example
 
-A minimal example: load a prompt by version + feature flag:
+A minimal example: loading a prompt by version + a feature flag:
 
 ```go
 func getSystemPrompt(flags FeatureFlags) string {
@@ -327,35 +308,44 @@ func getSystemPrompt(flags FeatureFlags) string {
 }
 ```
 
-## Common Errors
+## Common Mistakes
 
-### Error 1: Prompts Hardcoded in Source
+### Mistake 1: Prompts hardcoded in code
 
-**Symptom:** Changing a prompt requires a code change, code review, and a full deploy.
+**Symptom:** To change a prompt, you have to change code, go through code review, and deploy.
 
 **Cause:** Prompts are stored as string constants in Go files.
 
-**Solution:**
+**Solution:** a version registry — but the version is pinned in the deploy-time configuration, not picked by the runtime:
+
 ```go
-// BAD: Prompt in code
+// BAD: prompt in code
 const systemPrompt = "You are a DevOps agent..."
 
-// GOOD: Prompt from the registry
+// BAD: "latest" at runtime — the runtime decides which version is "current"
 prompt, _ := registry.Get("system_devops", "latest")
+
+// GOOD: the version is a configuration constant, pinned at deploy time
+prompt, err := registry.Get("system_devops", cfg.PromptVersion) // e.g. "1.4.2"
+if err != nil {
+    return fmt.Errorf("prompt version %s not found: %w", cfg.PromptVersion, err)
+}
 ```
 
-### Error 2: No Evals Before Deploying a Prompt
+Why not "latest": the system prompt is a **cacheable prefix** ([chapter 02](../02-prompt-engineering/README.md)). If the runtime pulls the "current" version on every request, any parallel update silently changes the prefix — a cache miss (cost and latency grow) and nondeterminism: two traces of the same run are built from different prompts, making debugging impossible. A version change is a deliberate act: a PR with a diff and an eval run (chapters [08](../08-evals-and-reliability/README.md) and [23](../23-evals-in-cicd/README.md)), then a new version in the config and a deploy.
 
-**Symptom:** A new prompt version breaks agent behavior. You find out after deployment.
+### Mistake 2: No evals before deploying a prompt
+
+**Symptom:** A new prompt version breaks agent behavior. You find out after the deploy.
 
 **Cause:** Prompts are deployed without testing.
 
 **Solution:**
 ```go
-// BAD: Deploy without validation
+// BAD: deploy without validation
 registry.SetActive("system_devops", "2.0.0")
 
-// GOOD: Run evals before activation
+// GOOD: validate via evals before activation
 passRate := runEvalsForPrompt("system_devops", "2.0.0")
 if passRate < 0.95 {
     log.Printf("Prompt 2.0.0 failed evals: %.2f < 0.95", passRate)
@@ -364,9 +354,11 @@ if passRate < 0.95 {
 registry.SetActive("system_devops", "2.0.0")
 ```
 
-### Error 3: A/B Test Without Statistical Significance
+A manual run is a half-measure: quality gates for prompts must live in CI/CD and block merging a PR that changes a prompt without a green eval run — how this works is covered in [Chapter 23: Evals in CI/CD](../23-evals-in-cicd/README.md).
 
-**Symptom:** You switched 100% of traffic to the new version after "a test on 10 requests showed it's better."
+### Mistake 3: A/B test without statistics
+
+**Symptom:** You switched 100% of traffic to the new version after "a test on 10 requests showed it's better".
 
 **Cause:** Not enough data for a statistically significant comparison.
 
@@ -378,39 +370,39 @@ if sampleSize < 100 {
     return
 }
 
-// GOOD: Statistically significant sample
-// Minimum 100-500 requests per version
+// GOOD: a statistically significant sample
+// At least 100-500 requests per version
 // Compare across multiple metrics (pass rate, latency, tokens)
 ```
 
-### Error 4: No Link Between Prompt and Trace
+### Mistake 4: No link between prompt and tracing
 
-**Symptom:** A user complains about a bad response. You don't know which prompt version was used.
+**Symptom:** A user complains about a bad answer. You don't know which prompt version was used.
 
 **Cause:** Run metadata doesn't record the prompt version.
 
 **Solution:**
 ```go
-// BAD: Run the agent without recording the prompt version
+// BAD: run the agent without recording the prompt version
 runAgent(prompt.Content, ...)
 
-// GOOD: Log the version in the trace
+// GOOD: write the version into the trace
 logRunMetadata(runID, prompt, model)
 runAgent(prompt.Content, ...)
 ```
 
-### Error 5: String Formatting Instead of Templates
+### Mistake 5: Variables instead of templates
 
-**Symptom:** The prompt is built with `fmt.Sprintf` and 10+ arguments. You can't predict what the final prompt looks like.
+**Symptom:** The prompt is assembled via `fmt.Sprintf` with 10+ arguments. You can't tell what the resulting prompt looks like.
 
 **Cause:** No templating.
 
 **Solution:**
 ```go
-// BAD
+// BAD:
 prompt := fmt.Sprintf("You are a %s. Tools: %s. SOP: %s. Constraints: %s.", role, tools, sop, constraints)
 
-// GOOD
+// GOOD:
 tmpl := PromptTemplate{
     Template: `You are a {{.Role}}.
 Tools: {{.ToolList}}
@@ -422,9 +414,9 @@ prompt, _ := tmpl.Render(vars)
 
 ## Exercises
 
-### Exercise 1: Implement a PromptRegistry
+### Exercise 1: Implement PromptRegistry
 
-Build a prompt store with `Get`, `Add`, and `Rollback` methods:
+Implement a prompt store with `Get`, `Add`, `Rollback` methods:
 
 ```go
 type PromptRegistry struct {
@@ -437,11 +429,11 @@ func (r *PromptRegistry) Rollback(id, version string) error { ... }
 ```
 
 **Expected result:**
-- You can add multiple versions of a prompt
-- You can retrieve a specific version or "latest"
-- Rollback deactivates the current version and activates the target
+- You can add several versions of a prompt
+- You can fetch a specific version; requesting a nonexistent version returns an error
+- Rollback deactivates the current version and activates the specified one
 
-### Exercise 2: Implement A/B Testing
+### Exercise 2: Implement an A/B test
 
 Implement prompt version selection by requestID:
 
@@ -455,13 +447,13 @@ func selectVersion(requestID string, trafficPct float64) string {
 - The same requestID always gets the same version
 - trafficPct=0.1 routes ~10% of requests to version B
 
-### Exercise 3: Implement a Playground
+### Exercise 3: Implement a playground
 
-Implement a function that tests a prompt against multiple inputs:
+Implement a function for testing a prompt against multiple inputs:
 
 ```go
 func testPrompt(promptContent string, testInputs []string) []PlaygroundResult {
-    // Your code
+    // Your code here
 }
 ```
 
@@ -469,43 +461,48 @@ func testPrompt(promptContent string, testInputs []string) []PlaygroundResult {
 - Each input is tested with the given prompt
 - The result contains output, tokens, latency
 
-## Completion Criteria / Checklist
+## Acceptance Criteria / Checklist
 
-**Completed:**
+**Done:**
 - [x] Prompts are stored in a centralized registry with versions
 - [x] Each version passes evals before activation
-- [x] Templating is used for prompt variables
+- [x] Templating is available for variables in prompts
 - [x] The prompt version is recorded in the trace of every run
-- [x] A rollback mechanism exists
-- [x] Feature flags allow enabling/disabling versions without a deploy
+- [x] There is a rollback mechanism
+- [x] Feature flags let you enable/disable versions without a deploy
+- [x] The prompt version is pinned in the config at deploy time; the runtime does not pick the "current" one
+- [x] Skills (SKILL.md) are versioned like code and pass evals independently of the system prompt
 
-**Not completed:**
-- [ ] Prompts are hardcoded in source
-- [ ] No evals for validating changes
+**Not done:**
+- [ ] Prompts are hardcoded
+- [ ] No evals to verify changes
 - [ ] No link between prompt and trace
 - [ ] A/B tests run without a statistically significant sample
 
-## Deep Dive
+## For the curious
 
-### Prompt as Code vs Prompt as Config
+### Prompt as code vs prompt as config
 
 Two approaches to prompt management:
 
-1. **Prompt as Code**: Prompts live in Git, changes go through PRs. Pro — full audit trail. Con — slow iteration cycle.
-2. **Prompt as Config**: Prompts live in a DB/API, changes happen through a UI. Pro — fast iteration. Con — harder to track.
+1. **Prompt as Code**: prompts in Git, changes via PR. Pro — full audit trail. Con — slow change cycle.
+2. **Prompt as Config**: prompts in a DB/API, changes via UI. Pro — fast iteration. Con — harder to track.
 
-The sweet spot: **Prompt as Code** for the system prompt (changes rarely), **Prompt as Config** for few-shot examples and SOPs (changes often).
+The optimum: **Prompt as Code** for the system prompt (rarely changes), **Prompt as Config** for few-shot examples and SOPs (change often).
 
-## Connection with Other Chapters
+Wherever a prompt lives, one rule is invariant: dynamic insertions (data, task context, fresh facts) go **at the end of the message history**, never into the system prompt (`messages[0]`). The system prompt is a cacheable prefix ([chapter 02](../02-prompt-engineering/README.md)): any dynamism in it breaks the cache and makes every request more expensive, and also makes traces unreproducible.
 
-- **[Chapter 02: Prompt Engineering](../02-prompt-engineering/README.md)** — how to write effective prompts
+## Relation to Other Chapters
+
+- **[Chapter 02: Prompting](../02-prompt-engineering/README.md)** — how to write effective prompts; the system prompt as a cacheable prefix
 - **[Chapter 08: Evals and Reliability](../08-evals-and-reliability/README.md)** — how to test prompts
-- **[Chapter 18: Tool Protocols and Servers](../18-tool-protocols-and-servers/README.md)** — MCP for serving prompts
-- **[Chapter 19: Observability and Tracing](../19-observability-and-tracing/README.md)** — linking prompts to traces
-- **[Chapter 23: Evals in CI/CD](../23-evals-in-cicd/README.md)** — automated validation in the pipeline
-- **[Agent Skills](https://agentskills.io/)** — `SKILL.md` format as a standard way to package reusable prompts and instructions
+- **[Chapter 09: Agent Architecture](../09-agent-architecture/README.md)** — skills (SKILL.md) and progressive disclosure
+- **[Chapter 18: Tool Protocols](../18-tool-protocols-and-servers/README.md)** — MCP for serving prompts
+- **[Chapter 19: Observability and Tracing](../19-observability-and-tracing/README.md)** — linking prompts to tracing
+- **[Chapter 23: Evals in CI/CD](../23-evals-in-cicd/README.md)** — quality gates: automated prompt checks in the pipeline
+- **[Agent Skills](https://agentskills.io/)** — the `SKILL.md` format as a standard way to package reusable prompts and instructions
 
 ## What's Next?
 
-After learning prompt management, move on to:
+After mastering prompt management, move on to:
 - **[23. Evals in CI/CD](../23-evals-in-cicd/README.md)** — automated quality checks in the pipeline

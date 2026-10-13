@@ -1,63 +1,69 @@
 # 19. Observability and Tracing
 
-## Why This Chapter?
+## Why does this matter?
 
-Without observability, you work blind. An agent performed an action, but you can't understand:
-- Why did it choose this particular tool?
-- How long did execution take?
+Without observability you are working blind. The agent performed an action, but you can't tell:
+- Why did it pick that particular tool?
+- How long did the execution take?
 - How many tokens were used?
 - Where did the error occur?
 
-Observability gives your agent "vision". Without it, you can't debug problems, optimize performance, or understand how the agent behaves in production.
+Observability is the "eyes" of your agent. Without it, it's hard to debug problems, optimize performance, and understand the agent's behavior in production.
 
-### Real-World Case Study
+### A real-world case
 
-**Situation:** Agent in production performed a data deletion operation without confirmation. User complained.
+**Situation:** An agent in production performed a data deletion operation without confirmation. A user complained.
 
-**Problem:** You cannot understand why the agent didn't request confirmation. Logs only show "Agent executed delete_database". No information about which tools were available, what prompt was used, what arguments were passed.
+**Problem:** You can't figure out why the agent didn't ask for confirmation. The logs contain only "Agent executed delete_database". There is no information about which tools were available, what prompt was used, or what arguments were passed.
 
-**Solution:** Structured logging with tracing shows the full picture: input request → tool selection → execution → result. Then you can see whether the agent missed a confirmation tool, or whether the prompt was wrong.
+**Solution:** Structured logging with tracing helps you see the full picture: input request → tool selection → execution → result. Now you can see whether the agent didn't see the confirmation tool, or the prompt was wrong.
 
-## Theory in Simple Terms
+## The theory in plain words
 
-### What Is Observability?
+### What is observability?
 
-Observability is the ability to understand what's happening inside a system by observing its outputs (logs, metrics, traces).
+Observability is the ability to understand what is happening inside a system by observing its outputs (logs, metrics, traces).
 
-**Three pillars of observability:**
+**The three pillars of observability:**
 1. **Logs** — what happened (events, errors, actions)
 2. **Metrics** — how much and how often (latency, token usage, error rate)
-3. **Traces** — how it's connected (full request path through the system)
+3. **Traces** — how it all fits together (the full path of a request through the system)
 
-### How Does Tracing Work in Agents?
+### How does tracing work in agents?
 
-Each agent run is a chain of events:
-1. User sends request → `run_id` created
-2. Agent analyzes request → log input data
-3. Agent selects tools → log `tool_calls`
-4. Tools execute → log results
-5. Agent formulates response → log final response
+Every agent run is a chain of events:
+1. The user sends a request → a `run_id` is created
+2. The agent analyzes the request → we log the input
+3. The agent selects tools → we log the `tool_calls`
+4. The tools execute → we log the results
+5. The agent produces an answer → we log the final answer
 
-All these events are linked through `run_id`, so you can reconstruct the full execution flow.
+All these events are linked through `run_id`, so you can reconstruct the full picture of the run.
 
-## How It Works (Step by Step)
+## How it works (step by step)
 
-### Step 1: Agent Run Logging Structure
+### Step 1: A structure for logging an agent run
 
-Create a structure to store agent run information:
+Create a structure to store information about an agent run:
 
 ```go
 type AgentRun struct {
-    RunID       string    `json:"run_id"`
-    UserInput   string    `json:"user_input"`
-    ToolCalls   []ToolCall `json:"tool_calls"`
-    ToolResults []ToolResult `json:"tool_results"`
-    FinalAnswer string    `json:"final_answer"`
-    TokensUsed  int       `json:"tokens_used"`
-    Latency     time.Duration `json:"latency"`
-    Timestamp   time.Time `json:"timestamp"`
+    RunID            string       `json:"run_id"`
+    UserInput        string       `json:"user_input"`
+    ToolCalls        []ToolCall   `json:"tool_calls"`
+    ToolResults      []ToolResult `json:"tool_results"`
+    FinalAnswer      string       `json:"final_answer"`
+    PromptTokens     int          `json:"prompt_tokens"`
+    CompletionTokens int          `json:"completion_tokens"`
+    CacheReadTokens  int          `json:"cache_read_tokens"`
+    Latency          time.Duration `json:"latency"`
+    Timestamp        time.Time    `json:"timestamp"`
 }
+```
 
+> **Why not `TotalTokens`.** The ground truth on token spend is `Usage.PromptTokens` / `Usage.CompletionTokens` from the provider's response (the canon is [chapter 13](../13-context-engineering/README.md)). The aggregate `Usage.TotalTokens` is the wrong budget metric: it hides cache prefixes and mixes paid tokens with cache-cheap ones. A prompt cache hit shows up as `CacheReadTokens > 0` (providers name the field differently — `cache_read` / `cached_tokens` / `CacheRead` — but the meaning is the same). That's why `AgentRun` has three separate fields instead of one total.
+
+```go
 type ToolCall struct {
     ID        string    `json:"id"`
     Name      string    `json:"name"`
@@ -74,9 +80,9 @@ type ToolResult struct {
 }
 ```
 
-### Step 2: Generate Unique run_id
+### Step 2: Generating a unique run_id
 
-At the start of each agent run, generate a unique ID:
+At the start of every agent run, generate a unique ID:
 
 ```go
 import (
@@ -92,16 +98,16 @@ func generateRunID() string {
 }
 ```
 
-### Step 3: Logging in Agent Loop
+### Step 3: Logging in the agent loop
 
-Insert logging into the agent loop (see [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab04-autonomy/main.go)):
+Insert logging into the agent loop (the canon for the loop is [chapter 04](../04-autonomy-and-loops/README.md); the [`lab04-autonomy`](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab04-autonomy) lab is not yet revised and will be updated in a separate pass). The examples use the neutral client from chapter 04: `client.Complete(ctx, Request{...})` returns a response with `resp.Choices[0].Message` and `resp.Usage` (`PromptTokens` / `CompletionTokens` / `CacheReadTokens` from the provider):
 
 ```go
-func runAgent(ctx context.Context, client *openai.Client, userInput string) (string, error) {
+func runAgent(ctx context.Context, client Client, userInput string) (string, error) {
     runID := generateRunID()
     startTime := time.Now()
     
-    // Create structure for logging
+    // Create the structure for logging
     run := AgentRun{
         RunID:     runID,
         UserInput: userInput,
@@ -109,20 +115,17 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) (str
         Timestamp: time.Now(),
     }
     
-    messages := []openai.ChatCompletionMessage{
-        {Role: openai.ChatMessageRoleSystem, Content: "You are an autonomous DevOps agent."},
-        {Role: openai.ChatMessageRoleUser, Content: userInput},
+    messages := []Message{
+        {Role: "system", Content: "You are an autonomous DevOps agent."},
+        {Role: "user", Content: userInput},
     }
-    
+    toolDefs := []ToolDef{/* run tools (ch. 03) */}
+
+    maxIterations := 5 // terminal run boundary (ch. 04)
+
     // THE LOOP with logging
-    for i := 0; i < 5; i++ {
-        req := openai.ChatCompletionRequest{
-            Model:    "gpt-4o-mini",
-            Messages: messages,
-            Tools:    tools,
-        }
-        
-        resp, err := client.CreateChatCompletion(ctx, req)
+    for i := 0; i < maxIterations; i++ {
+        resp, err := client.Complete(ctx, Request{Messages: messages, Tools: toolDefs})
         if err != nil {
             logAgentRunError(runID, err)
             return "", err
@@ -131,8 +134,11 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) (str
         msg := resp.Choices[0].Message
         messages = append(messages, msg)
         
-        // Log token usage
-        run.TokensUsed += resp.Usage.TotalTokens
+        // Log token usage — by the provider's fields, not TotalTokens:
+        // the total hides cache prefixes and mixes paid tokens with cache-cheap ones
+        run.PromptTokens += resp.Usage.PromptTokens
+        run.CompletionTokens += resp.Usage.CompletionTokens
+        run.CacheReadTokens += resp.Usage.CacheReadTokens
         
         if len(msg.ToolCalls) == 0 {
             run.FinalAnswer = msg.Content
@@ -141,17 +147,16 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) (str
             return msg.Content, nil
         }
         
-        // Log tool calls
+        // Log the tool calls
         for _, toolCall := range msg.ToolCalls {
-            toolCallLog := ToolCall{
+            run.ToolCalls = append(run.ToolCalls, ToolCall{
                 ID:        toolCall.ID,
-                Name:      toolCall.Function.Name,
-                Arguments: toolCall.Function.Arguments,
+                Name:      toolCall.Name,
+                Arguments: toolCall.Arguments,
                 Timestamp: time.Now(),
-            }
-            run.ToolCalls = append(run.ToolCalls, toolCallLog)
+            })
             
-            // Execute tool with logging
+            // Execute the tool with logging
             result, err := executeToolWithLogging(runID, toolCall)
             if err != nil {
                 run.ToolResults = append(run.ToolResults, ToolResult{
@@ -159,6 +164,8 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) (str
                     Error:      err.Error(),
                     Timestamp:  time.Now(),
                 })
+                // An error is a result too for the model (ch. 03), not empty content
+                result = "error: " + err.Error()
             } else {
                 run.ToolResults = append(run.ToolResults, ToolResult{
                     ToolCallID: toolCall.ID,
@@ -167,8 +174,8 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) (str
                 })
             }
             
-            messages = append(messages, openai.ChatCompletionMessage{
-                Role:       openai.ChatMessageRoleTool,
+            messages = append(messages, Message{
+                Role:       "tool",
                 Content:    result,
                 ToolCallID: toolCall.ID,
             })
@@ -177,13 +184,14 @@ func runAgent(ctx context.Context, client *openai.Client, userInput string) (str
     
     run.Latency = time.Since(startTime)
     logAgentRun(run)
-    return run.FinalAnswer, nil
+    // Exhausting the iteration limit is a terminal run boundary (STYLE, ch. 04)
+    return run.FinalAnswer, fmt.Errorf("agent exceeded max iterations (%d)", maxIterations)
 }
 ```
 
-### Step 4: Structured Logging
+### Step 4: Structured logging
 
-Implement logging function in JSON format:
+Implement the logging function in JSON format:
 
 ```go
 import (
@@ -210,83 +218,83 @@ func logAgentRunError(runID string, err error) {
 }
 ```
 
-### Step 5: Tool Execution Logging
+### Step 5: Logging tool execution
 
-In tool execution functions (see [`labs/lab02-tools/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab02-tools/main.go)) add logging:
+In the tool execution function, add logging (the canon for tools is [chapter 03](../03-tools-and-function-calling/README.md); the lab02-tools lab is not yet revised):
 
 ```go
-func executeToolWithLogging(runID string, toolCall openai.ToolCall) (string, error) {
+func executeToolWithLogging(runID string, toolCall ToolCall) (string, error) {
     startTime := time.Now()
     
     log.Printf("TOOL_CALL_START: run_id=%s tool_id=%s tool_name=%s args=%s",
-        runID, toolCall.ID, toolCall.Function.Name, toolCall.Function.Arguments)
+        runID, toolCall.ID, toolCall.Name, toolCall.Arguments)
     
     var result string
     var err error
     
-    switch toolCall.Function.Name {
+    switch toolCall.Name {
     case "check_disk":
         result = checkDisk()
     case "clean_logs":
         result = cleanLogs()
     default:
-        err = fmt.Errorf("unknown tool: %s", toolCall.Function.Name)
+        err = fmt.Errorf("unknown tool: %s", toolCall.Name)
     }
     
     latency := time.Since(startTime)
     
     if err != nil {
         log.Printf("TOOL_CALL_ERROR: run_id=%s tool_id=%s tool_name=%s error=%s latency=%v",
-            runID, toolCall.ID, toolCall.Function.Name, err.Error(), latency)
+            runID, toolCall.ID, toolCall.Name, err.Error(), latency)
         return "", err
     }
     
     log.Printf("TOOL_CALL_SUCCESS: run_id=%s tool_id=%s tool_name=%s latency=%v",
-        runID, toolCall.ID, toolCall.Function.Name, latency)
+        runID, toolCall.ID, toolCall.Name, latency)
     
     return result, nil
 }
 ```
 
-## Where to Integrate This in Our Code
+## Where to plug this into our code
 
-### Integration Point 1: Agent Loop
+### Integration point 1: Agent loop
 
-In [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab04-autonomy/main.go) add logging to the agent loop:
+In your runtime from chapter 04 (the lab04-autonomy lab is not yet revised) — add logging to the agent loop:
 
 ```go
-// At start of main():
+// At the start of main():
 runID := generateRunID()
 startTime := time.Now()
 
-// In loop before CreateChatCompletion:
+// In the loop, before the LLM call:
 log.Printf("AGENT_ITERATION: run_id=%s iteration=%d", runID, i)
 
-// After getting response:
-log.Printf("AGENT_RESPONSE: run_id=%s tokens_used=%d", runID, resp.Usage.TotalTokens)
+// After receiving the response — tokens by the provider's fields:
+log.Printf("AGENT_RESPONSE: run_id=%s prompt_tokens=%d completion_tokens=%d cache_read=%d",
+    runID, resp.Usage.PromptTokens, resp.Usage.CompletionTokens, resp.Usage.CacheReadTokens)
 
-// After executing tools:
-log.Printf("TOOL_EXECUTED: run_id=%s tool=%s result=%s", runID, toolCall.Function.Name, result)
+// After the tools execute:
+log.Printf("TOOL_EXECUTED: run_id=%s tool=%s result=%s", runID, toolCall.Name, result)
 ```
 
-### Integration Point 2: Tool Execution
+### Integration point 2: Tool execution
 
-In [`labs/lab02-tools/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab02-tools/main.go) add logging when executing tools:
+In your runtime, add logging when tools execute (the lab02-tools lab is not yet revised):
 
 ```go
-// In tool execution function:
-func executeTool(runID string, toolCall openai.ToolCall) (string, error) {
-    log.Printf("TOOL_START: run_id=%s tool=%s", runID, toolCall.Function.Name)
+// In the tool execution function:
+func executeTool(runID string, toolCall ToolCall) (string, error) {
+    log.Printf("TOOL_START: run_id=%s tool=%s", runID, toolCall.Name)
     // ... execution ...
-    log.Printf("TOOL_END: run_id=%s tool=%s result=%s", runID, toolCall.Function.Name, result)
+    log.Printf("TOOL_END: run_id=%s tool=%s result=%s", runID, toolCall.Name, result)
     return result, nil
 }
 ```
 
-## Mini Code Example
+## Mini code example
 
-Complete example with observability based on [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab04-autonomy/main.go):
-
+A compact example with observability built on the chapter 04 loop — the same five steps above, assembled into one listing (the client is the neutral one from [chapter 04](../04-autonomy-and-loops/README.md)):
 ```go
 package main
 
@@ -297,37 +305,10 @@ import (
     "encoding/json"
     "fmt"
     "log"
-    "os"
     "time"
-
-    "github.com/sashabaranov/go-openai"
 )
 
-type AgentRun struct {
-    RunID       string      `json:"run_id"`
-    UserInput   string      `json:"user_input"`
-    ToolCalls   []ToolCall  `json:"tool_calls"`
-    ToolResults []ToolResult `json:"tool_results"`
-    FinalAnswer string      `json:"final_answer"`
-    TokensUsed  int         `json:"tokens_used"`
-    Latency     string      `json:"latency"`
-    Timestamp   time.Time   `json:"timestamp"`
-}
-
-type ToolCall struct {
-    ID        string    `json:"id"`
-    Name      string    `json:"name"`
-    Arguments string    `json:"arguments"`
-    Timestamp time.Time `json:"timestamp"`
-}
-
-type ToolResult struct {
-    ToolCallID string    `json:"tool_call_id"`
-    Result     string    `json:"result"`
-    Error      string    `json:"error,omitempty"`
-    Latency    string    `json:"latency"`
-    Timestamp  time.Time `json:"timestamp"`
-}
+// AgentRun and ToolCall/ToolResult — same as in Step 1.
 
 func generateRunID() string {
     bytes := make([]byte, 8)
@@ -344,161 +325,116 @@ func logAgentRun(run AgentRun) {
     log.Printf("AGENT_RUN: %s", string(logJSON))
 }
 
-func checkDisk() string { return "Disk Usage: 95% (CRITICAL). Large folder: /var/log" }
-func cleanLogs() string { return "Logs cleaned. Freed 20GB." }
+func checkDisk() string  { return "Disk usage 95%. Largest folder: /var/log" }
+func cleanLogs() string  { return "Logs cleaned. Freed 20GB." }
 
-func main() {
-    token := os.Getenv("OPENAI_API_KEY")
-    baseURL := os.Getenv("OPENAI_BASE_URL")
-    if token == "" {
-        token = "dummy"
-    }
-
-    config := openai.DefaultConfig(token)
-    if baseURL != "" {
-        config.BaseURL = baseURL
-    }
-    client := openai.NewClientWithConfig(config)
-
-    ctx := context.Background()
-    userInput := "I'm out of disk space. Fix it."
-
-    // Generate run_id
+// runAgentWithObservability — the loop from chapter 04 with tracing per steps 2–5.
+func runAgentWithObservability(ctx context.Context, client Client, userInput string) (string, error) {
     runID := generateRunID()
     startTime := time.Now()
 
     run := AgentRun{
         RunID:     runID,
         UserInput: userInput,
+        ToolCalls: []ToolCall{},
         Timestamp: time.Now(),
     }
 
-    tools := []openai.Tool{
-        {
-            Type: openai.ToolTypeFunction,
-            Function: &openai.FunctionDefinition{
-                Name:        "check_disk",
-                Description: "Check current disk usage",
-            },
-        },
-        {
-            Type: openai.ToolTypeFunction,
-            Function: &openai.FunctionDefinition{
-                Name:        "clean_logs",
-                Description: "Delete old logs to free space",
-            },
-        },
+    messages := []Message{
+        {Role: "system", Content: "You are an autonomous DevOps agent."},
+        {Role: "user", Content: userInput},
     }
+    toolDefs := []ToolDef{/* run tools (ch. 03) */}
 
-    messages := []openai.ChatCompletionMessage{
-        {Role: openai.ChatMessageRoleSystem, Content: "You are an autonomous DevOps agent."},
-        {Role: openai.ChatMessageRoleUser, Content: userInput},
-    }
+    maxIterations := 5 // terminal run boundary (ch. 04)
 
-    fmt.Printf("Starting Agent Loop (run_id: %s)...\n", runID)
-
-    for i := 0; i < 5; i++ {
+    for i := 0; i < maxIterations; i++ {
         log.Printf("AGENT_ITERATION: run_id=%s iteration=%d", runID, i)
 
-        req := openai.ChatCompletionRequest{
-            Model:    "gpt-4o-mini",
-            Messages: messages,
-            Tools:    tools,
-        }
-
-        resp, err := client.CreateChatCompletion(ctx, req)
+        resp, err := client.Complete(ctx, Request{Messages: messages, Tools: toolDefs})
         if err != nil {
             log.Printf("AGENT_ERROR: run_id=%s error=%v", runID, err)
-            panic(fmt.Sprintf("API Error: %v", err))
+            return "", err
         }
 
         msg := resp.Choices[0].Message
         messages = append(messages, msg)
 
-        run.TokensUsed += resp.Usage.TotalTokens
-        log.Printf("AGENT_RESPONSE: run_id=%s tokens_used=%d", runID, resp.Usage.TotalTokens)
+        // Tokens — from the provider's fields (see Step 3)
+        run.PromptTokens += resp.Usage.PromptTokens
+        run.CompletionTokens += resp.Usage.CompletionTokens
+        run.CacheReadTokens += resp.Usage.CacheReadTokens
 
         if len(msg.ToolCalls) == 0 {
             run.FinalAnswer = msg.Content
-            run.Latency = time.Since(startTime).String()
+            run.Latency = time.Since(startTime)
             logAgentRun(run)
-            fmt.Println("AI:", msg.Content)
-            break
+            return msg.Content, nil
         }
 
         for _, toolCall := range msg.ToolCalls {
-            toolCallStart := time.Now()
-            
-            toolCallLog := ToolCall{
-                ID:        toolCall.ID,
-                Name:      toolCall.Function.Name,
-                Arguments: toolCall.Function.Arguments,
+            log.Printf("TOOL_START: run_id=%s tool_id=%s tool_name=%s", runID, toolCall.ID, toolCall.Name)
+            run.ToolCalls = append(run.ToolCalls, ToolCall{
+                ID: toolCall.ID, Name: toolCall.Name, Arguments: toolCall.Arguments,
                 Timestamp: time.Now(),
-            }
-            run.ToolCalls = append(run.ToolCalls, toolCallLog)
-
-            fmt.Printf("Executing tool: %s\n", toolCall.Function.Name)
-            log.Printf("TOOL_START: run_id=%s tool_id=%s tool_name=%s", runID, toolCall.ID, toolCall.Function.Name)
+            })
 
             var result string
-            if toolCall.Function.Name == "check_disk" {
+            switch toolCall.Name {
+            case "check_disk":
                 result = checkDisk()
-            } else if toolCall.Function.Name == "clean_logs" {
+            case "clean_logs":
                 result = cleanLogs()
+            default:
+                // Allowlist: an unknown tool is an error for the model, not a panic
+                result = "error: unknown tool " + toolCall.Name
             }
-
-            toolCallLatency := time.Since(toolCallStart)
-            log.Printf("TOOL_END: run_id=%s tool_id=%s tool_name=%s latency=%v", runID, toolCall.ID, toolCall.Function.Name, toolCallLatency)
+            log.Printf("TOOL_END: run_id=%s tool_id=%s tool_name=%s", runID, toolCall.ID, toolCall.Name)
 
             run.ToolResults = append(run.ToolResults, ToolResult{
-                ToolCallID: toolCall.ID,
-                Result:     result,
-                Latency:    toolCallLatency.String(),
-                Timestamp:  time.Now(),
+                ToolCallID: toolCall.ID, Result: result, Timestamp: time.Now(),
             })
-
-            fmt.Println("Tool Output:", result)
-
-            messages = append(messages, openai.ChatCompletionMessage{
-                Role:       openai.ChatMessageRoleTool,
-                Content:    result,
-                ToolCallID: toolCall.ID,
-            })
+            messages = append(messages, Message{Role: "tool", Content: result, ToolCallID: toolCall.ID})
         }
     }
+
+    run.Latency = time.Since(startTime)
+    logAgentRun(run)
+    // Exhausting the limit — a terminal boundary (STYLE, ch. 04)
+    return run.FinalAnswer, fmt.Errorf("agent exceeded max iterations (%d)", maxIterations)
 }
 ```
 
 ## Distributed Tracing — OpenTelemetry for Agents
 
-So far we've been logging events as a flat list: `TOOL_START`, `TOOL_END`, `AGENT_ITERATION`. This works for a single agent. But once the agent calls external services (APIs, databases, other agents), flat logs won't help. You can't see what exactly slowed down the chain.
+So far we have been logging events as a flat list: `TOOL_START`, `TOOL_END`, `AGENT_ITERATION`. This works for a single agent. But as soon as the agent calls external services (APIs, databases, other agents), flat logs stop helping: you won't see what exactly slowed the chain down.
 
-Distributed Tracing solves this problem. Each operation becomes a **span** — a time segment with a start, end, and context. Spans nest inside each other, forming a tree.
+Distributed tracing solves this problem. Every operation becomes a **span** — an interval of time with a start, an end, and a context. Spans nest inside one another, forming a tree.
 
-### Span-Based Tracing for Agents
+### Span-based tracing for agents
 
 For an agent, the span tree looks like this:
 
 ```
 agent_run (root span)
 ├── llm_call (iteration 1)
-│   └── openai_api_request
+│   └── llm_api_request
 ├── tool_call: check_disk
 │   └── ssh_connection
 ├── llm_call (iteration 2)
-│   └── openai_api_request
+│   └── llm_api_request
 ├── tool_call: clean_logs
 │   └── file_system_operation
 └── llm_call (iteration 3 — final answer)
 ```
 
-Each span contains: operation name, start and end time, attributes (run_id, tool_name, tokens_used), and a reference to its parent span.
+Each span contains: the operation name, start and end times, attributes (run_id, tool_name, tokens), and a reference to the parent span.
 
-### OpenTelemetry: Initialization
+### OpenTelemetry: initialization
 
-OpenTelemetry (OTEL) is the standard for tracing. It supports export to Jaeger, Zipkin, Grafana Tempo, and other backends.
+OpenTelemetry (OTEL) is the standard for tracing. It supports exporting to Jaeger, Zipkin, Grafana Tempo, and other backends.
 
-Tracer initialization:
+Initializing the tracer:
 
 ```go
 import (
@@ -531,17 +467,17 @@ func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
 }
 ```
 
-### Spans for Agent Iterations and Tool Calls
+### Spans for agent iterations and tool calls
 
-> **Rule: PII does not land in a span in plaintext.** Spans go to an external tracing system (Jaeger / Tempo / DataDog), where they're seen by SREs, analysts, sometimes the vendor. `userInput`, `tool.args`, `tool.result`, `final_answer` may contain personal data, tokens, secrets, medical/financial info. So in `attribute.String(...)` we put **only** one of:
+> **Rule: PII never goes into a span in plain form.** Spans leave for an external tracing system (Jaeger / Tempo / DataDog), where SREs, analysts, and sometimes vendors can see them. `userInput`, `tool.args`, `tool.result`, and `final_answer` may contain personal data, tokens, secrets, medical or financial information. That's why in `attribute.String(...)` we put **only** one of the following:
 >
 > - **metadata**: `len(input)`, `tool.name`, token counts, latency, status;
-> - **redacted form**: prefix/suffix + hash (`"client@a***...x9f3"`);
-> - **correlation IDs**: `prompt_id`, `tool_call_id`, `message_hash` you can use to find the full content in a protected store with RBAC and a retention policy.
+> - a **redacted form**: prefix/suffix + a hash (`"client@a***...x9f3"`);
+> - a **correlation ID**: `prompt_id`, `tool_call_id`, `message_hash` — something you can use to find the full content in a protected storage with RBAC and a retention policy.
 >
-> Never raw text. If you really need a dump for debugging — do it via a separate sampler into a protected store, not into the general trace.
+> Never raw text. If you really need a dump for debugging — use a separate sampler and a protected storage, not the shared trace.
 
-Wrap each agent step in a span:
+We wrap every step of the agent in a span:
 
 ```go
 import (
@@ -556,9 +492,15 @@ import (
 var tracer = otel.Tracer("devops-agent")
 
 // redact turns any potentially sensitive value into a safe label:
-// length of the original text + a short sha256 prefix. With this label
-// you can match a span to a record in a protected log store, but you
-// can't reconstruct the original text from it.
+// the length of the original text plus a short sha256 prefix. You can use
+// this label to correlate a span with a record in a protected log storage,
+// but the original text cannot be recovered.
+//
+// The same principle works one level down: redaction is enabled by default
+// in tool output too — the model and the logs see a filtered version
+// (secrets, keys, PII), while the full result stays in protected storage.
+// Details in [Chapter 17: Security and Governance](../17-security-and-governance/README.md)
+// and [Chapter 24: Data and Privacy](../24-data-and-privacy/README.md).
 func redact(s string) string {
     if s == "" {
         return ""
@@ -567,12 +509,13 @@ func redact(s string) string {
     return fmt.Sprintf("len=%d sha256=%x", len(s), sum[:6])
 }
 
-func runAgentWithTracing(ctx context.Context, client *openai.Client, userInput string) (string, error) {
+func runAgentWithTracing(ctx context.Context, client Client, userInput string) (string, error) {
     runID := generateRunID()
+    model := "glm-5.3" // the model name is a safe attribute, unlike args/result
 
-    // Root span — the entire agent run. We do NOT put the full userInput
-    // into an attribute; we keep only run_id (use it to find the incoming
-    // request in the protected store) and a redacted label for debugging.
+    // The root span covers the entire agent run. We do NOT put the full
+    // userInput text into attributes; we keep only run_id (used to look up
+    // the incoming request in protected storage) and a redacted label for debugging.
     ctx, rootSpan := tracer.Start(ctx, "agent_run",
         trace.WithAttributes(
             attribute.String("run_id", runID),
@@ -581,23 +524,26 @@ func runAgentWithTracing(ctx context.Context, client *openai.Client, userInput s
     )
     defer rootSpan.End()
 
-    messages := []openai.ChatCompletionMessage{
-        {Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
-        {Role: openai.ChatMessageRoleUser, Content: userInput},
+    messages := []Message{
+        {Role: "system", Content: systemPrompt},
+        {Role: "user", Content: userInput},
     }
+    toolDefs := []ToolDef{/* run tools (ch. 03) */}
+
+    maxIterations := 5 // terminal run boundary (ch. 04)
 
     for i := 0; i < maxIterations; i++ {
-        // Span for each loop iteration
+        // A span for each iteration of the loop
         ctx, iterSpan := tracer.Start(ctx, "agent_iteration",
             trace.WithAttributes(attribute.Int("iteration", i)),
         )
 
-        // Span for LLM call
+        // A span for the LLM call
         llmCtx, llmSpan := tracer.Start(ctx, "llm_call",
             trace.WithAttributes(attribute.String("model", model)),
         )
 
-        resp, err := client.CreateChatCompletion(llmCtx, req)
+        resp, err := client.Complete(llmCtx, Request{Messages: messages, Tools: toolDefs})
         if err != nil {
             llmSpan.RecordError(err)
             llmSpan.End()
@@ -605,17 +551,22 @@ func runAgentWithTracing(ctx context.Context, client *openai.Client, userInput s
             return "", err
         }
 
+        // Tokens — prompt/completion separately, plus cache-read:
+        // a hit on the provider's prompt cache shows up as cache_read > 0
         llmSpan.SetAttributes(
             attribute.Int("tokens.prompt", resp.Usage.PromptTokens),
             attribute.Int("tokens.completion", resp.Usage.CompletionTokens),
-            attribute.Int("tokens.total", resp.Usage.TotalTokens),
+            attribute.Int("tokens.cache_read", resp.Usage.CacheReadTokens),
         )
         llmSpan.End()
 
         msg := resp.Choices[0].Message
+        // Append the assistant message to the history before the tool calls:
+        // tool results must immediately follow their assistant message (protocol, ch. 03)
+        messages = append(messages, msg)
         if len(msg.ToolCalls) == 0 {
-            // The model's final answer can also contain PII — write only redacted.
-            // The full answer goes into the protected store, looked up by run_id.
+            // The model's final answer can contain PII too — store only the redacted form.
+            // The full answer goes to protected storage keyed by run_id.
             rootSpan.SetAttributes(
                 attribute.String("final_answer.redacted", redact(msg.Content)),
                 attribute.Int("final_answer.length", len(msg.Content)),
@@ -624,14 +575,14 @@ func runAgentWithTracing(ctx context.Context, client *openai.Client, userInput s
             return msg.Content, nil
         }
 
-        // Span for each tool call: the tool name and tool_call_id are safe;
+        // A span for each tool call: the tool name and tool_call_id are safe,
         // arguments and result are not.
         for _, toolCall := range msg.ToolCalls {
             _, toolSpan := tracer.Start(ctx, "tool_call",
                 trace.WithAttributes(
-                    attribute.String("tool.name", toolCall.Function.Name),
+                    attribute.String("tool.name", toolCall.Name),
                     attribute.String("tool.call_id", toolCall.ID),
-                    attribute.String("tool.args.redacted", redact(toolCall.Function.Arguments)),
+                    attribute.String("tool.args.redacted", redact(toolCall.Arguments)),
                 ),
             )
 
@@ -639,6 +590,8 @@ func runAgentWithTracing(ctx context.Context, client *openai.Client, userInput s
             if err != nil {
                 toolSpan.RecordError(err)
                 toolSpan.SetAttributes(attribute.Bool("tool.error", true))
+                // An error is a result too for the model: the loop continues
+                result = "error: " + err.Error()
             } else {
                 toolSpan.SetAttributes(
                     attribute.String("tool.result.redacted", redact(result)),
@@ -646,20 +599,25 @@ func runAgentWithTracing(ctx context.Context, client *openai.Client, userInput s
                 )
             }
             toolSpan.End()
+
+            messages = append(messages, Message{
+                Role: "tool", Content: result, ToolCallID: toolCall.ID,
+            })
         }
 
         iterSpan.End()
     }
 
-    return "", nil
+    // Exhausting the limit — a terminal boundary (STYLE, ch. 04)
+    return "", fmt.Errorf("agent exceeded max iterations (%d)", maxIterations)
 }
 ```
 
-> **What goes into the protected store.** Pairs `run_id → original userInput / final_answer` and `tool.call_id → original arguments / result` go into a separate logger with server-side encryption, RBAC for SRE / Privacy / Compliance roles, and 7–30 day retention. That way you keep the ability to debug an incident, but the general trace contains no PII bytes.
+> **What to write to protected storage.** Store the pairs "`run_id` → original `userInput` / `final_answer`" and "`tool.call_id` → original `arguments` / `result`" in a separate logger with service-side encryption, RBAC across SRE/Privacy/Compliance roles, and a 7–30 day retention. That way you can still debug an incident, but the shared trace contains not a single byte of PII.
 
-### Propagation: Passing Context Between Services
+### Propagation: passing context between services
 
-When your agent calls an external HTTP service, the tracing context must travel with it. OTEL uses `traceparent` and `tracestate` HTTP headers:
+If the agent calls an external HTTP service, the tracing context needs to be passed along. OTEL uses the `traceparent` and `tracestate` HTTP headers:
 
 ```go
 import (
@@ -667,70 +625,70 @@ import (
     "net/http"
 )
 
-// Sender: inject context into HTTP headers
+// Sender: inject the context into the HTTP headers
 func callExternalService(ctx context.Context, url string) (*http.Response, error) {
     req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 
-    // OTEL injects traceparent into request headers
+    // OTEL injects traceparent into the request headers
     otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 
     return http.DefaultClient.Do(req)
 }
 
-// Receiver: extract context from HTTP headers
+// Receiver: extract the context from the HTTP headers
 func handleRequest(w http.ResponseWriter, r *http.Request) {
-    // Extract trace context from incoming request
+    // Extract the trace context from the incoming request
     ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
 
-    // Spans in this service now belong to the original trace
+    // From now on, spans in this service will be part of the original trace
     ctx, span := tracer.Start(ctx, "external_service.handle")
     defer span.End()
 
-    // ... handle request ...
+    // ... handle the request ...
 }
 ```
 
-After this, you see a single trace spanning all services in Jaeger or Grafana Tempo.
+After that, in Jaeger or Grafana Tempo you will see a single trace passing through all the services.
 
-> **OTEL exporters:** For local development, Jaeger is convenient (`docker run -p 16686:16686 jaegertracing/all-in-one`). For production — Grafana Tempo or Zipkin. OTEL supports all of them through a single API.
+> **OTEL exporters:** For local development, Jaeger is convenient (`docker run -p 16686:16686 jaegertracing/all-in-one`). For production — Grafana Tempo or Zipkin. OTEL supports them all through a single API.
 
-## Multi-Agent Tracing
+## Multi-Agent Tracing — Tracing Multiple Agents
 
-In [Chapter 07: Multi-Agent Systems](../07-multi-agent/README.md) we split agents into a Supervisor and Workers. Each Worker is a separate agent loop with its own context. Without tracing, you can't tell which Worker stalled, which one failed, or how the task flowed through the entire system.
+In [Chapter 07: Multi-Agent Systems](../07-multi-agent/README.md) we split agents into a Supervisor and Workers. Each Worker is a separate agent loop with its own context. Without tracing, it is impossible to tell which Worker slowed things down, which one made a mistake, or how a task traveled through the whole system.
 
-### Parent-Child: Supervisor Span → Worker Span
+### Parent-child: supervisor span → worker span
 
-The key idea: the Supervisor's span becomes the **parent** of Worker spans. This gives you the full execution tree:
+The key idea: the Supervisor's span becomes the **parent** of the Workers' spans. This way we see the full execution tree:
 
 ```
 supervisor_run
-├── llm_call (Supervisor decides who to delegate to)
+├── llm_call (the Supervisor decides whom to delegate to)
 ├── worker_call: network_expert
 │   ├── llm_call
 │   └── tool_call: ping_host
 ├── worker_call: db_expert
 │   ├── llm_call
 │   └── tool_call: check_db_version
-└── llm_call (Supervisor assembles final answer)
+└── llm_call (the Supervisor assembles the final answer)
 ```
 
-### Code: Passing Trace Context from Supervisor to Worker
+### The code: passing the trace context from supervisor to worker
 
 ```go
-// Worker receives context with trace information from Supervisor
-func runWorker(ctx context.Context, client *openai.Client, workerName string, task string, tools []openai.Tool) (string, error) {
-    // Create child span — it automatically attaches to the parent from ctx
+// Worker receives a context with trace information from the Supervisor
+func runWorker(ctx context.Context, client Client, model string, workerName string, task string, toolDefs []ToolDef) (string, error) {
+    // Create a child span — it automatically links to the parent from ctx
     ctx, span := tracer.Start(ctx, "worker_call",
         trace.WithAttributes(
             attribute.String("worker.name", workerName),
-            attribute.String("worker.task", task),
+            attribute.String("worker.task.redacted", redact(task)),
         ),
     )
     defer span.End()
 
-    messages := []openai.ChatCompletionMessage{
-        {Role: openai.ChatMessageRoleSystem, Content: fmt.Sprintf("You are %s.", workerName)},
-        {Role: openai.ChatMessageRoleUser, Content: task},
+    messages := []Message{
+        {Role: "system", Content: fmt.Sprintf("You are %s.", workerName)},
+        {Role: "user", Content: task},
     }
 
     for i := 0; i < 5; i++ {
@@ -738,106 +696,113 @@ func runWorker(ctx context.Context, client *openai.Client, workerName string, ta
             trace.WithAttributes(attribute.Int("iteration", i)),
         )
 
-        resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-            Model:    "gpt-4o",
-            Messages: messages,
-            Tools:    tools,
-        })
-
-        llmSpan.SetAttributes(
-            attribute.Int("tokens.total", resp.Usage.TotalTokens),
-        )
-        llmSpan.End()
+        resp, err := client.Complete(ctx, Request{Messages: messages, Tools: toolDefs})
 
         if err != nil {
-            span.RecordError(err)
+            // Provider error before reading Usage: resp == nil — nothing to panic over
+            llmSpan.RecordError(err)
+            llmSpan.End()
             return "", err
         }
 
+        llmSpan.SetAttributes(
+            attribute.Int("tokens.prompt", resp.Usage.PromptTokens),
+            attribute.Int("tokens.completion", resp.Usage.CompletionTokens),
+        )
+        llmSpan.End()
+
         msg := resp.Choices[0].Message
+        // The assistant message with tool_calls goes into the history before their results (ch. 03)
+        messages = append(messages, msg)
         if len(msg.ToolCalls) == 0 {
-            span.SetAttributes(attribute.String("worker.result", msg.Content))
+            // The Worker's result may contain PII — a redacted label only
+            span.SetAttributes(attribute.String("worker.result.redacted", redact(msg.Content)))
             return msg.Content, nil
         }
 
         for _, tc := range msg.ToolCalls {
             _, toolSpan := tracer.Start(ctx, "worker_tool_call",
                 trace.WithAttributes(
-                    attribute.String("tool.name", tc.Function.Name),
+                    attribute.String("tool.name", tc.Name),
                 ),
             )
-            result, _ := executeTool(tc)
+            result, err := executeTool(tc)
+            if err != nil {
+                // The error is logged, not swallowed: an error result goes to the model
+                toolSpan.RecordError(err)
+                result = "error: " + err.Error()
+            }
             toolSpan.End()
 
-            messages = append(messages, openai.ChatCompletionMessage{
-                Role: openai.ChatMessageRoleTool, Content: result, ToolCallID: tc.ID,
+            messages = append(messages, Message{
+                Role: "tool", Content: result, ToolCallID: tc.ID,
             })
         }
-
-        messages = append(messages, msg)
     }
 
     return "", fmt.Errorf("worker %s exceeded max iterations", workerName)
 }
 ```
 
-The Supervisor calls Workers by passing `ctx`:
+The Supervisor calls the Worker by simply passing `ctx` along:
 
 ```go
-func runSupervisor(ctx context.Context, client *openai.Client, userInput string) (string, error) {
+func runSupervisor(ctx context.Context, client Client, userInput string) (string, error) {
     ctx, span := tracer.Start(ctx, "supervisor_run",
-        trace.WithAttributes(attribute.String("user_input", userInput)),
+        trace.WithAttributes(
+            attribute.String("user_input.redacted", redact(userInput)),
+        ),
     )
     defer span.End()
 
-    // Supervisor decides who to delegate to
+    // Supervisor decides whom to delegate to
     // ... (LLM call for routing) ...
 
-    // ctx already contains the Supervisor's trace context.
-    // Worker creates a child span automatically.
-    networkResult, err := runWorker(ctx, client, "network_expert", "Check connectivity to db-host:5432", networkTools)
+    // ctx already carries the Supervisor's trace context.
+    // The Worker will create a child span automatically.
+    networkResult, err := runWorker(ctx, client, model, "network_expert", "Check connectivity to db-host:5432", networkToolDefs)
     if err != nil {
         span.RecordError(err)
         return "", err
     }
 
-    dbResult, err := runWorker(ctx, client, "db_expert", "Get PostgreSQL version", dbTools)
+    dbResult, err := runWorker(ctx, client, model, "db_expert", "Get PostgreSQL version", dbToolDefs)
     if err != nil {
         span.RecordError(err)
         return "", err
     }
 
     span.SetAttributes(
-        attribute.String("network_result", networkResult),
-        attribute.String("db_result", dbResult),
+        attribute.String("network_result.redacted", redact(networkResult)),
+        attribute.String("db_result.redacted", redact(dbResult)),
     )
 
-    // ... Supervisor assembles final answer ...
+    // ... the Supervisor assembles the final answer ...
     return finalAnswer, nil
 }
 ```
 
-### Cross-Agent Correlation
+### Cross-agent correlation
 
-Trace ID propagates automatically through `ctx`. All spans within a single trace share the same `trace_id`. In Jaeger you search by this ID and see the full path: from user request through Supervisor to each Worker and back.
+The trace ID is automatically propagated through `ctx`. All spans within one trace share a common `trace_id`. In Jaeger you search by this ID and see the full path: from the user's request through the Supervisor to each Worker and back.
 
-If a Worker runs as a separate HTTP service, use propagation from the previous section — pass `traceparent` through headers.
+If a Worker runs as a separate HTTP service, use the propagation from the previous section — pass `traceparent` in headers.
 
 ## Component-Level Metrics
 
-Aggregate metrics (`total_tokens`, `avg_latency`) show the overall picture. But for diagnostics you need granularity: which tool is slow? Which LLM call burns the most tokens? Which search query returns irrelevant results?
+Overall metrics (`total_tokens`, `avg_latency`) show the big picture. But diagnosis requires granularity: which tool exactly is slow? Which LLM call burns the most tokens? Which search query returns irrelevant results?
 
-### Per-Component Metrics
+### Per-component metrics
 
 Three categories of component-level metrics:
 
-| Component | Metrics | Purpose |
-|-----------|---------|---------|
+| Component | Metrics | Why |
+|-----------|---------|-----|
 | **Tool** | Latency, error rate, calls/min | Find slow tools |
 | **LLM** | Tokens, latency, cost per call | Optimize token spend |
-| **Retrieval** | Relevance score, docs found, latency | Improve RAG quality |
+| **Retrieval** | Relevance score, documents found, latency | Improve RAG quality |
 
-### Code: Collecting Component Metrics
+### Code: collecting per-component metrics
 
 ```go
 // ComponentMetrics collects metrics for each agent component
@@ -856,19 +821,19 @@ type ToolMetrics struct {
 }
 
 type LLMMetrics struct {
-    TotalCalls       int64
-    TotalTokens      int64
-    TotalPromptTokens int64
-    TotalCompletionTokens int64
-    TotalLatency     time.Duration
-    TotalCost        float64
+    TotalCalls             int64
+    TotalPromptTokens      int64
+    TotalCompletionTokens  int64
+    TotalCacheReadTokens   int64
+    TotalLatency           time.Duration
+    TotalCost              float64
 }
 
 type RetrievalMetrics struct {
     TotalQueries     int64
     TotalDocuments   int64
     TotalLatency     time.Duration
-    RelevanceScores  []float64 // for computing average
+    RelevanceScores  []float64 // for computing the average
 }
 
 func NewComponentMetrics() *ComponentMetrics {
@@ -880,7 +845,7 @@ func NewComponentMetrics() *ComponentMetrics {
 }
 ```
 
-Recording metrics on tool call:
+Recording metrics on a tool call:
 
 ```go
 func (cm *ComponentMetrics) RecordToolCall(name string, latency time.Duration, err error) {
@@ -900,16 +865,16 @@ func (cm *ComponentMetrics) RecordToolCall(name string, latency time.Duration, e
     }
 }
 
-func (cm *ComponentMetrics) RecordLLMCall(promptTokens, completionTokens int, latency time.Duration, costPerToken float64) {
+func (cm *ComponentMetrics) RecordLLMCall(model string, u Usage, latency time.Duration) {
     cm.mu.Lock()
     defer cm.mu.Unlock()
 
     cm.llm.TotalCalls++
-    cm.llm.TotalPromptTokens += int64(promptTokens)
-    cm.llm.TotalCompletionTokens += int64(completionTokens)
-    cm.llm.TotalTokens += int64(promptTokens + completionTokens)
+    cm.llm.TotalPromptTokens += int64(u.PromptTokens)
+    cm.llm.TotalCompletionTokens += int64(u.CompletionTokens)
+    cm.llm.TotalCacheReadTokens += int64(u.CacheReadTokens)
     cm.llm.TotalLatency += latency
-    cm.llm.TotalCost += float64(promptTokens+completionTokens) * costPerToken
+    cm.llm.TotalCost += callCost(model, u) // prices come from config, see below
 }
 
 func (cm *ComponentMetrics) RecordRetrieval(docsFound int, relevanceScore float64, latency time.Duration) {
@@ -923,68 +888,131 @@ func (cm *ComponentMetrics) RecordRetrieval(docsFound int, relevanceScore float6
 }
 ```
 
-Usage in agent loop:
+Usage in the agent loop:
 
 ```go
 metrics := NewComponentMetrics()
 
-// On LLM call
-llmStart := time.Now()
-resp, err := client.CreateChatCompletion(ctx, req)
-metrics.RecordLLMCall(
-    resp.Usage.PromptTokens,
-    resp.Usage.CompletionTokens,
-    time.Since(llmStart),
-    0.000003, // $3 per 1M tokens
-)
+messages := []Message{/* run history (ch. 04) */}
+toolDefs := []ToolDef{/* run tools (ch. 03) */}
 
-// On tool call
+// On an LLM call
+llmStart := time.Now()
+resp, err := client.Complete(ctx, Request{Messages: messages, Tools: toolDefs})
+if err == nil {
+    metrics.RecordLLMCall(model, resp.Usage, time.Since(llmStart))
+}
+
+// On a tool call
 toolStart := time.Now()
 result, err := executeTool(toolCall)
-metrics.RecordToolCall(toolCall.Function.Name, time.Since(toolStart), err)
+metrics.RecordToolCall(toolCall.Name, time.Since(toolStart), err)
 ```
 
-### Linking Traces to Evals
+### Cost: a per-model price table in config
 
-Traces show **how** the agent performed the task. Evals show **how well** it did. The trace → eval link gives you the full picture:
+Prices change — keep them in config, not in code. A single "per token" price does not work: prompt, completion and cache read are billed differently, and each model has its own rates.
+
+```go
+// ModelPricing — rates for one model, $ per 1M tokens.
+type ModelPricing struct {
+    PromptPer1M     float64 // regular prompt tokens
+    CompletionPer1M float64 // generated tokens
+    CacheReadPer1M  float64 // cache prefix reads — usually several times cheaper than prompt
+}
+
+// Loaded from config (YAML/env) at startup — not hardcoded in the source.
+var pricing = map[string]ModelPricing{ /* from loadPricingFromConfig() */ }
+
+// callCost computes the cost of one call from the provider's Usage.
+// Cache reads are billed at a separate rate, not as full prompt.
+func callCost(model string, u Usage) float64 {
+    p := pricing[model]
+    cached := float64(u.CacheReadTokens)
+    fresh := float64(u.PromptTokens - u.CacheReadTokens)
+    return fresh/1e6*p.PromptPer1M +
+        cached/1e6*p.CacheReadPer1M +
+        float64(u.CompletionTokens)/1e6*p.CompletionPer1M
+}
+```
+
+### Linking traces to evals
+
+Traces show **how** the agent completed the task. Evals show **how well** it did. A trace → eval link gives the full picture:
 
 ```go
 type TracedEvalResult struct {
-    TraceID       string  `json:"trace_id"`        // OpenTelemetry trace ID
-    EvalLevel     string  `json:"eval_level"`       // task, tool, trajectory, topic
-    Score         float64 `json:"score"`
-    ToolsUsed     []string `json:"tools_used"`
-    TotalTokens   int     `json:"total_tokens"`
-    TotalLatency  string  `json:"total_latency"`
+    TraceID          string   `json:"trace_id"`          // trace ID from OpenTelemetry
+    EvalLevel        string   `json:"eval_level"`        // task, tool, trajectory, topic
+    Score            float64  `json:"score"`
+    ToolsUsed        []string `json:"tools_used"`
+    PromptTokens     int      `json:"prompt_tokens"`
+    CompletionTokens int      `json:"completion_tokens"`
+    TotalLatency     string   `json:"total_latency"`
 }
 
-// After agent run completes: record eval result linked to trace
+// After an agent run finishes: record the eval result linked to the trace
 func recordTracedEval(ctx context.Context, result TracedEvalResult) {
     span := trace.SpanFromContext(ctx)
     result.TraceID = span.SpanContext().TraceID().String()
 
-    // Now you can find the full trace in Jaeger by TraceID
+    // Now, given the TraceID, you can find the full trace in Jaeger
     // and understand WHY the eval failed
     log.Printf("EVAL_RESULT: %+v", result)
 }
 ```
 
-When an eval in CI/CD shows a regression (see [Chapter 23: Evals in CI/CD](../23-evals-in-cicd/README.md)), you take the `trace_id` from the result, find the trace in Jaeger, and see the full chain: which tool returned an unexpected result, which LLM call burned abnormally many tokens, where the error occurred.
+When an eval in CI/CD shows a regression (see [Chapter 23: Evals in CI/CD](../23-evals-in-cicd/README.md)), you take the `trace_id` from the result, find the trace in Jaeger and see the whole chain: which tool returned an unexpected result, which LLM call spent an anomalously large number of tokens, where the error occurred.
 
-## Common Errors
+## Metrics and Dashboards
 
-### Error 1: No Structured Logging
+Logs and traces answer "what happened in this run". Metrics answer "how the system behaves over time". The standard stack: the agent exposes Prometheus metrics on `/metrics`, and Grafana dashboards chart them over time.
 
-**Symptom:** Logs in plain text: "Agent executed tool check_disk". Impossible to automatically parse or analyze logs.
+### Basic agent metrics
 
-**Cause:** Using `fmt.Printf` instead of structured JSON logging.
+| Metric | What it shows |
+|---------|----------------|
+| `llm_tokens_total{kind=prompt\|completion\|cache_read}` | token spend by kind; cache_read > 0 — a prompt cache hit |
+| `agent_iterations_total` | how many iterations the agent makes per task (growing — the agent is stuck in a loop) |
+| `tool_calls_total{tool}` / `tool_errors_total{tool}` | tool load and reliability |
+| `policy_denied_total{policy=fs\|authority}` | security policy denials (ch. 17) |
+| `failovers_total` / `retries_total` | failovers to a fallback model and client retries |
+| `agent_run_duration_seconds` | run latency |
 
-**Solution:**
+### The "dashboard ↔ metric registry" guard test
+
+A dashboard silently rots: a metric gets renamed, the chart goes empty, and nobody notices. The cure is a test: keep a single metric registry (a struct or a list of names) and a test that parses the dashboard's JSON model and verifies that **every metric in the registry appears on at least one panel**. Rename a metric and forget the dashboard — CI fails, not your production monitoring.
+
+### Live evals as part of observability
+
+Metrics show "how much", but not "how well". That is why live evals live alongside the Grafana panels: periodic eval runs of the agent on a fixed task set in the production environment, whose scores also become metrics (`eval_score{suite}`). A quality degradation is visible on the dashboard next to rising latency — sometimes it is the same incident. How to build evals — [Chapter 08: Evals and Reliability](../08-evals-and-reliability/README.md) and [Chapter 23: Evals in CI/CD](../23-evals-in-cicd/README.md).
+
+> **How the real SDK does it.** `RunResult` carries everything needed for the metrics of a single run: usage (prompt/completion/cache), iterations, the list of tools called, failovers and the final model. Loop events (stream deltas, the final answer, tool start/progress/end) are natural tracing points: both the logger and the metrics collector subscribe to them. Transient errors are retried by the client itself — the retry policy is configured on the model, not in the body of the loop.
+
+## Common Mistakes
+
+A brief summary of typical observability failures:
+
+| # | Mistake | Symptom | Fix |
+|---|--------|---------|---------|
+| 1 | No structured logging | Logs are plain text, cannot be parsed automatically | JSON logs with fields (breakdown below) |
+| 2 | No `run_id` for correlation | Component logs cannot be tied into one picture | A unique `run_id` per run, propagated everywhere |
+| 3 | Tokens logged as one total | The budget "drifts", cache is invisible | `PromptTokens`/`CompletionTokens` + cache read (breakdown below) |
+| 4 | Only successes are logged | Errors are lost, causes of failures unknown | Log error branches too, with context |
+| 5 | Logs only, no metrics | No latency/error rate/token charts over time | Prometheus `/metrics` + Grafana (section above) |
+
+### Breakdown 1: no structured logging
+
+**Symptom:** logs as plain text: "Agent executed tool check_disk". Impossible to parse or analyze automatically.
+
+**Cause:** `fmt.Printf` instead of structured JSON logging.
+
+**Fix:**
 ```go
-// BAD
+// BAD:
 fmt.Printf("Agent executed tool %s\n", toolName)
 
-// GOOD
+// GOOD:
 logJSON, _ := json.Marshal(map[string]any{
     "run_id": runID,
     "tool": toolName,
@@ -993,86 +1021,30 @@ logJSON, _ := json.Marshal(map[string]any{
 log.Printf("TOOL_EXECUTED: %s", string(logJSON))
 ```
 
-### Error 2: No run_id for Correlation
+### Breakdown 2: budget based on `TotalTokens`
 
-**Symptom:** Cannot link logs from different components (agent, tools, external systems) for one request.
+**Symptom:** the API bill diverges from your token metric by tens of percent; the effect of the prompt cache is not visible at all.
 
-**Cause:** Each component logs independently, without a common identifier.
+**Cause:** `Usage.TotalTokens` is used as the budget metric — an aggregate that hides cache prefixes and mixes paid tokens with cache-cheap ones (the canon of [chapter 13](../13-context-engineering/README.md)).
 
-**Solution:**
+**Fix:** log and sum the components separately:
+
 ```go
-// BAD
-log.Printf("Tool executed: %s", toolName)
-
-// GOOD
-runID := generateRunID() // At start of agent run
-log.Printf("TOOL_EXECUTED: run_id=%s tool=%s", runID, toolName)
-```
-
-### Error 3: Tokens and Latency Not Logged
-
-**Symptom:** Cannot understand execution cost or performance bottlenecks.
-
-**Cause:** Token usage and execution time are not tracked.
-
-**Solution:**
-```go
-// BAD
-resp, _ := client.CreateChatCompletion(ctx, req)
-// Tokens not logged
-
-// GOOD
-resp, _ := client.CreateChatCompletion(ctx, req)
+// BAD:
 log.Printf("TOKENS_USED: run_id=%s tokens=%d", runID, resp.Usage.TotalTokens)
 
-startTime := time.Now()
-// ... execution ...
-log.Printf("LATENCY: run_id=%s latency=%v", runID, time.Since(startTime))
+// GOOD:
+log.Printf("TOKENS_USED: run_id=%s prompt=%d completion=%d cache_read=%d",
+    runID, resp.Usage.PromptTokens, resp.Usage.CompletionTokens, resp.Usage.CacheReadTokens)
 ```
 
-### Error 4: Only Successful Cases Logged
+`cache_read > 0` — a hit on the provider's prompt cache; the ratio `cache_read / prompt` is a direct measure of how well your immutable system prefix works (ch. 20).
 
-**Symptom:** Errors are not logged, cannot understand why agent failed.
+## Exercises
 
-**Cause:** Logging only in successful code branches.
+### Exercise 1: Implement structured logging
 
-**Solution:**
-```go
-// BAD
-result, err := executeTool(toolCall)
-if err != nil {
-    return "", err // Error not logged
-}
-
-// GOOD
-result, err := executeTool(toolCall)
-if err != nil {
-    log.Printf("TOOL_ERROR: run_id=%s tool=%s error=%v", runID, toolCall.Function.Name, err)
-    return "", err
-}
-```
-
-### Error 5: No Metrics (Only Logs)
-
-**Symptom:** Cannot build graphs of latency, error rate, token usage over time.
-
-**Cause:** Only events are logged, but metrics are not aggregated.
-
-**Solution:** Use metrics (Prometheus, StatsD) in addition to logs:
-```go
-// Log event
-log.Printf("TOOL_EXECUTED: run_id=%s tool=%s", runID, toolName)
-
-// Send metric
-metrics.IncrementCounter("tool_executions_total", map[string]string{"tool": toolName})
-metrics.RecordLatency("tool_execution_duration", latency, map[string]string{"tool": toolName})
-```
-
-## Mini-Exercises
-
-### Exercise 1: Implement Structured Logging
-
-Add structured logging to [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab04-autonomy/main.go):
+Add structured logging to your runtime from chapter 04 (the lab04-autonomy lab is not yet revised — use it as a pointer; the canonical material is in this chapter):
 
 ```go
 func logAgentRun(runID string, userInput string, toolCalls []ToolCall, result string) {
@@ -1083,68 +1055,70 @@ func logAgentRun(runID string, userInput string, toolCalls []ToolCall, result st
 
 **Expected result:**
 - Logs in JSON format
-- Contains all necessary fields: run_id, user_input, tool_calls, result, timestamp
+- Contain all the required fields: run_id, user_input, tool_calls, result, timestamp
 
-### Exercise 2: Add Tool Call Tracing
+### Exercise 2: Add tracing of tool calls
 
-Implement a function to log tool call with latency measurement:
+Implement a tool call logging function with latency measurement:
 
 ```go
 func logToolCall(runID string, toolCallID string, toolName string, latency time.Duration) {
     // Your code here
-    // Log in format: TOOL_CALL: run_id=... tool_id=... tool_name=... latency=...
+    // Log in the format: TOOL_CALL: run_id=... tool_id=... tool_name=... latency=...
 }
 ```
 
 **Expected result:**
-- Each tool call logged with run_id
-- Latency measured and logged
-- Format allows easy log parsing
+- Every tool call is logged with run_id
+- Latency is measured and logged
+- The format is easy to parse
 
-### Exercise 3: Implement Metrics
+### Exercise 3: Implement metrics
 
-Add metric counting (can use simple in-memory counter):
+Add metric counting (a simple in-memory counter will do):
 
 ```go
 type Metrics struct {
-    TotalRuns      int64
-    TotalTokens    int64
-    TotalErrors    int64
-    AvgLatency     time.Duration
+    TotalRuns          int64
+    TotalPromptTokens  int64
+    TotalCompletion    int64
+    TotalErrors        int64
+    AvgLatency         time.Duration
 }
 
-func (m *Metrics) RecordRun(tokens int, latency time.Duration, err error) {
+func (m *Metrics) RecordRun(usage Usage, latency time.Duration, err error) {
     // Your code here
-    // Update metrics
+    // Update the metrics: usage.PromptTokens, usage.CompletionTokens — from the provider
 }
 ```
 
 **Expected result:**
-- Metrics updated on each agent run
-- Can get average values through methods like `GetAvgLatency()`
+- Metrics are updated on every agent run
+- Tokens are counted by the provider's fields (prompt/completion), not by TotalTokens
+- Averages can be obtained via methods like `GetAvgLatency()`
 
-## Completion Criteria / Checklist
+## Acceptance Criteria / Checklist
 
-**Completed (production ready):**
-- [x] Structured logging implemented (JSON format)
-- [x] Each agent run has unique `run_id`
-- [x] All stages logged: input request → tool selection → execution → result
-- [x] Tokens and latency logged for each request
-- [x] Tool calls logged with `run_id` for correlation
-- [x] Errors logged with context
-- [x] Metrics tracked (latency, token usage, error rate)
+**Passing (production readiness):**
+- [x] Structured logging is implemented (JSON format)
+- [x] Every agent run has a unique `run_id`
+- [x] All stages are logged: input request → tool selection → execution → result
+- [x] Tokens are logged by the provider's fields: prompt / completion / cache_read
+- [x] Tool calls are logged with `run_id` for correlation
+- [x] Errors are logged with context, without secrets (redaction by default)
+- [x] Metrics are tracked (latency, tokens by kind, iterations, tool calls, error rate)
 
-**Not completed:**
-- [ ] Logs in plain text without structure
+**Not passing:**
+- [ ] Logs are plain text without structure
 - [ ] No `run_id` for log correlation
-- [ ] Tokens and latency not logged
-- [ ] Errors not logged
+- [ ] Tokens and latency are not logged
+- [ ] Errors are not logged
 - [ ] No metrics
 
-## Connection with Other Chapters
+## Relation to Other Chapters
 
-- **Best Practices:** General logging practices studied in [Chapter 16: Best Practices](../16-best-practices/README.md)
-- **Agent Loop:** Basic agent loop studied in [Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md)
-- **Tools:** Tool execution studied in [Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md)
-- **Cost Engineering:** Token usage for cost control — [Chapter 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md)
+- **Best Practices:** general logging practices are covered in [Chapter 16: Best Practices](../16-best-practices/README.md)
+- **Agent Loop:** the basic agent loop is covered in [Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md)
+- **Tools:** tool execution is covered in [Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md)
+- **Cost Engineering:** using tokens for cost control — [Chapter 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md)
 

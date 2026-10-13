@@ -1,97 +1,104 @@
 # 09. Agent Anatomy — Components and Their Interaction
 
-## Why This Chapter?
+## Why does this matter?
 
-An agent is a **simple** system. At its core: a loop "LLM responds → calls tools → gets results → responds again", plus a linear message history and a stable system prompt. No "meta-architectures", state graphs, or multi-layer memory are needed in the base case (see [Preface: Mental Model](../00-preface/README.md#mental-model-an-agent-is-a-new-employee)).
+An agent is a **simple** system. At its core is the loop "the LLM responds → calls tools → gets the result → keeps responding," plus a linear message history and a stable system prompt. No "meta-architectures," state graphs, or multi-level memory are needed in the basic case (see [Preface: the mental model](../00-preface/README.md)).
 
-But for that loop to be **reliable in production**, it helps to understand what it actually consists of: where messages live, what the system prompt is and why you can't mutate it on every step, how to defend against infinite loops, how to isolate a subagent. Without this anatomy it's easy to "fix" the problem in the wrong place and bolt on trendy patterns that complicate the agent without solving anything.
+But for this loop to work **reliably in production**, it's important to understand what it is actually made of: where messages are stored, what the system prompt is and why it must not change on every step, how to defend against infinite loops, how to isolate a subagent. Without this anatomy it's easy to start "fixing" a problem in the wrong place and to adopt fashionable patterns that make the agent more complex without solving anything.
 
-In this chapter we'll go through the **minimal set of components** and how they connect, so you can:
-- Properly manage context and dialogue history (linear history + a single `condense`).
-- Implement an autonomous agent loop with predictable safeguards.
-- Optimize token usage via prompt cache, not via "smart" strategies.
-- Build an extensible system through tools, not through over-engineered abstractions inside the core.
+In this chapter we'll cover the **minimal set of components** and how they connect, so that you can:
+- Manage context and dialogue history properly (linear history + a single `condense`).
+- Implement the agent's autonomous loop with predictable limiters.
+- Optimize token usage through the prompt cache rather than through "clever" strategies.
+- Build an extensible system through tools, not through overcomplicated abstractions in the core.
 
-### Real-World Case Study
+### A real-world case
 
-**Situation:** You've created a DevOps agent. After 20 messages, the agent "forgets" the beginning of the conversation and stops remembering the task context.
+**Situation:** You built a DevOps agent. After 20 messages the agent "forgets" the beginning of the conversation and loses track of the task context.
 
-**Problem:** Dialogue history overflows the model's context window. Old messages are "pushed out", and the agent loses important information.
+**Problem:** The dialogue history overflows the model's context window. Old messages get "pushed out," and the agent loses important information.
 
-**Solution:** Once you understand memory, on overflow you can `condense` the old part of the history into a short summary via the LLM — without breaking `tool_call ↔ tool_result` pairs and without touching the stable system prefix. Details in [Ch. 13: Context Engineering](../13-context-engineering/README.md). You do **not** need to reorder messages "by importance": that's an anti-pattern that kills prompt cache (see [Ch. 12: Agent Memory](../12-agent-memory/README.md)).
+**Solution:** If you understand how memory works, you can, on overflow, condense the old part of the history into a brief summary via the LLM — without breaking `tool_call ↔ tool_result` pairs and without touching the stable system prefix. Details in [Ch. 13: Context Engineering](../13-context-engineering/README.md). Reordering messages "by importance" is **not needed**: it's an anti-pattern that kills the prompt cache (see [Ch. 12: Agent Memory](../12-agent-memory/README.md)).
 
-## Theory in Simple Terms
+## The theory in plain words
 
-Simplified formula:
+A simplified formula:
 
 $$ Agent = LLM + Memory + Tools + Planning $$
 
 ## Memory
 
-An agent must "remember" conversation context and action history.
+The agent must "remember" the conversation context and the history of its actions.
 
-### Short-term Memory
+### Short-term memory
 
-This is the message history (`messages` array). Limited by the context window.
+This is the message history (the `messages` array). It is bounded by the context window.
 
 **Message structure:**
 
 ```go
-type ChatCompletionMessage struct {
-    Role    string  // "system", "user", "assistant", "tool"
-    Content string  // Message text
-    ToolCallID string  // If this is a tool result
+type Message struct {
+    Role       string     // "system", "user", "assistant", "tool"
+    Content    string
+    ToolCalls  []ToolCall // tool calls (assistant role only)
+    ToolCallID string     // call ID (role="tool" only)
+}
+
+type ToolCall struct {
+    ID        string
+    Name      string
+    Arguments string // JSON string with the arguments
 }
 ```
 
-**History example:**
+**Example history:**
 
 ```go
-messages := []ChatCompletionMessage{
+messages := []Message{
     {Role: "system", Content: "You are a DevOps engineer"},
-    {Role: "user", Content: "Check server status"},
+    {Role: "user", Content: "Check the server status"},
     {Role: "assistant", Content: "", ToolCalls: [...]},  // Tool call
     {Role: "tool", Content: "Server is ONLINE", ToolCallID: "call_123"},
-    {Role: "assistant", Content: "Server is running normally"},
+    {Role: "assistant", Content: "The server is running fine"},
 }
 ```
 
-**Problem:** If history is too long, it doesn't fit in the context window.
+**Problem:** If the history gets too long, it no longer fits in the context window.
 
-**Problem example:**
+**Example of the problem:**
 
 ```go
-// Model context window: 128 000 tokens
-// System Prompt:            500 tokens
-// Dialogue history:     127 000 tokens   // 30 iterations with large tool_results
-// New request:            1 000 tokens
-// TOTAL:                128 500 tokens > 128 000 [ERROR: context overflow]
+// Model context window:    128,000 tokens
+// System Prompt:               500 tokens
+// Dialogue history:        127,000 tokens  // 30 iterations with large tool_results
+// New request:               1,000 tokens
+// TOTAL: 128,500 tokens > 128,000 [ERROR: context overflow]
 ```
 
-Modern models have windows from 128k (most) to 1M+ (Gemini 2.5). The problem hasn't disappeared — it's just shifted: in long agent sessions with large `tool_result` payloads (logs, dumps, web pages), overflow shows up around iterations 20-50.
+Current models have windows from ~128k up to ~1M tokens in some models (the exact figure is in the provider's documentation). The problem hasn't gone away — it has merely shifted: in a long agent session with large tool_results (logs, dumps, web pages), overflow sets in around iteration 20–50.
 
-**Two rules that make this memory work** (details in [Ch. 12](../12-agent-memory/README.md) and [Ch. 13](../13-context-engineering/README.md)):
+**Two rules that make this memory workable** (details in [Ch. 12](../12-agent-memory/README.md) and [Ch. 13](../13-context-engineering/README.md)):
 
-1. **History is immutable.** Messages are only appended at the end; nothing is reordered or deleted "by importance", old messages are not edited. Any prefix mutation kills the provider's prompt cache, which means 5-10× more expensive input and higher latency.
-2. **The system prompt stays stable within a Run.** Any "dynamic" update of the system prompt between iterations (live state, facts, plan progress) is an anti-pattern. Dynamic data lives in `tool_result` and the latest `user` message — not in the system prefix.
+1. **The history is immutable.** Messages are only appended to the end; nothing is reordered, nothing is struck out "by importance," old messages are never edited. Any mutation of the prefix kills the provider's prompt cache, which means input costs 5–10× more and latency grows.
+2. **The system prompt is stable within a single Run.** Any "dynamic" update of the system prompt between iterations (live state, facts, plan progress) is an anti-pattern. Dynamic content lives in `tool_result` and in the last `user` message, not in the system prefix.
 
-When the window overflows, there is one reaction — `condense`: call the LLM and ask it to summarize the old part of the history, then replace that part with a single `user` message "Context of previous work: ...". Limit: one condense per Run; the token count comes from `usage.PromptTokens` in the provider's response, not from your own counters. Details in [Ch. 13](../13-context-engineering/README.md).
+On context overflow there is exactly one reaction — `condense`: call the LLM, ask it to briefly summarize the old part of the history, and replace it with a single `user` message "Context of the previous work: ...". The limit is 1 condense per Run; the token count comes from `usage.PromptTokens` in the provider's response, not from your own counters. Details in [Ch. 13](../13-context-engineering/README.md).
 
-### Long-term Memory
+### Long-term memory
 
-This is a vector database (RAG). It can store gigabytes of documents and find what's needed by meaning (Semantic Search).
+This is a vector database (RAG). You can store gigabytes of documents in it and search for what you need by meaning (Semantic Search).
 
 **How it works:**
 
 1. Documents are split into chunks
-2. Each chunk is converted to a vector (embedding)
-3. When agent queries, similar vectors are searched
-4. Relevant chunks are added to context
+2. Each chunk is converted into a vector (embedding)
+3. When the agent makes a request, similar vectors are found
+4. Relevant chunks are added to the context
 
-**Usage examples:**
+**Use cases:**
 
-- **DevOps:** Storing protocols, runbooks, service documentation
-- **Support:** Knowledge base with solutions to common problems
+- **DevOps:** Storing procedures, runbooks, service documentation
+- **Support:** A knowledge base with solutions to typical problems
 - **Data:** Database schemas, API documentation
 - **Security:** Incident playbooks, security policies
 
@@ -99,718 +106,135 @@ See [Chapter 06: RAG](../06-rag/README.md)
 
 ## Planning
 
-**Planning** is the agent's ability to break down a complex task into a sequence of simple steps and execute them in the correct order.
+**Planning** is the agent's ability to break a complex task into steps and execute them in the right order. Let's set the frame right away: in this book's basic architecture there is **no separate "planner module."** The plan is born in the same agent loop as everything else and lives as ordinary text in the message history. No meta-architectures in the basic case (see [Preface: the mental model](../00-preface/README.md)).
 
-### Why Is Planning Needed?
+### On-the-fly planning: ReAct
 
-Imagine a task: *"We have database issues, investigate"*
-
-**Without planning:**
-- Agent may try to do everything at once and get confused
-- Agent may skip important steps
-- Agent may execute steps in wrong order
-
-**With planning:**
-- Agent first analyzes the task
-- Agent breaks it into subtasks
-- Agent executes subtasks sequentially
-- Agent checks result of each step
-
-### Planning Levels
-
-#### Level 1: Implicit Planning (ReAct)
-
-Agent doesn't create an explicit plan, but plans "on the fly" during execution.
-
-**How it works:**
-1. Agent receives a task
-2. Agent thinks: "What do I need to do first?"
-3. Agent performs an action
-4. Agent receives result and thinks: "What to do next?"
-5. Repeats until task is complete
+In the simplest case the agent doesn't build an explicit plan — it reasons step by step: `Thought → Action → Observation`. This is the **ReAct** pattern, and in essence it's just the agent loop from [Ch. 04](../04-autonomy-and-loops/README.md) in which the model, between tool calls, explains to itself what it is doing and why.
 
 **Example (DevOps):**
-```
-User: "Check why server is slow"
 
-Iteration 1:
-Thought: "Need to check server metrics"
+```
+Thought: The user complains about slowness. I need to check the CPU.
 Action: get_cpu_metrics()
-Observation: CPU 95%
-
-Iteration 2:
-Thought: "CPU is high. Need to see which process is consuming resources"
-Action: get_top_processes()
-Observation: Process: ffmpeg, CPU: 90%
-
-Iteration 3:
-Thought: "ffmpeg is consuming CPU. Need to check what this process is"
-Action: get_process_info(pid=12345)
-Observation: This is video conversion started by user
-
-Iteration 4:
-Thought: "This is a legitimate process, but it's blocking the system. I'll suggest user limit priority"
-Action: [Final response to user]
+Observation: CPU 99%, process: ffmpeg
+Thought: ffmpeg is eating all the resources. Let me see what this process is.
+Action: get_process_info(pid=123)
+Observation: Video conversion, started by the user
+Thought: A legitimate process, but it's blocking the system. I'll suggest limiting its priority.
+Action: [final answer to the user]
 ```
 
-**Advantages:**
-- Flexibility: agent can adapt to results
-- Simple implementation
-- Suitable for medium complexity tasks
+ReAct is flexible and sufficient for most tasks. But on long tasks (5+ steps) the model can "get lost": skip a step, forget verification, repeat something already done.
 
-**Disadvantages:**
-- May "get lost" in details
-- May skip important steps
-- Hard to track progress
+### The plan is an artifact too
 
-#### Level 2: Explicit Planning (Plan-and-Solve)
+The key idea of explicit planning: **the plan is not a structure in code and not a separate service, but an artifact the model sees in its own history and updates as it works**. Two working options:
 
-Agent first creates a complete plan, then executes it step by step.
+- **Plan → Execute.** The model's first response is a list of steps. The agent then executes them one by one; the plan sits in the history as an ordinary message.
+- **Plan-and-Revise.** When a step fails or new data comes to light, the model issues an updated plan — again as an ordinary message appended to the history. This costs one message and requires no "planner" in the runtime.
 
-**How it works:**
-1. Agent receives a task
-2. Agent generates complete plan (list of steps)
-3. Agent executes steps in order
-4. Agent marks completed steps
-5. Agent completes when all steps are done
-
-**Example (DevOps - Incident):**
-```
-User: "Payment service unavailable (502). Investigate"
-
-Step 1: Planning
-Agent thinks: "Need to create investigation plan"
-Agent generates plan:
-  1. Check HTTP status of service
-  2. If not 200 — read logs
-  3. Analyze errors in logs
-  4. Determine cause (config error / connection error / memory)
-  5. Apply fix (rollback / restart / scale)
-  6. Verify service is restored
-
-Step 2: Execution
-Agent: "Executing step 1: Checking HTTP status"
-Action: check_http_status("payment-service")
-Observation: 502 Bad Gateway
-
-Agent: "Executing step 2: Reading logs"
-Action: read_logs("payment-service", lines=50)
-Observation: ERROR: Config syntax error in line 42
-
-Agent: "Executing step 3: Analyzing errors"
-Thought: "Logs show syntax error in config. This is not a temporary issue."
-
-Agent: "Executing step 4: Determining cause"
-Thought: "Cause: Config error. Solution: Rollback"
-
-Agent: "Executing step 5: Applying fix"
-Action: rollback_deploy("payment-service", version="v1.9")
-Observation: Rollback complete. Service restarted.
-
-Agent: "Executing step 6: Verifying"
-Action: check_http_status("payment-service")
-Observation: 200 OK
-
-Agent: "All steps completed. Incident resolved."
-```
-
-**Advantages:**
-- Guarantee all steps are executed
-- Easy to track progress
-- Suitable for complex tasks (5+ steps)
-
-**Disadvantages:**
-- Less flexible: plan may be suboptimal
-- Requires more tokens (plan generation)
-- May be excessive for simple tasks
-
-#### Level 3: Hierarchical Planning
-
-For very complex tasks, the plan is broken into subplans.
-
-**Example (Security - Incident investigation):**
-```
-Main task: "Investigate suspicious activity on host 192.168.1.10"
-
-Top-level plan:
-  1. Alert triage
-  2. Evidence collection
-  3. Threat analysis
-  4. Action (containment)
-  5. Report generation
-
-Subplan for step 2 (Evidence collection):
-  2.1. Request SIEM logs for last hour
-  2.2. Check network traffic
-  2.3. Check system metrics
-  2.4. Check running processes
-  2.5. Check filesystem for changes
-
-Subplan for step 3 (Threat analysis):
-  3.1. Determine attack type
-  3.2. Assess criticality
-  3.3. Determine scope (affected systems)
-  3.4. Assess damage
-```
-
-**When to use:**
-- Very complex tasks (10+ steps)
-- Tasks with multiple dependencies
-- Tasks requiring coordination of multiple specialists
-
-### Planning Strategies
-
-#### 1. ReAct (Reason + Act)
-
-Most popular architecture. Formula: `Thought -> Action -> Observation`.
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Agent
-    participant Tool
-
-    User->>Agent: "Check server"
-    Note over Agent: Thought: "Need to check status"
-    Agent->>Tool: check_status()
-    Tool->>Agent: "ONLINE"
-    Note over Agent: Thought: "Server is running. I'll check metrics"
-    Agent->>Tool: get_metrics()
-    Tool->>Agent: "CPU: 50%"
-    Agent->>User: "Server is running normally"
-```
-
-**ReAct cycle:**
-
-1. **Thought:** Model generates CoT (action plan)
-2. **Action:** Model generates tool call token
-3. **Runtime:** Our code intercepts call, executes function, gets result
-4. **Observation:** Result is fed back to model
-5. **Loop:** Repeat until model decides task is solved
-
-**ReAct examples in different domains:**
-
-**DevOps:**
-```
-Thought: User complains about slowness. Need to check CPU.
-Action: get_cpu_metrics()
-Observation: CPU 99% process: ffmpeg
-Thought: ffmpeg is consuming everything. Need to kill or limit it.
-Action: kill_process(pid=123)
-```
-
-**Support:**
-```
-Thought: User can't log in. I'll check account status.
-Action: check_account_status(user_id="12345")
-Observation: Account is locked due to suspicious activity
-Thought: Account is locked. Need to unlock, but first check logs.
-Action: check_security_logs(user_id="12345")
-Observation: Multiple failed login attempts from unknown IP
-Thought: This looks like a hack. I'll unlock, but send notification to change password.
-Action: unlock_account(user_id="12345")
-```
-
-**Data Analytics:**
-```
-Thought: User asks about sales. Need to understand data structure.
-Action: describe_table("sales")
-Observation: Table contains: date, region, amount
-Thought: Now I'll formulate SQL query.
-Action: sql_select("SELECT region, SUM(amount) FROM sales GROUP BY region")
-Observation: Region A: 100k, Region B: 150k
-Thought: I'll analyze results and formulate conclusions.
-```
-
-### Plan-and-Solve
-
-For complex tasks ([Lab 06](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab06-incident) Incident), ReAct may "get lost" in details.
-
-**Architecture:**
-
-1. **Planner:** First generate complete plan
-    ```
-    Plan:
-    1. Check HTTP status
-    2. Read logs
-    3. Analyze errors
-    4. Apply fix
-    5. Verify
-    ```
-
-2. **Solver:** Execute plan items in order
-
-**When to use Plan-and-Solve instead of ReAct?**
-
-- Task is very complex (5+ steps)
-- Need guarantee all steps will be executed
-- Agent often "forgets" important steps
-- Task has clear structure (e.g., SOP for incidents)
-
-**Plan-and-Solve implementation:**
-
-```go
-func planAndSolve(ctx context.Context, client *openai.Client, task string) {
-    // Step 1: Plan generation
-    planPrompt := fmt.Sprintf(`Break task into steps:
-Task: %s
-
-Create action plan. Each step should be specific and executable.`, task)
-    
-    planResp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: "gpt-4o",
-        Messages: []openai.ChatCompletionMessage{
-            {Role: "system", Content: "You are a task planner. Create detailed plans."},
-            {Role: "user", Content: planPrompt},
-        },
-    })
-    
-    plan := planResp.Choices[0].Message.Content
-    fmt.Printf("Plan:\n%s\n", plan)
-    
-    // Step 2: Plan execution
-    executionPrompt := fmt.Sprintf(`Execute plan step by step:
-Plan:
-%s
-
-Execute steps in order. After each step, report result.`, plan)
-    
-    // Run agent with plan in context
-    runAgentWithPlan(ctx, client, executionPrompt, plan)
-}
-```
-
-#### 3. Tree-of-Thoughts (ToT)
-
-Agent considers several solution options and chooses the best one.
-
-**How it works:**
-1. Agent generates several possible solution paths
-2. Agent evaluates each path
-3. Agent chooses best path
-4. Agent executes chosen path
-
-**Example (Data Analytics):**
-```
-Task: "Why did sales drop in region X?"
-
-Option 1: Check sales data directly
-  - Pros: Fast
-  - Cons: May not show cause
-
-Option 2: Check sales data + marketing campaigns + competitors
-  - Pros: More complete picture
-  - Cons: Longer
-
-Option 3: Check data quality first
-  - Pros: Ensure data is correct
-  - Cons: May be excessive
-
-Agent chooses Option 2 (most complete)
-```
-
-**When to use:**
-- Task has several possible approaches
-- Need to choose optimal path
-- Solution efficiency is important
-
-#### 4. Self-Consistency
-
-Agent generates several plans and chooses the most consistent one.
-
-**How it works:**
-1. Agent generates N plans (e.g., 5)
-2. Agent finds common elements in all plans
-3. Agent creates final plan based on common elements
-
-**Example:**
-```
-Plan 1: [A, B, C, D]
-Plan 2: [A, B, E, F]
-Plan 3: [A, C, D, G]
-Plan 4: [A, B, C, H]
-Plan 5: [A, B, D, I]
-
-Common elements: A (all 5), B (in 4 of 5), C (in 2 of 5)
-Final plan: [A, B, C, ...] (based on most frequent elements)
-```
-
-### Task Decomposition
-
-#### How to Properly Break Down Tasks?
-
-**Decomposition principles:**
-
-1. **Atomicity:** Each step should be executable with one action
-    - Bad: "Check and fix server"
-    - Good: "Check server status" → "Read logs" → "Apply fix"
-
-2. **Dependencies:** Steps should execute in correct order
-    - Bad: "Apply fix" → "Read logs"
-    - Good: "Read logs" → "Analyze" → "Apply fix"
-
-3. **Verifiability:** Each step should have clear success criterion
-    - Bad: "Improve performance"
-    - Good: "Reduce CPU from 95% to 50%"
-
-**Decomposition example (Support):**
+An example plan (DevOps, incident "the service returns 502"):
 
 ```
-Original task: "Process user ticket about login problem"
-
-Decomposition:
-1. Read ticket completely
-   - Success criterion: All problem details obtained
-   
-2. Gather context
-   - Success criterion: Software version, OS, browser known
-   
-3. Search knowledge base
-   - Success criterion: Similar cases or solution found
-   
-4. Check account status
-   - Success criterion: Status known (active/locked)
-   
-5. Formulate response
-   - Success criterion: Response ready and contains solution
-   
-6. Send response or escalate
-   - Success criterion: Ticket processed
+1. Check the service's HTTP status (check_http)
+2. If not 200 — read the last 50 lines of logs (read_logs)
+3. Find the cause in the logs (config error / connection refused / OOM)
+4. Apply the fix: rollback / restart — depending on the cause found
+5. Verify: check_http again
 ```
 
-### Practical Planning Examples
+**How the plan lives in the context without breaking the cache.** The plan and "plan progress" are messages at the end of the history (`assistant` text or a `tool_result`), not part of the system prompt. A prompt function that rebuilds the system prompt on every iteration to "insert the current plan" is an anti-pattern: it kills the prompt cache for the entire history (see [Ch. 13](../13-context-engineering/README.md)).
 
-#### Example 1: DevOps - Incident Investigation
+### A good plan vs a bad one
 
-```go
-// Task: "Service is unavailable. Investigate."
+- Steps are atomic: not "figure it out and fix it," but "check the status" → "read the logs" → "apply the fix."
+- The order makes sense: diagnosis first, action second.
+- The plan ends with explicit verification of the result.
+- Every step has a success criterion ("CPU dropped to 50%", not "it got better").
 
-// Plan (generated by agent):
-plan := []string{
-    "1. Check HTTP status of service",
-    "2. If not 200 — read logs",
-    "3. Analyze errors",
-    "4. Determine cause",
-    "5. Apply fix",
-    "6. Verify recovery",
-}
+### For general knowledge: ToT and self-consistency
 
-// Execution:
-for i, step := range plan {
-    fmt.Printf("Executing step %d: %s\n", i+1, step)
-    result := executeStep(step)
-    if !result.Success {
-        fmt.Printf("Step %d failed: %s\n", i+1, result.Error)
-        // Agent may replan or escalate
-        break
-    }
-}
-```
+- **Tree-of-Thoughts (ToT):** the model generates several alternative solution paths, evaluates them, and picks the best one. Justified when a task has several fundamentally different approaches.
+- **Self-consistency:** the model generates N independent plans and assembles the final one from the most frequently occurring elements. An expensive technique (N full generations), rarely seen in production.
 
-#### Example 2: Data Analytics - Sales Analysis
+Both families of techniques — with examples and their limits — are covered in [Ch. 10: Planning and Workflow Patterns](../10-planning-and-workflows/README.md).
 
-```go
-// Task: "Why did sales drop in region X?"
+### Hierarchical planning is not the default
 
-// Plan:
-plan := []string{
-    "1. Check data quality (nulls, duplicates)",
-    "2. Get sales data for last month",
-    "3. Compare with previous period",
-    "4. Check marketing campaigns",
-    "5. Check competitors",
-    "6. Analyze trends",
-    "7. Generate report with conclusions",
-}
-```
+"A supervisor splits the task into subplans and hands them to subagents" is already a multi-agent architecture, [Ch. 07: Multi-Agent](../07-multi-agent/README.md). It is justified in narrow cases (covered in the [Subagents](#subagents) section below), but by default a single agent loop plus an explicit plan in the history solves the same class of tasks more simply, more cheaply, and more predictably. Don't start a project with multi-agent.
 
-#### Example 3: Security - Alert Triage
+### Reflexion (self-correction)
 
-```go
-// Task: "Alert: suspicious activity on host 192.168.1.10"
+Agents often make mistakes. Reflexion adds a criticism step: after a failed action, the model explains to itself **why** it failed and what to change.
 
-// Plan:
-plan := []string{
-    "1. Determine alert severity",
-    "2. Gather evidence (logs, metrics, traffic)",
-    "3. Analyze attack patterns",
-    "4. Determine scope (affected systems)",
-    "5. Assess criticality",
-    "6. Make decision (False Positive / True Positive)",
-    "7. If True Positive — containment (with confirmation)",
-    "8. Generate report for SOC",
-}
-```
-
-### Common Planning Errors
-
-#### Error 1: Plan Too General
-
-**Bad:**
-```
-Plan:
-1. Figure out the problem
-2. Fix it
-3. Check
-```
-
-**Good:**
-```
-Plan:
-1. Check HTTP status of service (check_http)
-2. If 502 — read last 50 log lines (read_logs)
-3. Find error keywords in logs
-4. If "Syntax error" — perform rollback (rollback_deploy)
-5. If "Connection refused" — restart service (restart_service)
-6. Verify: check HTTP status again (check_http)
-```
-
-#### Error 2: Wrong Step Order
-
-**Bad:**
-```
-1. Apply fix
-2. Read logs
-3. Check status
-```
-
-**Good:**
-```
-1. Check status
-2. Read logs
-3. Apply fix
-```
-
-#### Error 3: Skipping Important Steps
-
-**Bad:**
-```
-1. Read logs
-2. Apply fix
-(Verification step skipped!)
-```
-
-**Good:**
-```
-1. Read logs
-2. Apply fix
-3. Verify result
-```
-
-### Planning Checklist
-
-- [ ] Task broken into atomic steps
-- [ ] Steps execute in correct order
-- [ ] Each step has clear success criterion
-- [ ] Plan includes result verification
-- [ ] Correct planning level chosen (ReAct / Plan-and-Solve / Hierarchical)
-- [ ] Plan adapts to execution results (for ReAct)
-
-### Reflexion (Self-Correction)
-
-Agents often make mistakes. Reflexion adds a criticism step.
-
-Cycle: `Act -> Observe -> Fail -> REFLECT -> Plan Again`
+The cycle: `Act → Observe → Fail → Reflect → Plan Again`
 
 **Example:**
 
 ```
 Action: read_file("/etc/nginx/nginx.conf")
 Observation: Permission denied
-Reflection: "I tried to read file, but got Permission Denied. 
-            This means I don't have permissions. Next time I should use sudo 
-            or check permissions first."
+Reflection: "The file can't be read — I don't have the rights. First I'll check the permissions."
 Action: check_permissions("/etc/nginx/nginx.conf")
 Observation: File is readable by root only
 Action: read_file_sudo("/etc/nginx/nginx.conf")
 ```
 
-## Runtime (Execution Environment)
+Reflection is also just text in the history. The model sees its mistake, its conclusion from it, and the next move; no special mechanisms in the runtime are needed.
 
-Runtime is the code that connects the LLM with tools.
+## Runtime
 
-**Main Runtime functions:**
+The runtime is the code that ties the LLM to the tools: it sends the history to the model, parses the response, executes the tools, appends the results to the end of the history, and decides when to stop.
 
-1. **Parsing LLM responses:** Determining if model wants to call a tool
-2. **Executing tools:** Calling real Go functions
-3. **Managing history:** Adding results to context
-4. **Managing loop:** Determining when to stop
+**Neutral message structures** (not tied to any particular SDK; `Message` and `ToolCall` were defined above — here we add `ToolDef`, a tool description for the `tools[]` block):
 
-### Registry Pattern for Extensibility
+```go
+type ToolDef struct {
+    Name        string
+    Description string
+    Parameters  json.RawMessage // JSON Schema
+}
+```
 
-To make an agent extensible, don't hardcode tool logic in `main.go`. Use a **Registry** pattern.
-
-**Problem without Registry:**
-- Adding a new tool requires changes in dozens of places
-- Code becomes unreadable
-- Hard to test individual tools
-
-**Solution: Go Interfaces + Registry**
-
-#### Defining Tool Interface
+### The tool interface
 
 ```go
 type Tool interface {
     Name() string
     Description() string
     Parameters() json.RawMessage
-    Execute(args json.RawMessage) (string, error)
+    Execute(ctx context.Context, args json.RawMessage) (*Result, error)
+}
+
+// Result — the outcome of a tool execution.
+type Result struct {
+    Content         string // the full result: for UI, logs, and audit
+    FilteredContent string // what the model will actually see in the tool_result
 }
 ```
 
-Any tool (Proxmox, Ansible, SSH) must implement this interface.
+The two fields of `Result` are the main lever for saving context. Example: `read_logs` returned 500 lines. `Content` holds all 500 — the UI will show them in full and audit will keep them. But the model's `tool_result` receives `FilteredContent` — 30 lines, selected and trimmed. The model shouldn't pay in tokens for noise.
 
-#### Tool Implementation
+> **Sidebar: flags on the tool.** In real SDKs a tool can carry metadata: `ReadOnly` (no side effects — can run in parallel and without confirmation), `Parallel` (parallel execution is explicitly allowed), `Confirm` (a dangerous action — ask a human first, [Ch. 05](../05-safety-and-hitl/README.md)). These are just struct fields next to `ToolDef`; the runtime reads them before calling `Execute`. Covered in [Ch. 04](../04-autonomy-and-loops/README.md).
+
+### Tool registry — in brief
+
+So that the runtime doesn't need to know about specific tools, they are kept in a registry: a map "name → Tool" plus a method that returns `[]ToolDef` for the `tools[]` block of the request.
 
 ```go
-type ProxmoxListVMsTool struct{}
+type ToolRegistry struct{ tools map[string]Tool }
 
-func (t *ProxmoxListVMsTool) Name() string {
-    return "list_vms"
-}
-
-func (t *ProxmoxListVMsTool) Description() string {
-    return "List all VMs in the Proxmox cluster"
-}
-
-func (t *ProxmoxListVMsTool) Parameters() json.RawMessage {
-    return json.RawMessage(`{
-        "type": "object",
-        "properties": {},
-        "required": []
-    }`)
-}
-
-func (t *ProxmoxListVMsTool) Execute(args json.RawMessage) (string, error) {
-    // Real Proxmox API call logic
-    return "VM-100 (Running), VM-101 (Stopped)", nil
-}
+func (r *ToolRegistry) Register(t Tool)              { r.tools[t.Name()] = t }
+func (r *ToolRegistry) Get(name string) (Tool, bool) { t, ok := r.tools[name]; return t, ok }
+func (r *ToolRegistry) ToolDefs() []ToolDef          // serialized into the request's tools[]
 ```
 
-#### Registry (Tool Registry)
+A new tool = implement the interface and register it. The runtime stays unchanged; validation, logging, and metrics are added at the registry level. For the full implementation (argument validation, schema generation, parallel execution), see [Ch. 03: Tools and Function Calling](../03-tools-and-function-calling/README.md); framework options are in [Ch. 14](../14-ecosystem-and-frameworks/README.md).
 
-Registry is a tool storage accessible by name.
+**Remember the cost of the `tools[]` block.** It is sent with **every** request and paid for every time — even if no tool is called in that iteration. A benchmark: 4 compact tools ≈ 742 tokens for the schemas alone ([Ch. 03](../03-tools-and-function-calling/README.md)). The number of tools and the length of their descriptions is design question #1; if the tools have multiplied, some of them should become a skill (section below) or a single universal command.
 
-```go
-type ToolRegistry struct {
-    tools map[string]Tool
-}
-
-func NewToolRegistry() *ToolRegistry {
-    return &ToolRegistry{
-        tools: make(map[string]Tool),
-    }
-}
-
-func (r *ToolRegistry) Register(tool Tool) {
-    r.tools[tool.Name()] = tool
-}
-
-func (r *ToolRegistry) Get(name string) (Tool, bool) {
-    tool, exists := r.tools[name]
-    return tool, exists
-}
-
-func (r *ToolRegistry) ToOpenAITools() []openai.Tool {
-    var result []openai.Tool
-    for _, tool := range r.tools {
-        result = append(result, openai.Tool{
-            Type: openai.ToolTypeFunction,
-            Function: &openai.FunctionDefinition{
-                Name:        tool.Name(),
-                Description: tool.Description(),
-                Parameters:  tool.Parameters(),
-            },
-        })
-    }
-    return result
-}
-```
-
-#### Using Registry
-
-```go
-// Initialization
-registry := NewToolRegistry()
-registry.Register(&ProxmoxListVMsTool{})
-registry.Register(&AnsibleRunPlaybookTool{})
-
-// Get tool list for LLM
-tools := registry.ToOpenAITools()
-
-// Execute tool by name
-toolCall := msg.ToolCalls[0]
-if tool, exists := registry.Get(toolCall.Function.Name); exists {
-    result, err := tool.Execute(json.RawMessage(toolCall.Function.Arguments))
-    if err != nil {
-        return fmt.Errorf("tool execution failed: %v", err)
-    }
-    // Add result to history
-}
-```
-
-**Registry advantages:**
-- Adding new tool — just implement interface and register
-- Tool code is isolated and easily testable
-- Runtime doesn't know about specific tools, works through interface
-- Easy to add validation, logging, metrics at Registry level
-
-**Runtime example with Registry:**
-
-```go
-func runAgent(ctx context.Context, client *openai.Client, registry *ToolRegistry, userInput string) {
-    messages := []openai.ChatCompletionMessage{
-        {Role: "system", Content: systemPrompt},
-        {Role: "user", Content: userInput},
-    }
-    
-    tools := registry.ToOpenAITools()  // Get tool list from Registry
-    
-    for i := 0; i < maxIterations; i++ {
-        resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-            Model: "gpt-4o-mini",
-            Messages: messages,
-            Tools: tools,
-        })
-        
-        msg := resp.Choices[0].Message
-        messages = append(messages, msg)
-        
-        if len(msg.ToolCalls) == 0 {
-            // Final response
-            fmt.Println(msg.Content)
-            break
-        }
-        
-        // Execute tools through Registry
-        for _, toolCall := range msg.ToolCalls {
-            tool, exists := registry.Get(toolCall.Function.Name)
-            if !exists {
-                result := fmt.Sprintf("Error: Unknown tool %s", toolCall.Function.Name)
-                messages = append(messages, openai.ChatCompletionMessage{
-                    Role: "tool",
-                    Content: result,
-                    ToolCallID: toolCall.ID,
-                })
-                continue
-            }
-            
-            result, err := tool.Execute(json.RawMessage(toolCall.Function.Arguments))
-            if err != nil {
-                result = fmt.Sprintf("Error: %v", err)
-            }
-            
-            messages = append(messages, openai.ChatCompletionMessage{
-                Role: "tool",
-                Content: result,
-                ToolCallID: toolCall.ID,
-            })
-        }
-    }
-}
-```
-
-### Agent Data Flow Diagram
+### Data flow diagram in the agent
 
 ```mermaid
 sequenceDiagram
@@ -818,129 +242,186 @@ sequenceDiagram
     participant Runtime
     participant LLM
     participant Tool
-    
-    User->>Runtime: "Check server status"
-    Runtime->>Runtime: Collects messages[]:<br/>- System Prompt<br/>- User Input<br/>- History (if any)
-    Runtime->>LLM: ChatCompletionRequest<br/>(messages, tools[])
-    LLM->>LLM: Generates tool_call:<br/>{name: "check_status", args: {...}}
+
+    User->>Runtime: "Check the server status"
+    Runtime->>Runtime: Builds messages[]:<br/>- System Prompt<br/>- User Input<br/>- History (if any)
+    Runtime->>LLM: Request<br/>(messages, tools[])
+    LLM->>LLM: Generates a tool_call:<br/>{name: "check_status", args: {...}}
     LLM->>Runtime: Response (tool_calls)
-    Runtime->>Runtime: Parses tool_call<br/>Validates name and arguments
+    Runtime->>Runtime: Parses the tool_call<br/>Validates name and arguments
     Runtime->>Tool: Executes checkStatus(hostname)
     Tool->>Runtime: "Server is ONLINE"
-    Runtime->>Runtime: Adds result to messages[]:<br/>{role: "tool", content: "..."}
-    Runtime->>LLM: ChatCompletionRequest<br/>(updated history)
-    LLM->>LLM: Receives tool result<br/>Generates final response
-    LLM->>Runtime: Response (content: "Server is running")
-    Runtime->>User: "Server is running normally"
+    Runtime->>Runtime: Appends the result to messages[]:<br/>{role: "tool", content: "..."}
+    Runtime->>LLM: Request<br/>(updated history)
+    LLM->>LLM: Sees the tool result<br/>Generates the final answer
+    LLM->>Runtime: Response (content: "The server is running")
+    Runtime->>User: "The server is running fine"
 ```
 
-**Key points:**
-- LLM doesn't execute code, only generates JSON
-- Runtime manages entire loop and executes real functions
-- History (`messages[]`) is collected by Runtime and passed in each request
-- Tool results are added to history before next request
+**Key takeaways:**
+- The LLM doesn't execute code, it only generates JSON. The actual code is executed by the runtime.
+- The runtime controls the whole loop; the history (`messages[]`) is assembled by the runtime and sent in full with every request.
+- Tool results are appended to the end of the history before the next request.
 
-### Config-based Agent Injection
+### The minimal agent loop
 
-In practice, a single `Agent` type serves different modes through Config:
+Everything together — a compact loop on the neutral structures (the full version with limits, confirm, and condense is in [Ch. 04](../04-autonomy-and-loops/README.md)):
 
 ```go
-type Config struct {
-    MaxIter    int
-    Prompt     string                         // system prompt is fixed at the start of the Run
-    Tools      []Tool                         // tool set is fixed at the start of the Run
-    Hooks      Hooks                          // AfterResponse, BeforeToolExec, AfterToolExec
-    Condenser  Condenser                      // reaction to context overflow (see Ch. 13)
-    OnDelta    func(delta string)             // streaming
-    OnToolCall func(name, args string)        // tool call notification
+func runOnce(ctx context.Context, client Client, registry *ToolRegistry, messages []Message) error {
+    for i := 0; i < maxIterations; i++ {
+        resp, err := client.Complete(ctx, Request{Messages: messages, Tools: registry.ToolDefs()})
+        if err != nil {
+            return err // transient errors are retried by the client itself (Ch. 04)
+        }
+
+        msg := resp.Choices[0].Message
+        messages = append(messages, msg) // the assistant response goes to the end of the history
+
+        if len(msg.ToolCalls) == 0 {
+            fmt.Println(msg.Content) // the final answer — we're done
+            return nil
+        }
+
+        for _, tc := range msg.ToolCalls {
+            tool, ok := registry.Get(tc.Name)
+            if !ok {
+                messages = append(messages, Message{
+                    Role:       "tool",
+                    ToolCallID: tc.ID,
+                    Content:    "Error: unknown tool " + tc.Name,
+                })
+                continue
+            }
+            res, err := tool.Execute(ctx, json.RawMessage(tc.Arguments))
+            var content string
+            if err != nil {
+                // An error is a result too, for the model (Ch. 03); dereference
+                // res only on the success path: Execute returned (nil, err)
+                content = "Error: " + err.Error()
+            } else {
+                content = res.FilteredContent
+            }
+            messages = append(messages, Message{
+                Role:       "tool",
+                ToolCallID: tc.ID,
+                Content:    content,
+            })
+        }
+    }
+    // Iteration limit — a terminal error: we stopped and reported to a human
+    return fmt.Errorf("iteration limit exceeded (%d)", maxIterations)
 }
 ```
+
+### Config: flat behavior injection
+
+In practice a single `Agent` type serves different modes not through inheritance and if-branches, but through **behavior injection via Config**: all the control points of the loop are fields of one flat structure (client/model, system prompt, tools with permissions, limits, stop predicate, confirm, condense, event handler), and the loop itself is a single `Run` on top of it. The canonical listing of `AgentConfig` and `Run` is in [Ch. 04: Autonomy and Loops](../04-autonomy-and-loops/README.md#the-right-shape-for-a-runtime-config-run); we don't duplicate it here.
 
 The same `Agent` works as:
-- **Main agent** — full Config (a prompt with the full role, Hooks for skill selection, Condenser for overflow).
-- **Subagent** — minimal Config (a narrow prompt for the subtask, no Hooks, no Condenser).
-- **Triage agent** — narrow prompt + a trimmed Tools list, no callbacks.
-- **ChatOnly** — Tools = nil, simple dialogue.
+- **Main agent** — a full Config: a prompt with the whole role, tools, condense on overflow.
+- **Subagent** — a minimal Config: a narrow prompt for the subtask, a short list of read-only tools.
+- **Triage agent** — a narrow prompt + a truncated list of Tools.
+- **ChatOnly** — Tools = nil, plain dialogue.
 
-Instead of inheritance or if-branching — **behavior injection through Config**. This makes each component independently unit-testable.
+**Why are Prompt and Tools fields rather than `func(state)` functions?** Because the `system` message and the `tools[]` block sit at the very beginning of the request and form the **prefix** that the provider caches. If each iteration returns different prompt text or a different tool list, the cache misses on every step, input gets 5–10× more expensive, and latency grows. Dynamic content goes into `tool_result` and `user` messages at the end of the history, not into the system prefix. If the behavior changes radically (a new role, a different set of tools), that's a **new Run**, not a modification of the current one.
 
-**Why are Prompt and Tools fields, not `func(state)`?** Because the `system` message and the `tools[]` block sit at the very start of the request and form the **prefix** that the provider caches. If you return a different prompt text or a different tool list on every iteration, the cache misses on every step, input cost goes up 5-10×, and latency grows. Dynamic data lives in `tool_result` and `user` messages — not in the system prefix. If behavior changes radically (a new role, a different tool set), that's a **new Run**, not a modification of the current one.
+With this design, a subagent needs no "Working Memory" at all — it has its own short history for its own `task`. If the main agent wants to pass it context, it passes it as text in the `task`, not through a shared structure.
 
-A subagent built this way doesn't need any kind of "Working Memory" — it has its own short history for its `task`. If the main agent wants to pass it context, it does so as text inside `task`, not via a shared structure.
+### RunResult: a result is returned even on error
 
-### Event System
-
-The agent generates events as it works. UI, logging, and metrics subscribe to them independently:
+`Run` always returns a result structure — including when the run was stopped by a terminal error (iteration limit, deadline, budget):
 
 ```go
-type EventType string
+type RunResult struct {
+    Output     string     // the final answer (if any)
+    Err        error      // the terminal error, nil on success
+    Iterations int        // how many iterations were made
+    Usage      Usage      // tokens across all iterations
+    ToolsUsed  []ToolCall // which tools were called
+}
+```
 
-const (
-    EventDelta         EventType = "delta"       // text fragment
-    EventToolCall      EventType = "tool_call"   // tool call
-    EventToolResult    EventType = "tool_result"  // tool result
-    EventDone          EventType = "done"         // completion
-    EventPlanUpdate    EventType = "plan_update"  // plan update
-    EventSubagentEvent EventType = "subagent"     // subagent event
-)
+Even if the Run failed on the 14th iteration, the calling code knows how many tokens were spent, which tools were called, and where things stopped. This is needed for logs, billing, and debugging — which is why the error here is a field of the result, not just the second return value.
 
+> **How the real SDK does it.** `RunResult` is returned even on error: iterations, usage, the tools called, the final model. Loop events are sealed types (a closed hierarchy): stream delta, final answer, tool start/progress/end, condensation error.
+
+### The event model (event system)
+
+The agent emits events as it works. UI, logging, and metrics subscribe to them independently:
+
+```go
+// Events of a single Run. The set is closed (sealed):
+// an interface with an unexported method cannot be implemented outside.
+type Event interface{ isEvent() }
+
+type DeltaEvent struct{ Text string }                     // a streaming fragment
+type ResponseEvent struct{ Msg Message }                  // the model's full response for an iteration
+type ToolStartEvent struct{ Call ToolCall }               // a tool started executing
+type ToolUpdateEvent struct {                             // progress of a long-running tool
+    Call ToolCall
+    Note string
+}
+type ToolEndEvent struct {                                // a tool finished
+    Call ToolCall
+    Res  *Result
+    Err  error
+}
+type CondenseErrorEvent struct{ Err error }               // condense failed to save the Run
+```
+
+Delivery is fan-out through a simple broker: every event goes to all subscribers via buffered channels; a slow subscriber doesn't block the loop (when the buffer overflows, the event is dropped or captured in the log — but the agent doesn't wait).
+```go
 type Broker[T any] struct {
-    subscribers []chan T
     mu          sync.RWMutex
+    subscribers []chan T
 }
 
-func (b *Broker[T]) Subscribe() <-chan T {
-    ch := make(chan T, 64)
-    b.mu.Lock()
-    b.subscribers = append(b.subscribers, ch)
-    b.mu.Unlock()
-    return ch
-}
-
-func (b *Broker[T]) Publish(event T) {
+func (b *Broker[T]) Subscribe() <-chan T { /* buffered channel */ ... }
+func (b *Broker[T]) Publish(ev T) {
     b.mu.RLock()
     defer b.mu.RUnlock()
     for _, ch := range b.subscribers {
         select {
-        case ch <- event:
-        default: // don't block if subscriber is slow
+        case ch <- ev:
+        default: // don't block the loop because of a slow subscriber
         }
     }
 }
 ```
 
-Fan-out pattern: a single event is delivered to all subscribers. UI shows streaming, logger writes to file, metrics count tool calls — all working in parallel.
+The UI renders streaming output, the logger writes to a file, the metrics collector counts tool calls — and all of them run in parallel without getting in the agent's way.
 
 ## Skills
 
-An agent with a fixed System Prompt is limited. Skills let you dynamically change agent behavior depending on the task.
+An agent with a fixed system prompt is limited. Skills let you change the agent's behavior dynamically depending on the task.
 
-[Agent Skills](https://agentskills.io/) is an open format for extending agent capabilities with specialized knowledge and workflows. The standard is supported by Cursor, Claude Code, VS Code, GitHub, and other tools. At its core, a skill is a folder with a `SKILL.md` file. The agent loads its content into context on demand.
+[Agent Skills](https://agentskills.io/) is an open format for extending agent capabilities. The standard is supported by Cursor, Claude Code, VS Code, GitHub, and other tools. Essentially, a skill is a folder with a `SKILL.md` file. The agent loads its contents into context as needed.
 
-### Why Skills?
+### Why skills?
 
-Imagine: your DevOps agent works with Docker. Tomorrow a Kubernetes task comes in. Without skills, you'd rewrite the System Prompt and hardcode instructions.
+Imagine: a DevOps agent knows how to work with Docker. Tomorrow a task involving Kubernetes comes along. Without skills, you would have to rewrite the system prompt and add instructions directly in code.
 
-With skills, you just load the right behavior module.
+With skills, you simply load the behavior module you need.
 
-### A Skill Is Not a Tool
+### A skill is not a tool
 
-A skill and a tool are different things. A tool performs a concrete action (calls API, reads file). A skill describes **how to behave** in a given situation.
+A skill and a tool are different things. A tool performs a specific action (calls an API, reads a file). A skill describes **how to behave** in a particular situation.
 
 **Analogy:**
-- **Tool** — hammer, saw, screwdriver (concrete actions)
-- **Skill** — instruction "how to assemble a cabinet" (sequence of actions and rules)
+- **Tool** — a hammer, a saw, a screwdriver (specific actions)
+- **Skill** — the instructions "how to assemble a wardrobe" (a sequence of actions and rules)
 
-### Skills — Magic vs Reality
+### Skills — magic vs reality
 
-**Wrong (how it's usually explained):**
-> Skills are AI modules the agent "learned" and applies automatically.
+**Magic (the usual explanation):**
+> Skills are AI modules that the agent has "learned" and applies automatically.
 
-**Reality (how it actually works):**
+**Reality (what actually happens):**
 
-A skill is a text file with instructions. The agent loads its content into context before the LLM request. The model simply receives additional text in the prompt. No training happens.
+A skill is a text file with instructions. When a skill is needed, the model reads its contents into its history (with an ordinary `read` tool call). No learning takes place — the model simply receives additional text in its context.
 
-### Agent Skills Format (SKILL.md)
+### The agent skills format (SKILL.md)
 
 The [Agent Skills specification](https://agentskills.io/specification) defines a standard file format. A skill is a directory with a `SKILL.md` file:
 
@@ -949,7 +430,7 @@ docker-debugging/
 ├── SKILL.md        # Required: metadata + instructions
 ├── scripts/        # Optional: executable code
 ├── references/     # Optional: additional documentation
-└── assets/         # Optional: templates, schemas
+└── assets/         # Optional: templates, diagrams
 ```
 
 The `SKILL.md` file contains YAML frontmatter and Markdown instructions:
@@ -964,7 +445,7 @@ description: >
 
 # Docker Debugging
 
-## When to use this skill
+## When to Use This Skill
 Use when the user reports Docker container issues...
 
 ## Steps
@@ -975,320 +456,163 @@ Use when the user reports Docker container issues...
 5. Never run docker rm -f without confirmation
 ```
 
-Two fields are required: `name` (identifier, lowercase + hyphens) and `description` (when to use this skill). The Markdown body contains the actual instructions.
+Two fields are required: `name` (an identifier: lowercase letters and hyphens) and `description` (when to apply the skill). The Markdown body contains the instructions.
 
-### Progressive Disclosure
+### Progressive disclosure
 
-Skills use a three-level loading pattern to manage context efficiently:
+Skills use a three-tier loading scheme to save context:
 
-1. **Discovery.** At startup, the agent loads only `name` and `description` of each available skill. This costs ~100 tokens per skill.
-2. **Activation.** When the task matches a skill's description, the agent reads the full `SKILL.md` body into context.
-3. **Execution.** The agent follows the instructions, loading referenced files (`scripts/`, `references/`) only when needed.
+1. **Discovery.** At startup, the agent loads only the `name` and `description` of each skill. That's roughly 100 tokens per skill.
+2. **Activation.** When a task matches a skill's description, the agent reads the full body of `SKILL.md` into context.
+3. **Execution.** The agent follows the instructions, loading files from `scripts/` and `references/` only as needed.
 
-This way, the agent stays fast while having access to detailed instructions on demand.
+The agent stays fast while still having access to detailed instructions on demand.
 
-### Implementing Skill Loading in Runtime
+### Runtime implementation: progressive disclosure
 
-Below is one way to implement skill loading in your agent's Runtime. The `Instruction` field corresponds to the body of a `SKILL.md` file. Trigger-based matching shown here is a simplified approach — production implementations (Cursor, Claude Code) let the LLM itself decide which skill to activate based on `description`.
+How does this map onto the agent loop with a stable system prompt?
 
-#### Skill definition
-
-```go
-// SkillDefinition describes a skill
-type SkillDefinition struct {
-    Name        string   // Unique skill name
-    Description string   // When to use this skill
-    Triggers    []string // Keywords for automatic loading
-    Instruction string   // Instruction text (added to prompt)
-}
-```
-
-#### Skill Registry
-
-Similar to the Tool Registry, skills are stored in a registry. The registry finds matching skills by keywords in the user's request.
+1. **Discovery.** At the start of a run, the runtime reads all `SKILL.md` files and adds **one line per skill** to the system prompt: the name + `description`. 20 skills ≈ 20 lines — that's the entire cost of discovery.
+2. **Activation.** When the model decides it needs a skill, it reads the body of `SKILL.md` **itself**, with an ordinary `read` tool call. The skill's text enters the history as a `tool_result` — at the tail, without touching the prefix.
+3. **Execution.** Files from `scripts/` and `references/` are pulled in by the model with the same `read`, as needed.
 
 ```go
-// SkillRegistry is the agent's skill registry
-type SkillRegistry struct {
-    skills map[string]SkillDefinition
-}
-
-func NewSkillRegistry() *SkillRegistry {
-    return &SkillRegistry{
-        skills: make(map[string]SkillDefinition),
-    }
-}
-
-func (r *SkillRegistry) Register(skill SkillDefinition) {
-    r.skills[skill.Name] = skill
-}
-
-// FindByTrigger finds skills by keyword in user input
-func (r *SkillRegistry) FindByTrigger(userInput string) []SkillDefinition {
-    var matched []SkillDefinition
-    for _, skill := range r.skills {
-        for _, trigger := range skill.Triggers {
-            if strings.Contains(strings.ToLower(userInput), trigger) {
-                matched = append(matched, skill)
-                break
-            }
-        }
-    }
-    return matched
-}
-
-// BuildPrompt assembles System Prompt with loaded skills
-func (r *SkillRegistry) BuildPrompt(basePrompt string, skills []SkillDefinition) string {
-    if len(skills) == 0 {
-        return basePrompt
-    }
-
-    var sb strings.Builder
-    sb.WriteString(basePrompt)
-    sb.WriteString("\n\n## Loaded Skills\n\n")
-    for _, skill := range skills {
-        sb.WriteString("### " + skill.Name + "\n")
-        sb.WriteString(skill.Instruction + "\n\n")
-    }
-    return sb.String()
-}
+// Everything the model knows about a skill before activation (one line in the system prompt):
+//   - docker-debugging: Debug Docker containers — check status, logs,
+//     resources, restart loops. Use when user mentions Docker problems.
+//
+// The model reads the skill body itself, when it needs it:
+res, err := readTool.Execute(ctx, json.RawMessage(`{"path":"skills/docker-debugging/SKILL.md"}`))
+// res.FilteredContent is appended to the tail of the history as a tool_result
 ```
 
-#### Usage example
+What matters here:
 
-```go
-registry := NewSkillRegistry()
+- **The system prompt is not rebuilt.** "Loading a skill" by inlining its full text into the system prompt is an anti-pattern: every skill switch breaks the prompt cache for the entire history. The skill's text enters the history as a tool_result, at the tail.
+- **No keyword triggers.** "If the request contains the word docker — load the skill" is a crude simplification: it misses paraphrases and fires falsely. Which skill to open is decided by the model itself, based on the `description` — that's exactly why skills are listed for it in the system prompt.
+- A new skill = a new `SKILL.md` file in the skills directory. Not a single line of code in the agent.
 
-// Register skills
-registry.Register(SkillDefinition{
-    Name:        "docker-debugging",
-    Description: "Docker container debugging",
-    Triggers:    []string{"docker", "container"},
-    Instruction: `When working with Docker:
-1. First check container status (docker ps)
-2. Read logs (docker logs)
-3. Check resources (docker stats)
-4. If container is restarting — check exit code
-5. Never run docker rm -f without confirmation`,
-})
-
-registry.Register(SkillDefinition{
-    Name:        "incident-response",
-    Description: "Incident response",
-    Triggers:    []string{"incident", "outage", "502", "500", "downtime"},
-    Instruction: `During an incident:
-1. Determine severity (P1/P2/P3)
-2. Gather facts, don't guess
-3. Check monitoring and logs
-4. Apply minimal fix (rollback)
-5. Verify recovery
-6. Don't optimize during a fire`,
-})
-
-// Agent receives a request
-userInput := "Docker container keeps restarting"
-
-// Find matching skills
-skills := registry.FindByTrigger(userInput)
-
-// Build prompt with skills
-prompt := registry.BuildPrompt(baseSystemPrompt, skills)
-// prompt now contains base prompt + Docker debugging instructions
-```
-
-Skills extend agent behavior without code changes. A new skill is a new `SKILL.md` file, not a refactor.
-
-For the full format specification, see [Agent Skills Specification](https://agentskills.io/specification). Example skills are available in the [GitHub repository](https://github.com/anthropics/skills).
+The full format specification: [Agent Skills Specification](https://agentskills.io/specification). Example skills are available in the [GitHub repository](https://github.com/anthropics/skills).
 
 ## Subagents
 
-Sometimes a task is too complex for a single agent. Or the agent needs to handle a subtask without polluting the main context. For this, an agent can spawn a subagent.
+The default in this book: **one agent loop + skills**. A subagent is a deliberate exception, and there are only two justified reasons for it.
 
-### When Subagent, When Tool?
+### When a subagent is genuinely needed
 
-**Tool** is the right choice when:
-- Action is simple and deterministic
-- Result is predictable
-- No "thinking" required
+**1. Review with a clean memory.** A model reviewing its own work tends to agree with itself: it sees in the history *why* it made a decision, and checks its own justification rather than the result. A reviewer subagent receives only the artifact (a diff, a report, a plan) and the task "find mistakes" — without the parent's history. This radically changes the quality of the review.
 
-**Subagent** is the right choice when:
-- Subtask requires reasoning and multiple steps
-- Separate context is needed (to keep the main one clean)
-- Subtask is complex on its own
+**2. Offloading noisy reading.** Searching logs, analyzing a codebase, reading documentation — these are dozens of `read`/`search` calls with large results. If done in the main loop, the parent's history bloats with noise, and you pay for every chunk in every subsequent request. A subagent pumps gigabytes through its own short history and returns a single page of conclusions to the parent.
 
-**Example:**
+Everything else is not a reason for a subagent. If a subtask boils down to "call 2-3 tools", that's an ordinary tool call in the main loop. If you want a "team of six typed roles" (planner, critic, writer, researcher...), that's an anti-pattern: several agents with a shared task don't work better than one, while coordination, latency and cost grow by an order of magnitude (see [Ch. 07: Multi-Agent](../07-multi-agent/README.md)).
 
-```
-Task: "Deploy new service and set up monitoring"
+### Parent–child communication
 
-Tool approach (bad for complex tasks):
-  → deploy_service("my-app")     // Single action, no flexibility
-  → setup_monitoring("my-app")   // Single action, no flexibility
+A subagent is the same `Agent` with its own minimal Config:
 
-Subagent approach (good for complex tasks):
-  → Subagent 1: "Deploy service" (5-10 steps with reasoning)
-  → Subagent 2: "Set up monitoring" (3-5 steps with reasoning)
-```
-
-### Parent — Child Relationship
-
-The parent agent creates a subagent with:
-- **Separate System Prompt** — specialized for the specific task
-- **Its own tool set** — only what the subtask needs
-- **Its own context** — doesn't inherit the parent's full history
-- **Iteration limit** — subagent can't run forever
-
-When the subagent finishes, the result returns to the parent as plain text.
+- **Its own system prompt** — a narrow task, not a "role on a team".
+- **Read-only tools only.** A subagent has no mutating external tools: no `write`, no `exec` on production, no deploys, no database changes. All writes are done by the parent after receiving the subagent's output — this keeps the audit trail of actions in one history.
+- **Clean memory** — the subagent does not inherit the parent's history. Context is passed as text in `task`, and the result is returned as text.
+- **Its own limits** — the iteration limit and deadline are smaller than the parent's.
 
 ```go
-// SubagentConfig holds subagent configuration
-type SubagentConfig struct {
-    Name          string // Name for logging
-    SystemPrompt  string // Instructions for subagent
-    Tools         []Tool // Available tools
-    MaxIterations int    // Iteration limit
-}
-
-// SpawnSubagent creates and runs a subagent to execute a subtask.
-// The subagent runs its own loop and returns a text result.
-func SpawnSubagent(
-    ctx context.Context,
-    client *openai.Client,
-    config SubagentConfig,
-    task string,
-) (string, error) {
-    messages := []openai.ChatCompletionMessage{
-        {Role: "system", Content: config.SystemPrompt},
-        {Role: "user", Content: task},
+// A subagent is the same Run with a minimal Config (the structures — Ch. 04).
+func SpawnSubagent(ctx context.Context, cfg AgentConfig, task string) (RunResult, error) {
+    // cfg: a narrow SystemPrompt, read-only Tools, its own Limits
+    res := Run(ctx, cfg) // the parent passed all the needed context as text in task
+    if res.Err != nil {
+        return res, fmt.Errorf("subagent: %w", res.Err)
     }
-
-    registry := NewToolRegistry()
-    for _, tool := range config.Tools {
-        registry.Register(tool)
-    }
-
-    // Subagent runs its own loop
-    for i := 0; i < config.MaxIterations; i++ {
-        resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-            Model:    "gpt-4o",
-            Messages: messages,
-            Tools:    registry.ToOpenAITools(),
-        })
-        if err != nil {
-            return "", fmt.Errorf("subagent %s: %w", config.Name, err)
-        }
-
-        msg := resp.Choices[0].Message
-        messages = append(messages, msg)
-
-        // No tool_calls — subagent finished
-        if len(msg.ToolCalls) == 0 {
-            return msg.Content, nil
-        }
-
-        // Execute subagent's tools
-        for _, tc := range msg.ToolCalls {
-            tool, exists := registry.Get(tc.Function.Name)
-            if !exists {
-                messages = append(messages, openai.ChatCompletionMessage{
-                    Role:       "tool",
-                    Content:    fmt.Sprintf("Error: unknown tool %s", tc.Function.Name),
-                    ToolCallID: tc.ID,
-                })
-                continue
-            }
-            result, err := tool.Execute(json.RawMessage(tc.Function.Arguments))
-            if err != nil {
-                result = fmt.Sprintf("Error: %v", err)
-            }
-            messages = append(messages, openai.ChatCompletionMessage{
-                Role:       "tool",
-                Content:    result,
-                ToolCallID: tc.ID,
-            })
-        }
-    }
-
-    return "", fmt.Errorf("subagent %s: iteration limit exceeded (%d)", config.Name, config.MaxIterations)
+    return res, nil // the parent reads res.Output as ordinary text
 }
 ```
 
-### Example: Parent Agent Spawns Subagents
+When the subagent finishes its work, the result is returned to the parent as ordinary text.
 
-```go
-// Parent agent received a complex task
-task := "Deploy payment-api service and set up alerts"
+### Example: Reviewing changes
 
-// Subagent for deployment
-deployResult, err := SpawnSubagent(ctx, client, SubagentConfig{
-    Name:          "deploy-agent",
-    SystemPrompt:  "You are a deployment specialist. Deploy the service properly.",
-    Tools:         []Tool{&DeployTool{}, &HealthCheckTool{}},
-    MaxIterations: 10,
-}, "Deploy payment-api service to production")
+```
+Parent task: "Add a health check to payment-api and make sure everything is correct"
 
-if err != nil {
-    log.Fatalf("Deploy failed: %v", err)
-}
+Parent: writes the code (write, exec in the dev environment) — itself, with its own hands
+Parent: SpawnSubagent(review-config, "Review this diff: ...")
 
-// Subagent for monitoring (receives context from first)
-monitorResult, err := SpawnSubagent(ctx, client, SubagentConfig{
-    Name:          "monitoring-agent",
-    SystemPrompt:  "You are a monitoring specialist. Set up alerts.",
-    Tools:         []Tool{&CreateAlertTool{}, &ListMetricsTool{}},
-    MaxIterations: 5,
-}, fmt.Sprintf("Set up alerts for payment-api. Deploy context: %s", deployResult))
+  Subagent (read-only): reads the diff, looks for error-handling problems,
+  race conditions, forgotten edge cases — in its own clean history, without the author's justifications
+  → "Found: 1) retry without backoff, 2) an un-stopped ticker"
+
+Parent: reads the comments and fixes the code itself
 ```
 
-Subagents are a special case of multi-agent systems. For more on coordinating multiple agents, delegation patterns, and orchestration, see [Chapter 07: Multi-Agent](../07-multi-agent/README.md).
+### Example: Offloading noisy reading
+
+```
+Parent task: "Update the dependency and check that nothing broke"
+
+Parent: SpawnSubagent(research-config, "Find every place in the repository where OldClient is used")
+
+  Subagent (read-only): code search, file reading, documentation —
+  40 calls with large results stay in ITS history
+  → "OldClient is used in 6 places: transport.go:44, ... — the list is attached"
+
+Parent: fixes the 6 files itself; its history contains one compact tool_result
+```
+
+The parent spent one iteration and ~200 tokens of result instead of dozens of iterations and thousands of tokens of noise in every subsequent request.
+
+### Depth control
+
+A subagent must not spawn subagents. Nesting is capped explicitly: `depth` is passed in the Config, and at `depth >= maxDepth` the agent gets a tool set with no spawn capability. The standard maximum is one level of nesting; each further level multiplies the cost and makes debugging harder. See [Ch. 07: Multi-Agent](../07-multi-agent/README.md).
 
 ## Checkpoint and Resume
 
-Long-running agents work for minutes and hours. During that time, the network can drop, an API limit can hit, or the process can restart. Without a state-saving mechanism, all work is lost.
+Long-running agents work for minutes and hours. In that time the network may drop, the API rate limit may run out, or the process may restart. Without a state-saving mechanism, all the work is lost. A snapshot is a **capture of the linear message history plus external state** (modified files, artifacts); restore brings the history back and verifies the external state. Advanced strategies (granularity, validation, rotation) — in [Ch. 11: State Management](../11-state-management/README.md).
 
-### Why This Matters
+### Why does this matter?
 
-Imagine: an agent analyzes 50 servers. On server 47, the API connection drops. Without checkpoint, the agent starts over — 47 API calls wasted. With checkpoint, it continues from server 48.
+Imagine: an agent is analyzing 50 servers. On server 47, the API connection drops. Without a checkpoint, the agent starts all over again — 47 API calls wasted. With a checkpoint, it continues from server 48.
 
-### Saving Strategies
+### Saving strategies
 
-**Per-iteration** — save after each loop iteration:
+**Per-iteration** — save after each iteration of the loop:
 - Simple to implement
-- May be excessive for short tasks
-- Good for long tasks with predictable step count
+- Can be redundant for short tasks
+- Suitable for long tasks with a predictable number of steps
 
 **Per-tool-call** — save after each tool call:
-- More granular control
+- Finer-grained control
 - Useful when tool calls are expensive or slow
-- Avoids repeating already-executed calls
+- Avoids repeating already completed calls
 
-### Checkpoint — Magic vs Reality
+### Checkpoint — magic vs reality
 
-**Wrong (how it's usually explained):**
+**Magic (the usual explanation):**
 > The agent automatically remembers its state and continues from where it stopped.
 
-**Reality (how it actually works):**
+**Reality (what actually happens):**
 
-Agent state is a `messages[]` array plus metadata (iteration number, status). You serialize them to JSON and save to disk. On restart, you load and continue the loop from the same place.
+The agent's state is the linear `messages[]` history and metadata (iteration number, status), plus external state if the agent modified files or a database. You serialize them to JSON and save to disk. On restart, you load them and continue the loop from the same place.
 
 #### Checkpoint structure
 
 ```go
-// Checkpoint is a snapshot of agent state
+// Checkpoint is a snapshot of the agent's state
 type Checkpoint struct {
-    ID        string                          `json:"id"`
-    CreatedAt time.Time                       `json:"created_at"`
-    Iteration int                             `json:"iteration"`
-    Messages  []openai.ChatCompletionMessage  `json:"messages"`
-    TaskID    string                          `json:"task_id"`
-    Status    string                          `json:"status"` // "in_progress", "completed", "failed"
+    ID        string    `json:"id"`
+    CreatedAt time.Time `json:"created_at"`
+    Iteration int       `json:"iteration"`
+    Messages  []Message `json:"messages"` // the entire linear history
+    TaskID    string    `json:"task_id"`
+    Status    string    `json:"status"` // "in_progress", "completed", "failed"
 }
 ```
 
-#### Save and load
+If the agent modified external state, it is saved alongside the history: the list of modified paths, idempotency keys of operations. Restore must not only bring the history back but also reconcile the world with it: if files have changed since the snapshot, the agent must see that, not "remember" things that no longer exist.
+
+#### Saving and loading
 
 ```go
-// SaveCheckpoint saves agent state to disk
+// SaveCheckpoint saves the agent's state to disk
 func SaveCheckpoint(dir string, cp Checkpoint) error {
     data, err := json.MarshalIndent(cp, "", "  ")
     if err != nil {
@@ -1299,8 +623,8 @@ func SaveCheckpoint(dir string, cp Checkpoint) error {
     return os.WriteFile(path, data, 0644)
 }
 
-// LoadCheckpoint loads the last checkpoint for a task.
-// Returns nil, nil if no checkpoint found — agent starts from scratch.
+// LoadCheckpoint loads the latest checkpoint for the task.
+// Returns nil, nil if no checkpoint is found — the agent starts from scratch.
 func LoadCheckpoint(dir, taskID string) (*Checkpoint, error) {
     path := filepath.Join(dir, taskID+".json")
 
@@ -1320,47 +644,44 @@ func LoadCheckpoint(dir, taskID string) (*Checkpoint, error) {
 }
 ```
 
-#### Agent with checkpoint support
+#### An agent with checkpoint support
 
 ```go
+// Client is a neutral interface to the LLM provider (Ch. 04).
 func runAgentWithCheckpoints(
     ctx context.Context,
-    client *openai.Client,
+    client Client,
     registry *ToolRegistry,
     taskID, userInput string,
 ) error {
     checkpointDir := "./checkpoints"
 
-    // Try to restore from checkpoint
+    // Try to restore from a checkpoint
     cp, err := LoadCheckpoint(checkpointDir, taskID)
     if err != nil {
         return err
     }
 
-    var messages []openai.ChatCompletionMessage
+    var messages []Message
     startIteration := 0
 
     if cp != nil && cp.Status == "in_progress" {
-        // Restoring — take history and iteration number from checkpoint
+        // Restoring — take the history and iteration number from the checkpoint
         messages = cp.Messages
         startIteration = cp.Iteration
-        log.Printf("Restored checkpoint: iteration %d", startIteration)
+        log.Printf("Checkpoint restored: iteration %d", startIteration)
     } else {
         // No checkpoint found — start from scratch
-        messages = []openai.ChatCompletionMessage{
+        messages = []Message{
             {Role: "system", Content: systemPrompt},
             {Role: "user", Content: userInput},
         }
     }
 
     for i := startIteration; i < maxIterations; i++ {
-        resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-            Model:    "gpt-4o",
-            Messages: messages,
-            Tools:    registry.ToOpenAITools(),
-        })
+        resp, err := client.Complete(ctx, Request{Messages: messages, Tools: registry.ToolDefs()})
         if err != nil {
-            // API error — save checkpoint and exit
+            // API error — save a checkpoint and exit
             SaveCheckpoint(checkpointDir, Checkpoint{
                 TaskID:    taskID,
                 Iteration: i,
@@ -1375,7 +696,7 @@ func runAgentWithCheckpoints(
         messages = append(messages, msg)
 
         if len(msg.ToolCalls) == 0 {
-            // Task completed — save final checkpoint
+            // Task completed — save the final checkpoint
             SaveCheckpoint(checkpointDir, Checkpoint{
                 TaskID:    taskID,
                 Iteration: i,
@@ -1386,18 +707,32 @@ func runAgentWithCheckpoints(
             return nil
         }
 
-        // Execute tools
+        // Execute the tools
         for _, tc := range msg.ToolCalls {
-            tool, _ := registry.Get(tc.Function.Name)
-            result, _ := tool.Execute(json.RawMessage(tc.Function.Arguments))
-            messages = append(messages, openai.ChatCompletionMessage{
+            tool, ok := registry.Get(tc.Name)
+            if !ok {
+                messages = append(messages, Message{
+                    Role:       "tool",
+                    ToolCallID: tc.ID,
+                    Content:    "Error: unknown tool " + tc.Name,
+                })
+                continue
+            }
+            result, err := tool.Execute(ctx, json.RawMessage(tc.Arguments))
+            var content string
+            if err != nil {
+                content = "Error: " + err.Error() // an error is a result too (Ch. 03)
+            } else {
+                content = result.FilteredContent
+            }
+            messages = append(messages, Message{
                 Role:       "tool",
-                Content:    result,
+                Content:    content,
                 ToolCallID: tc.ID,
             })
         }
 
-        // Save checkpoint after each iteration
+        // Save a checkpoint after each iteration
         SaveCheckpoint(checkpointDir, Checkpoint{
             TaskID:    taskID,
             Iteration: i + 1,
@@ -1411,110 +746,119 @@ func runAgentWithCheckpoints(
 }
 ```
 
-Checkpoint is insurance. For short tasks (2-3 iterations), it's overkill. For long tasks (10+ iterations) or expensive API calls, it's essential.
+A checkpoint is insurance. For short tasks (2-3 iterations) it's redundant. For long tasks (10+ iterations) or expensive API calls — it's mandatory.
 
-## Common Errors
+> **Sidebar: How the real SDK does it.** A checkpoint is a pair of `Snapshot`/`Restore` operations over the linear history: snapshot serializes `messages[]` and the run metadata, restore feeds them back into the loop. Recovery has to deal with "leaked" tool calls: if a `tool_call` remains in the history but the `tool_result` didn't get written, you must either execute the call again or append a stub — otherwise the provider will reject the history. Advanced strategies — [Ch. 11](../11-state-management/README.md).
 
-### Error 1: History Overflow
+## Common Mistakes
 
-**Symptom:** Agent "forgets" the beginning of the conversation. After N messages it stops remembering task context; or the provider returns `context_length_exceeded`.
+### Mistake 1: The history overflows
 
-**Cause:** Dialogue history exceeds the model's context window. Old messages are "pushed out" of context, or the request is rejected outright.
+**Symptom:** the agent "forgets" the beginning of the conversation. After N messages it no longer remembers the task context; or the provider returns `context_length_exceeded`.
+
+**Cause:** the conversation history exceeds the model's context window. Old messages get pushed out of the context, or the request is rejected entirely.
 
 **Solution — `condense` (see [Ch. 13](../13-context-engineering/README.md)):**
 
 ```go
-// BAD: blindly truncating the middle — risks breaking tool_call ↔ tool_result pairs,
-// returning a provider validation error, and losing important context.
+// BAD: naively cutting out the middle — we risk tearing tool_call ↔ tool_result
+// pairs apart, getting a validation error from the provider and losing important context.
 if len(messages) > maxHistoryLength {
     messages = append(
-        []openai.ChatCompletionMessage{messages[0]},
+        []Message{messages[0]},
         messages[len(messages)-maxHistoryLength+1:]...,
     )
 }
 
-// BAD: reordering messages "by importance" — kills prompt cache
+// BAD: reordering messages "by importance" — kills the prompt cache
 // and almost always produces an "orphan tool_result" error.
 
-// GOOD: condense — ask the LLM to summarize the old part of the history
-// and replace it with a single user message. System stays. The last N messages
-// (with intact tool_call/tool_result pairs) also stay. Limit: one condense per Run.
+// GOOD: condense — ask the LLM to briefly summarize the old part of the history
+// and replace it with a single user message. The system prompt stays, as do the
+// last N messages (with intact tool_call/tool_result pairs). Limit: 1 condense per Run.
 messages = condense(ctx, messages, keepLastN)
 ```
 
-The trigger for `condense` is `usage.PromptTokens >= 0.80 * contextWindow` or a `context_length_exceeded` error. Don't use your own token counter for the trigger — it drifts. Details in [Ch. 13](../13-context-engineering/README.md).
+The `condense` trigger is `usage.PromptTokens >= 0.85 * contextWindow` or a `context_length_exceeded` error. Don't use your own token counter for the trigger — it misses. Details in [ch. 13](../13-context-engineering/README.md).
 
-### Error 2: Agent Loops
+### Mistake 2: The agent gets stuck in a loop
 
-**Symptom:** Agent repeats the same action infinitely.
+**Symptom:** The agent repeats the same action endlessly.
 
-**Cause:** No iteration limit and no detection of repeating actions.
+**Cause:** No iteration limit and no detection of repeated actions.
 
-**Solution:**
+**Fix:**
 ```go
-// GOOD: Iteration limit + stuck detection
+// GOOD: Iteration limit + stuck-loop detection
 for i := 0; i < maxIterations; i++ {
     // ...
-    
-    // Stuck detection
+
+    // Stuck-loop detection
     if lastNActionsAreSame(history, 3) {
         break
     }
 }
 ```
 
-### Error 3: Tool Result Not Added to History
+### Mistake 3: The tool result is not appended to the history
 
-**Symptom:** Agent doesn't see tool result and continues performing the same action.
+**Symptom:** The agent doesn't see the tool result and keeps performing the same action.
 
-**Cause:** Tool execution result is not added to `messages[]`.
+**Cause:** The tool execution result is not appended to `messages[]`.
 
-**Solution:**
+**Fix:**
 ```go
-// BAD: Result not added
+// BAD: The result is not appended
 result := executeTool(toolCall)
 // History not updated!
 
-// GOOD: Result added to history
+// GOOD: The result is appended to the history
 result := executeTool(toolCall)
-messages = append(messages, openai.ChatCompletionMessage{
-    Role:       openai.ChatMessageRoleTool,
+messages = append(messages, Message{
+    Role:       "tool",
     Content:    result,
     ToolCallID: toolCall.ID,
 })
 ```
 
-### Error 4: Monolithic Run()
+### Mistake 4: A monolithic run()
 
-**Symptom:** Cannot unit-test agent components. The only way to verify routing is to run the entire `Run()` with a mock provider.
+**Symptom:** Impossible to unit-test the agent's components. The only way to test routing is to run the entire Run() with a mock provider.
 
-**Cause:** The `Run()` function combines 6 responsibilities: prompt assembly, routing, error recovery, tool execution, plan tracking, event publishing. In practice, this easily grows to 240 lines with nested if-branches.
+**Cause:** The `Run()` function combines 6 responsibilities: prompt assembly, routing, error recovery, tool execution, plan tracking, event publishing. In practice it easily grows to 240 lines with nested if branches.
 
-**Solution:** Separate responsibilities through injection:
+**Fix:** Separate the responsibilities via injection:
 ```go
 // BAD: everything in one function
 func (a *Agent) Run(ctx context.Context, msg string) (string, error) {
     // 240 lines: routing + prompt + tools + recovery + events + plan
 }
 
-// GOOD: injection through Config
-type Config struct {
-    PromptFunc func(state LoopState) string
-    ToolFilter func(iter int) []Tool
-    Hooks      Hooks
-    Condenser  Condenser
+// GOOD: a flat Config — every loop control point is a field
+// (the full AgentConfig listing is in ch. 04)
+type AgentConfig struct {
+    Resolve  func(ctx context.Context) (Client, error) // primary + fallback chain
+    Memory   *History       // linear message history
+    Tools    []Tool         // fixed for the entire Run
+    Prompt   string         // fixed for the entire Run, not rebuilt
+    Inject   func(LoopState) []Message // dynamics: injecting messages into a run
+    Stop     func(LoopState, *Response) bool
+    Confirm  ConfirmFunc    // UX confirmation (ch. 05)
+    Condense CondenseFunc   // one threshold ~0.85, at most 1 per Run
+    Limits   Limits         // iterations, deadline — terminal boundaries
+    On       func(Event)    // loop events
 }
 ```
 
-### Error 5: Subagent Hardcode in executeTools
+### Mistake 5: Subagent hardcode in executeTools
 
-**Symptom:** Adding a new type of special tool requires modifying the shared tool execution function.
+**Symptom:** Adding a new type of special tool requires changing the general tool-execution function.
 
-**Cause:** Inside `executeTools()` there's a check `if tc.Name == "subagent"` with special logic (plan step tracking, progress forwarding). Each "special" tool adds another `if`.
+**Cause:** Inside `executeTools()` there is a check `if tc.Name == "subagent"` with special logic (plan step tracking, progress forwarding). Each "special" tool adds another `if`.
 
-**Solution:** Use Hooks:
+**Fix:** Use Hooks:
 ```go
-// BAD: hardcode in shared function
+// BAD: hardcode in the general function
 func executeTools(calls []ToolCall) {
     for _, tc := range calls {
         if tc.Name == "subagent" {
@@ -1531,104 +875,106 @@ type Hooks struct {
 }
 ```
 
-## Mini-Exercises
+## Exercises
 
-### Exercise 1: Pre-send token estimate
+### Exercise 1: Estimating tokens before sending
 
-Implement an approximate token estimator over the message history — for metrics and for deciding "is it time to trigger `condense` early":
+Implement a function for roughly estimating the number of tokens in a message history — for metrics and for deciding "is it time to run condense preemptively":
 
 ```go
-func estimateTokens(messages []openai.ChatCompletionMessage) int {
-    // Approximate via tiktoken (or any fast tokenizer).
+func estimateTokens(messages []Message) int {
+    // Estimate via tiktoken (or another fast tokenizer).
     // Account for: Content, ToolCalls, ToolCallID, Role overhead.
-    // In production this is only an estimate — the exact number always comes
-    // from usage.PromptTokens.
+    // For production this is only an estimate — always take the exact number from usage.PromptTokens.
 }
 ```
 
-**Important rule (see [Ch. 13](../13-context-engineering/README.md)):** in a real agent loop the primary source of token counts is the `usage.PromptTokens` field from the provider's response. Your own counter is good only for an estimate **before** the very first request, or for cheap metrics. You cannot use it as the `condense` trigger — it systematically misses by 5-30% (especially with tool_calls and multilingual content).
+**Important rule (see [ch. 13](../13-context-engineering/README.md)):** in a real agent loop, the primary source of the token count is the `usage.PromptTokens` field from the provider's response. Your own counter is only suitable for estimating **before** the first request is sent, or for cheap metrics. You must not tie the `condense` trigger to it — it systematically misses by 5-30% (especially for tool_calls and multilingual content).
 
 **Expected result:**
-- The function returns an estimate within ±10% of `usage.PromptTokens` on a typical history.
-- Accounts for all message types (system, user, assistant, tool).
-- In agent code it is called **only before the first request**; after the first response, the `condense` trigger is computed from `usage.PromptTokens`.
+- The function returns an estimate that deviates by no more than ±10% from `usage.PromptTokens` on a typical history.
+- It accounts for all message types (system, user, assistant, tool).
+- In the agent code it is called **only before the first request**; after the first response, the condense trigger is computed from `usage.PromptTokens`.
 
-### Exercise 2: Implement condense
+### Exercise 2: Implementing condense
 
-**Note:** the theory is in [Ch. 13: Context Engineering](../13-context-engineering/README.md). Here is the skeleton for self-implementation.
+**Note:** the theory is in [ch. 13: Context Engineering](../13-context-engineering/README.md). Here is a skeleton for your own implementation.
 
-Implement `condense` — the single history-compression operation the agent applies on context overflow:
+Implement `condense` — the single history-condensing operation the agent applies on context overflow:
 
 ```go
 // condense replaces the "middle" of the history with a single user message
-// containing a summary, by calling the LLM with a request to summarize the
-// passed fragment.
+// containing a summary, by calling the LLM and asking it to briefly
+// summarize the passed fragment.
 //
 // Guarantees:
-//   - the first message (system) is preserved as-is;
-//   - the last keepLastN messages are preserved as-is, with intact
+//   - the first message (system) is preserved as is;
+//   - the last keepLastN messages are preserved as is, as intact
 //     tool_call ↔ tool_result pairs (no "orphan tool_result");
-//   - everything between them is replaced with a single role="user" message
-//     whose content is "Context of previous work:\n\n" + summary.
+//   - everything in between is replaced with a single role="user" message
+//     with the content "Context of previous work:\n\n" + summary.
 //
-// Per-Run limit — 1 condense call; a repeated overflow right after a condense
-// means the task is too large for a single Run.
+// Limit per Run — 1 condense call; another overflow right after
+// condense means the task is too big for a single Run.
 func condense(
     ctx context.Context,
-    client *openai.Client,
-    messages []openai.ChatCompletionMessage,
+    client Client, // provider-neutral interface to the LLM (ch. 04)
+    messages []Message,
     keepLastN int,
-) ([]openai.ChatCompletionMessage, error) {
-    // 1) if len(messages) < 2 + keepLastN — nothing to compress, return as-is
-    // 2) split off head (without system and without the last keepLastN) and tail
-    // 3) call the LLM with a prompt "summarize head into N tokens"
-    // 4) assemble [system, summary-as-user, ...tail] and return
+) ([]Message, error) {
+    // 1) if len(messages) < 2 + keepLastN — nothing to condense, return as is
+    // 2) split off the head (without system and without the last keepLastN) and the tail
+    // 3) call the LLM with the prompt "summarize the head in N tokens"
+    // 4) assemble [system, summary-as-user, ...tail] and return it
 }
 ```
 
 **Expected result:**
-- system always remains first.
+- system is always first.
 - The last `keepLastN` messages are preserved in full.
 - Between them — exactly one `user` message with the summary.
-- No "orphan tool_result": if a `tool_result` ends up in `tail` without its matching `tool_call`, either pull the pair into `tail` together, or drop both.
+- No "orphan tool_result": if the `tail` ends up with a `tool_result` without its `tool_call` pair — either bring the pair back into the `tail`, or drop both.
 - No reordering, no "importance scoring", no mutation of `system`.
 
-## Completion Criteria / Checklist
+## Acceptance Criteria / Checklist
 
 **Done:**
-- [x] Short-term memory is a linear immutable history (`messages[]`).
-- [x] System prompt and tool list are fixed at the start of the Run and don't change between iterations.
-- [x] The `condense` trigger is computed from `usage.PromptTokens` in the provider's response (your own counter — only for a pre-send estimate).
-- [x] On overflow, `condense` is applied with a 1-per-Run limit; `tool_call ↔ tool_result` pairs are not torn apart.
-- [x] Long-term memory (RAG) is set up if the task needs cross-session knowledge.
-- [x] Planning (ReAct/Plan-and-Solve) is implemented.
-- [x] Runtime correctly parses LLM responses, executes tools, manages the loop.
-- [x] There's protection against loops (iteration limit + repeat detection).
-- [x] Subagent is a standalone Agent with its own Config — not a "shared structure with shared memory".
+- [x] Short-term memory — a linear immutable history (`messages[]`).
+- [x] The system prompt and the tool list are fixed at the start of the Run and do not change between iterations.
+- [x] The `condense` trigger is computed from `usage.PromptTokens` in the provider's response (your own counter — only for estimating before sending).
+- [x] On overflow, `condense` is applied with a limit of 1 per Run; `tool_call ↔ tool_result` pairs are not broken.
+- [x] Long-term memory (RAG) is set up if the task requires knowledge across sessions.
+- [x] Planning: the plan lives in the message history as an artifact (Plan → Execute / Plan-and-Revise), not in a rebuilt system prompt.
+- [x] The runtime correctly parses LLM responses, executes tools, manages the loop; RunResult is returned even on error.
+- [x] Tools return Result{Content, FilteredContent}: the model sees the filtered version.
+- [x] Skills: only the name and description go in the system prompt (progressive disclosure); the model reads the skill body itself via read.
+- [x] There is stuck-loop protection (an iteration limit + repeat detection).
+- [x] A subagent is the same Agent with its own Config, clean memory, and read-only tools only.
 
 **Not done (anti-patterns):**
-- [ ] History overflows and there's no reaction (neither `condense` nor a hard stop).
-- [ ] Messages are reordered "by importance" ("important" ones promoted, "unimportant" dropped) — prompt cache is killed, tool pairs are broken.
-- [ ] System prompt is mutated between iterations (live state, facts, plan progress are stitched into it) — prompt cache is killed.
-- [ ] Tool list changes on every iteration without a strong reason — same problem.
-- [ ] The `condense` trigger or the budget cap is computed from your own `len(content)/3` or `tiktoken` counter instead of `usage.PromptTokens`.
-- [ ] The agent loops (no iteration limit).
-- [ ] Tool results are not added to history.
-- [ ] Monolithic `Run()` with no separation of concerns.
-- [ ] Hardcoding special tools inside the shared `executeTools` — every "special" tool adds another `if`.
+- [ ] The history overflows and nothing reacts (neither condense nor a hard stop).
+- [ ] Messages are reordered "by importance" ("important" ones are promoted, "unimportant" ones are dropped) — the prompt cache is killed, tool pairs break.
+- [ ] The system prompt is mutated between iterations (live state, facts, plan progress, full skill texts are baked into it) — the prompt cache is killed.
+- [ ] The tool list changes on every iteration without a serious reason — same thing.
+- [ ] Skills are selected by keyword triggers instead of by the model based on description.
+- [ ] The `condense` trigger or the budget limit is computed from your own counter `len(content)/3` or `tiktoken`, not from `usage.PromptTokens`.
+- [ ] The agent gets stuck in a loop (no iteration limit).
+- [ ] Tool results are not appended to the history.
+- [ ] A monolithic `Run()` with no separation of responsibilities.
+- [ ] Hardcode for special tools in the general `executeTools` — each "special" tool adds another `if`.
+- [ ] Subagents are given mutating tools (write/exec in production), subagents inherit the parent's memory, or nesting deeper than 1 level is created.
 
-## Connection with Other Chapters
+## Relation to Other Chapters
 
-- **[Preface → Mental Model](../00-preface/README.md#mental-model-an-agent-is-a-new-employee)** — why Runtime, tool permissions, and confirmation for dangerous actions are not "special LLM machinery" but "the same as for a new employee".
-- **[Chapter 01: LLM Physics](../01-llm-fundamentals/README.md)** — understanding the context window and tokens.
-- **[Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md)** — how Runtime executes tools.
-- **[Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md)** — how Planning works in the agent loop; loop detection, recovery state machine.
-- **[Chapter 12: Agent Memory Systems](../12-agent-memory/README.md)** — two memory horizons, linear history as an immutable log, prompt cache, compact vs condense vs recall.
-- **[Chapter 13: Context Engineering](../13-context-engineering/README.md)** — stable system prefix, single threshold and single reaction (`condense` with a 1/Run cap), `usage.PromptTokens` as the primary source.
-- **[Agent Skills Specification](https://agentskills.io/specification)** — open format for agent skills (`SKILL.md`).
+- **[Preface → Mental model](../00-preface/README.md#mental-model-an-agent-is-a-new-employee)** — why the runtime, tool permissions and confirmation of dangerous actions are not "special LLM machinery" but "the same as for a new employee".
+- **[Chapter 01: LLM Fundamentals](../01-llm-fundamentals/README.md)** — Understanding the context window and tokens.
+- **[Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md)** — How the runtime executes tools.
+- **[Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md)** — How planning works in the agent loop; loop detection, recovery state machine.
+- **[Chapter 12: Agent Memory Systems](../12-agent-memory/README.md)** — Two horizons of memory, a linear history as an immutable log, the prompt cache, compact vs condense vs recall.
+- **[Chapter 13: Context Engineering](../13-context-engineering/README.md)** — A stable system prefix, a single threshold and one reaction (`condense` with a limit of 1/Run), `usage.PromptTokens` as the primary source.
+- **[Agent Skills Specification](https://agentskills.io/specification)** — An open format for agent skills (`SKILL.md`).
 
 ## What's Next?
 
-After studying architecture, proceed to:
-- **[10. Planning and Workflow Patterns](../10-planning-and-workflows/README.md)** — how agent plans complex tasks
-
+After studying the architecture, move on to:
+- **[10. Planning and Workflow Patterns](../10-planning-and-workflows/README.md)** — how an agent plans complex tasks

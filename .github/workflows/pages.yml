@@ -43,6 +43,12 @@ jobs:
       - name: Build with MkDocs
         run: mkdocs build
 
+      - name: Fix anchor fragments (i18n trailing slash)
+        run: python .mkdocs/scripts/fix_anchor_slashes.py build/site
+
+      - name: Check site anchors
+        run: python .mkdocs/scripts/check_site_anchors.py build/site
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

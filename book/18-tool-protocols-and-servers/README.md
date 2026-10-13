@@ -1,68 +1,68 @@
 # 18. Tool Protocols and Tool Servers
 
-## Why This Chapter?
+## Why does this matter?
 
-As agents grow, tools often turn into services. Instead of embedding everything into one binary, you can run tools as separate processes or services. That requires protocols for communication, versioning, and security.
+As agents grow, tools often turn into services. Instead of embedding tool code directly into the agent, you can run tools as separate processes or services. That requires protocols for communication, versioning, and security.
 
-This chapter covers tool server patterns: stdio, HTTP, gRPC, schema versioning, and authentication/authorization. It also covers two standard protocols: MCP (Model Context Protocol) for connecting agents to tools, and A2A (Agent-to-Agent) for agent-to-agent communication.
+In this chapter we'll look at tool server patterns: stdio, HTTP APIs, gRPC, schema versioning, and authentication/authorization. We'll also cover two standard protocols: MCP (Model Context Protocol) for connecting agents to tools, and A2A (Agent-to-Agent) for agents talking to each other.
 
-### Real-World Case Study
+### A real-world case
 
-**Situation:** You have 50+ tools. Some are written in Go, some in Python, some are external services. Embedding all in one agent binary is impractical.
+**Situation:** You have 50+ tools. Some are written in Go, some in Python, and some are external services. Embedding all of them into a single agent binary is impractical.
 
-**Problem:**
+**Problems:**
 - Different languages require different integration approaches
-- Tool updates require agent redeployment
+- Tool updates require redeploying the agent
 - No isolation between tools
-- Hard to scale individual tools
+- It's hard to scale individual tools
 
-**Solution:** Tool servers: each tool runs as a separate process/service. The agent talks to tools through a standard protocol (stdio, HTTP, or gRPC). Tools can be updated and scaled independently, and isolated for security.
+**Solution:** Tool servers: each tool runs as a separate process/service. The agent communicates over a standard protocol (stdio, HTTP, or gRPC). Tools can be updated and scaled independently, and isolated for security.
 
-> **Junior employee model.** authn/authz at the tool-server level is "the office pass". Just because the agent knows the URL of a service doesn't grant the right to use it: you need a token, a limited set of operations, an audit trail. One tool-server = one department: its own clearance, its own logs, its own area of responsibility. MCP/A2A don't override these rules — they standardize how to apply them. See [Preface → Mental Model](../00-preface/README.md#mental-model-an-agent-is-a-new-employee) and [Ch. 17: Security and Governance](../17-security-and-governance/README.md).
+> **Junior employee model.** Authn/authz at the tool-server level is an "office badge." The mere fact that the agent knows the service URL doesn't give it the right to use it: you need a token, a restricted set of operations, and auditing. One tool server = one department: its own access level, its own logs, its own area of responsibility. MCP/A2A don't override these rules — they standardize how they are applied. See [Preface → Mental Model](../00-preface/README.md#mental-model-an-agent-is-a-new-employee) and [Ch. 17: Security and Governance](../17-security-and-governance/README.md).
 
-## Theory in Simple Terms
+## The theory in plain words
 
-### Tool Server Architecture
+### Tool server architecture
 
 **Agent Runtime:**
-- Manages conversation flow
-- Calls tools through protocol
-- Processes tool responses
+- Manages the conversation flow
+- Calls tools via a protocol
+- Handles tool responses
 
 **Tool Server:**
-- Implements tool logic
-- Provides protocol interface
+- Implements the tool logic
+- Exposes a protocol interface
 - Can be a separate process/service
 
 **Protocol:**
-- Communication contract
+- The communication contract
 - Request/response format
 - Error handling
 
-### Protocol Types
+### Protocol types
 
 **1. stdio Protocol:**
-- Tool runs as subprocess
-- Communication through stdin/stdout
-- Simple, good for local tools
+- The tool runs as a subprocess
+- Communication over stdin/stdout
+- Simple; good for local tools
 
 **2. HTTP Protocol:**
-- Tool runs as HTTP service
+- The tool runs as an HTTP service
 - REST API interface
 - Good for distributed systems
 
 **3. gRPC Protocol:**
-- Tool runs as a gRPC service
-- Strict contract via Protobuf (IDL)
-- Type safety and backward compatibility of schemas
-- Rich Go ecosystem: client/server code generation, interceptors, reflection
+- The tool runs as a gRPC service
+- A strict contract via Protobuf (IDL)
+- Type safety and backward-compatible schema evolution
+- A rich ecosystem in Go: client/server code generation, interceptors, reflection
 - Built-in mechanisms: TLS/mTLS, authentication via metadata, deadlines, retries, load balancing
 - Observability: integration with tracing/metrics/logging
 - A practical choice for production tool servers
 
-## How It Works (Step by Step)
+## How it works (step by step)
 
-### Step 1: Tool Protocol Interface
+### Step 1: The tool protocol interface
 
 ```go
 type ToolServer interface {
@@ -78,10 +78,10 @@ type ToolDefinition struct {
 }
 ```
 
-### Step 2: stdio Protocol
+### Step 2: Stdio protocol
 
 ```go
-// Tool server reads from stdin, writes to stdout
+// The tool server reads from stdin, writes to stdout
 type StdioToolServer struct {
     tools map[string]Tool
 }
@@ -114,7 +114,7 @@ type ToolResponse struct {
 }
 ```
 
-### Step 3: Agent Calls Tool Server
+### Step 3: The agent calls the tool server
 
 ```go
 func executeToolViaStdio(toolName string, args map[string]any) (any, error) {
@@ -140,10 +140,10 @@ func executeToolViaStdio(toolName string, args map[string]any) (any, error) {
 }
 ```
 
-### Step 4: HTTP Protocol
+### Step 4: HTTP protocol
 
 ```go
-// Tool server as HTTP service
+// The tool server as an HTTP service
 func (s *HTTPToolServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
     if r.Method != "POST" {
         http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -164,9 +164,9 @@ func (s *HTTPToolServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-### Step 5: gRPC Protocol
+### Step 5: gRPC protocol
 
-gRPC provides a strict contract via Protocol Buffers. Service definition:
+gRPC provides a strict contract via Protocol Buffers. The service definition:
 
 ```protobuf
 syntax = "proto3";
@@ -208,12 +208,12 @@ message ToolDefinition {
 
 **Advantages of gRPC for tool servers:**
 - **Strict contract**: Protobuf guarantees type safety and schema evolution without breaking changes
-- **Go ecosystem**: Automatic client/server generation, interceptors for authn/authz, health checks
-- **Security**: Built-in TLS/mTLS support, authentication via metadata (tokens, API keys)
-- **Reliability**: Deadlines, retries, load balancing at client level or via service mesh
-- **Observability**: Integration with OpenTelemetry, gRPC metrics, structured logging
+- **Go ecosystem**: automatic client/server generation, interceptors for authn/authz, health checks
+- **Security**: built-in TLS/mTLS support, authentication via metadata (tokens, API keys)
+- **Reliability**: deadlines, retries, load balancing at the client level or via a service mesh
+- **Observability**: integration with OpenTelemetry, gRPC metrics, structured logging
 
-### Step 6: Schema Versioning
+### Step 6: Schema versioning
 
 ```go
 type ToolDefinition struct {
@@ -242,7 +242,7 @@ func (s *ToolServer) GetToolDefinition(name string, version string) (*ToolDefini
 
 ## MCP (Model Context Protocol)
 
-### What Is MCP
+### What is MCP
 
 MCP (Model Context Protocol) is an open standard from Anthropic for connecting LLM agents to tools and data. Instead of every agent writing its own integration with every service, MCP defines a single protocol. A tool written as an MCP server works with any agent that supports MCP.
 
@@ -253,38 +253,38 @@ Analogy: USB for AI tools. One connector — any device.
 ```
 Host (IDE / chatbot / CI pipeline)
   └── MCP Client ──── JSON-RPC 2.0 ──── MCP Server
-                                           ├── Resources  (read-only data)
+                                           ├── Resources  (data to read)
                                            ├── Tools      (actions)
                                            └── Prompts    (prompt templates)
 ```
 
-**Host** — the application running the agent (IDE, chatbot, CI/CD pipeline). A single host can connect to multiple MCP servers simultaneously.
+**Host** — the application the agent runs in (an IDE, a chatbot, a CI/CD pipeline). One host can connect to several MCP servers at once.
 
-**MCP Client** — a component of the host. Establishes a connection with the MCP server using JSON-RPC 2.0.
+**MCP Client** — a component of the host. It establishes a connection to the MCP server over JSON-RPC 2.0.
 
-**MCP Server** — a separate process or service. Exposes tools, data, and templates through the standard protocol.
+**MCP Server** — a separate process or service. It exposes tools, data, and templates through a standard protocol.
 
-### Three Primitives
+### The three primitives
 
-| Primitive | Analogy | What It Does | Example |
-|-----------|---------|--------------|---------|
-| **Resources** | GET | Read-only data. Agent requests — server returns | File contents, SQL query result, metrics |
-| **Tools** | POST | Actions with side effects. Require confirmation | Create ticket, trigger deploy, send alert |
-| **Prompts** | Template | Ready-made prompts for common tasks | Code review template, incident analysis |
+| Primitive | Analogue | What it does | Example |
+|-----------|----------|--------------|---------|
+| **Resources** | GET | Data to read. The agent requests it — the server returns it | File contents, a SQL query result, metrics |
+| **Tools** | POST | Actions with side effects. They require confirmation | Create a ticket, start a deploy, send an alert |
+| **Prompts** | Template | Ready-made prompts for common tasks | A code review template, incident analysis |
 
 ### Transport
 
-MCP supports two transport types:
+MCP supports two types of transport:
 
-**stdio** — the host launches the MCP server as a subprocess. Communication via stdin/stdout. Simple, no network required. Good for local tools: CLI utilities, file operations, IDE plugins.
+**stdio** — the host launches the MCP server as a subprocess. Communication over stdin/stdout. Simple, no network required. Suitable for local tools: CLI utilities, file operations, IDE plugins.
 
-**Streamable HTTP** — the client sends JSON-RPC requests over HTTP POST. The server can respond via SSE (Server-Sent Events) for streaming results. Good for remote servers and production environments.
+**Streamable HTTP** — the client sends JSON-RPC requests over HTTP POST. The server can respond via SSE (Server-Sent Events) to stream results. Suitable for remote servers and production environments.
 
-### Example: MCP Server in Go
+### Example: An MCP server in Go
 
 A minimal MCP server that exposes a tool for deploying services.
 
-JSON-RPC 2.0 types — the foundation of the MCP protocol:
+The JSON-RPC 2.0 types — the foundation of the MCP protocol:
 
 ```go
 type JSONRPCRequest struct {
@@ -307,7 +307,7 @@ type RPCError struct {
 }
 ```
 
-Define a tool via JSON Schema. The LLM uses the description and schema to generate arguments:
+We define the tool via JSON Schema. The LLM uses the description and schema to generate arguments:
 
 ```go
 type MCPTool struct {
@@ -318,7 +318,7 @@ type MCPTool struct {
 
 var deployTool = MCPTool{
     Name:        "deploy_service",
-    Description: "Deploy a service to a specified environment",
+    Description: "Deploy a service to the specified environment",
     InputSchema: json.RawMessage(`{
         "type": "object",
         "properties": {
@@ -330,17 +330,18 @@ var deployTool = MCPTool{
 }
 ```
 
-Request handling. The MCP server responds to three key methods — `initialize`, `tools/list`, and `tools/call`:
+Handling requests. The MCP server answers three key methods — `initialize`, `tools/list`, and `tools/call`:
 
 ```go
 func handleRequest(req JSONRPCRequest) JSONRPCResponse {
     switch req.Method {
     case "initialize":
-        // Handshake: server reports its capabilities
+        // Handshake: the server reports the protocol version and its capabilities.
+        // The spec version is negotiated during the handshake — use the current one
         return JSONRPCResponse{
             JSONRPC: "2.0", ID: req.ID,
             Result: map[string]any{
-                "protocolVersion": "2025-03-26",
+                "protocolVersion": "YYYY-MM-DD",
                 "capabilities":    map[string]any{"tools": map[string]any{}},
                 "serverInfo": map[string]any{
                     "name": "deploy-server", "version": "1.0.0",
@@ -349,14 +350,14 @@ func handleRequest(req JSONRPCRequest) JSONRPCResponse {
         }
 
     case "tools/list":
-        // Agent calls this on connect to discover available tools
+        // The agent calls this on connection to discover the available tools
         return JSONRPCResponse{
             JSONRPC: "2.0", ID: req.ID,
             Result:  map[string]any{"tools": []MCPTool{deployTool}},
         }
 
     case "tools/call":
-        // Tool invocation: agent passes name and arguments
+        // Tool call: the agent passes the name and arguments
         var params struct {
             Name      string         `json:"name"`
             Arguments map[string]any `json:"arguments"`
@@ -389,27 +390,11 @@ func handleRequest(req JSONRPCRequest) JSONRPCResponse {
 }
 ```
 
-Running via stdio. The server reads JSON-RPC messages from stdin and writes responses to stdout:
+Running over stdio. The loop here is the same as in the stdio Tool Server from the start of the chapter: the scanner reads a line from stdin, `json.Unmarshal` parses the request, the handler builds a response, and the encoder writes it to stdout. MCP doesn't invent a new transport — it merely wraps messages in JSON-RPC 2.0. The differences from a hand-rolled protocol: a mandatory handshake (`initialize`) with negotiation of the spec version before the first call, standard methods (`tools/list`, `tools/call`, `resources/list`) instead of a free-form format, and a content-based response format (`content` + `isError` instead of the result/error pair).
 
-```go
-func main() {
-    scanner := bufio.NewScanner(os.Stdin)
-    scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
+### Example: An MCP client
 
-    for scanner.Scan() {
-        var req JSONRPCRequest
-        if err := json.Unmarshal(scanner.Bytes(), &req); err != nil {
-            continue
-        }
-        resp := handleRequest(req)
-        json.NewEncoder(os.Stdout).Encode(resp)
-    }
-}
-```
-
-### Example: MCP Client
-
-The client launches an MCP server as a subprocess and calls tools:
+The client launches the MCP server as a subprocess and calls tools:
 
 ```go
 type MCPClient struct {
@@ -434,9 +419,10 @@ func NewMCPClient(serverPath string) (*MCPClient, error) {
         stdout: bufio.NewScanner(stdoutPipe),
     }
 
-    // Initialization — mandatory first step
+    // Initialization is a mandatory first step.
+    // The protocol version is negotiated in the handshake — substitute the current spec version
     _, err := client.call("initialize", map[string]any{
-        "protocolVersion": "2025-03-26",
+        "protocolVersion": "YYYY-MM-DD",
         "clientInfo":      map[string]any{"name": "my-agent", "version": "1.0.0"},
     })
     return client, err
@@ -453,11 +439,11 @@ func (c *MCPClient) call(method string, params any) (json.RawMessage, error) {
         req.Params, _ = json.Marshal(params)
     }
 
-    // Send request to server's stdin
+    // Send the request to the server's stdin
     data, _ := json.Marshal(req)
     fmt.Fprintf(c.stdin, "%s\n", data)
 
-    // Read response from server's stdout
+    // Read the response from the server's stdout
     if !c.stdout.Scan() {
         return nil, fmt.Errorf("server did not respond")
     }
@@ -482,7 +468,7 @@ func main() {
     }
     defer client.cmd.Process.Kill()
 
-    // Get available tools
+    // Get the list of tools
     tools, _ := client.call("tools/list", nil)
     fmt.Println("Tools:", string(tools))
 
@@ -495,37 +481,49 @@ func main() {
 }
 ```
 
-### When to Use MCP vs Direct HTTP/gRPC
+### When to use MCP vs direct HTTP/gRPC
 
 | Criterion | MCP | Direct HTTP/gRPC |
-|-----------|-----|-------------------|
-| **Agent uses a tool** | Yes — MCP is designed for this | Requires manual integration |
+|----------|-----|-------------------|
+| **Agent consumes the tool** | Yes — MCP is built for this | Requires manual integration |
 | **Tools for multiple agents** | One server — any MCP client | Each agent writes its own client |
-| **High-load API** | No — not optimized for RPS | Yes — gRPC/HTTP is the better choice |
+| **Network, scale, language agnosticism** | Conditional: stdio — local and simple, Streamable HTTP — for remote servers | Yes — HTTP/gRPC when you need a full-fledged API for other services |
 | **Complex business logic** | No — better as a separate service | Yes |
-| **IDE and developer tools** | Yes — most IDEs support MCP | No |
+| **IDEs and developer tools** | Yes — most IDEs support MCP | No |
 
-**Rule:** If a tool is needed by an LLM agent — use MCP. If it's an API for other services — use HTTP/gRPC.
+**Rule of thumb:** If an LLM agent needs the tool — use MCP. If it's an API for other services — use HTTP/gRPC.
+
+### MCP vs skills vs regular tools
+
+Three mechanisms solve different problems — don't substitute one for another:
+
+- **Regular tools** ([ch. 03](../03-tools-and-function-calling/README.md)) — the default for your own operations: deploys, queries against your own database, internal APIs. You control the code, the schema and the result.
+- **MCP** — when integrating third-party systems or when you want a ready-made ecosystem of servers: browser, file system, ticket tracker. One protocol — any server works with any agent.
+- **Skills** ([ch. 09](../09-agent-architecture/README.md#skills)) — when knowledge matters more than code: instruction packages in `SKILL.md` format with progressive disclosure; the agent loads them only when the task calls for it.
+
+A word of caution: **20+ connected MCP servers is the same disease as 20+ hand-written wrappers**. Each server brings tools whose names and descriptions eat into the context budget ([ch. 03](../03-tools-and-function-calling/README.md), [ch. 13](../13-context-engineering/README.md)). Connect only the servers whose tools the agent actually needs; for everything else look toward skills and progressive disclosure — load on demand, not all at once.
+
+> **The FilteredContent invariant for large results.** MCP tool results can be bulky: file contents, table dumps, search output. The invariant from [ch. 09](../09-agent-architecture/README.md) applies here too: the full result goes into `Content` (for UI and audit), while the model's context receives a filtered version. An MCP server doesn't know your context budget — the host does the filtering.
 
 ## A2A (Agent-to-Agent Protocol)
 
-### What Is A2A
+### What is A2A
 
-A2A (Agent-to-Agent) is an open protocol from Google for agent-to-agent communication. MCP solves "agent ↔ tool". A2A solves a different problem — "agent ↔ agent".
+A2A (Agent-to-Agent) is an open protocol from Google for agents to interact with each other. MCP solves the problem "agent ↔ tool". A2A solves a different problem — "agent ↔ agent".
 
-Why does this matter? When you have many agents built by different teams, you need a standard way to discover each other and delegate tasks. A2A provides this out of the box.
+Why is this needed? When there are many agents built by different teams, you need a standard way to discover each other and delegate tasks. A2A provides this out of the box.
 
-### Key Concepts
+### Key concepts
 
-**Agent Card** — a JSON document describing an agent's capabilities. Published at `/.well-known/agent.json`. Any agent can fetch the card and understand what tasks another agent can handle.
+**Agent Card** — a discovery document in JSON format describing an agent's capabilities: name, description, supported input/output modes, skills. It is published according to the rules of the current A2A version (see [a2a-protocol.org](https://a2a-protocol.org/)); any agent can fetch the card and learn what tasks another agent can solve.
 
-**Task** — a unit of work. One agent creates a task, another executes it. A task has a lifecycle with clear statuses.
+**Task** — a unit of work. One agent creates the task, another executes it. A task has a life cycle with well-defined statuses.
 
-**Message** — communication within a task. Contains parts (Part): text, files, structured data.
+**Message** — communication within a task. It contains parts (Part): text, files, structured data.
 
-**Artifact** — the result of task execution. The executing agent returns artifacts as they become ready.
+**Artifact** — the result of executing a task. The executing agent returns artifacts as they become ready.
 
-### Task Lifecycle
+### Task life cycle
 
 ```
 submitted ──→ working ──→ completed
@@ -535,19 +533,21 @@ submitted ──→ working ──→ completed
           input-required ──→ working ──→ ...
 ```
 
-- **submitted** — task created, waiting to be processed
-- **working** — agent is working on the task
-- **input-required** — agent needs additional information from the caller
-- **completed** — task done, artifacts ready
-- **failed** — task ended with an error
-- **canceled** — task canceled by the caller
+- **submitted** — the task has been created and is waiting to be processed
+- **working** — the agent is working on the task
+- **input-required** — the agent needs additional information from the caller
+- **completed** — the task is done, artifacts are ready
+- **failed** — the task ended with an error
+- **canceled** — the task was canceled by the caller
 
-### Example: Agent Card and A2A Server
+### Example: Agent card and an A2A server
 
-Agent Card — describes the agent's capabilities:
+The Agent Card — a description of the agent's capabilities:
 
 ```go
-// Agent Card — published at /.well-known/agent.json
+// The Agent Card is a discovery document; the publication path follows the rules of the current A2A version
+const agentCardPath = "/.well-known/agent-card.json"
+
 type AgentCard struct {
     Name         string       `json:"name"`
     Description  string       `json:"description"`
@@ -562,7 +562,7 @@ type Capabilities struct {
     PushNotifications bool `json:"pushNotifications"`
 }
 
-// Skill — a specific task the agent can handle
+// Skill is a specific task the agent knows how to solve
 type Skill struct {
     ID          string   `json:"id"`
     Name        string   `json:"name"`
@@ -583,7 +583,7 @@ type Task struct {
 }
 
 type TaskStatus struct {
-    State   string `json:"state"` // submitted, working, input-required, completed, failed
+    State   string `json:"state"` // submitted, working, input-required, completed, failed, canceled
     Message string `json:"message,omitempty"`
 }
 
@@ -604,7 +604,7 @@ type Artifact struct {
 }
 ```
 
-The A2A server processes tasks from other agents:
+An A2A server processes tasks from other agents:
 
 ```go
 type A2AServer struct {
@@ -614,12 +614,12 @@ type A2AServer struct {
 
 func (s *A2AServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
     switch r.URL.Path {
-    case "/.well-known/agent.json":
+    case agentCardPath:
         // Discovery: any agent can fetch the card
         json.NewEncoder(w).Encode(s.card)
 
     case "/tasks/send":
-        // Receive a task from another agent
+        // Receiving a task from another agent
         var req struct {
             ID      string  `json:"id"`
             Message Message `json:"message"`
@@ -633,13 +633,13 @@ func (s *A2AServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
         }
         s.tasks.Store(req.ID, task)
 
-        // Process the task asynchronously
+        // Execute the task asynchronously
         go s.processTask(task)
 
         json.NewEncoder(w).Encode(task)
 
     case "/tasks/get":
-        // Check task status
+        // Check the task status
         taskID := r.URL.Query().Get("id")
         if task, ok := s.tasks.Load(taskID); ok {
             json.NewEncoder(w).Encode(task)
@@ -650,13 +650,13 @@ func (s *A2AServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *A2AServer) processTask(task *Task) {
-    // Extract task text
+    // Extract the task text
     input := task.Messages[0].Parts[0].Text
 
-    // Agent does its work...
+    // The agent does its work...
     result := fmt.Sprintf("Analyzed: %s", input)
 
-    // Update task with result
+    // Update the task with the result
     task.Artifacts = []Artifact{
         {Name: "result", Parts: []Part{{Type: "text", Text: result}}},
     }
@@ -664,12 +664,15 @@ func (s *A2AServer) processTask(task *Task) {
 }
 ```
 
-Usage — the client discovers an agent and sends a task:
+Usage — a client discovers the agent and sends a task:
 
 ```go
 func discoverAndDelegate(agentURL string, taskText string) (*Task, error) {
-    // 1. Fetch Agent Card
-    resp, _ := http.Get(agentURL + "/.well-known/agent.json")
+    // 1. Fetch the Agent Card
+    resp, err := http.Get(agentURL + agentCardPath)
+    if err != nil {
+        return nil, fmt.Errorf("discovery failed: %w", err)
+    }
     var card AgentCard
     json.NewDecoder(resp.Body).Decode(&card)
     resp.Body.Close()
@@ -684,17 +687,26 @@ func discoverAndDelegate(agentURL string, taskText string) (*Task, error) {
             Parts: []Part{{Type: "text", Text: taskText}},
         },
     }
-    body, _ := json.Marshal(taskReq)
-    resp, _ = http.Post(agentURL+"/tasks/send", "application/json", bytes.NewReader(body))
+    body, err := json.Marshal(taskReq)
+    if err != nil {
+        return nil, err
+    }
+    resp, err = http.Post(agentURL+"/tasks/send", "application/json", bytes.NewReader(body))
+    if err != nil {
+        return nil, fmt.Errorf("task submission failed: %w", err)
+    }
 
     var task Task
     json.NewDecoder(resp.Body).Decode(&task)
     resp.Body.Close()
 
-    // 3. Poll status until completion
+    // 3. Poll the status until completion
     for task.Status.State == "working" {
         time.Sleep(time.Second)
-        resp, _ = http.Get(agentURL + "/tasks/get?id=" + task.ID)
+        resp, err = http.Get(agentURL + "/tasks/get?id=" + task.ID)
+        if err != nil {
+            return nil, fmt.Errorf("poll failed: %w", err)
+        }
         json.NewDecoder(resp.Body).Decode(&task)
         resp.Body.Close()
     }
@@ -703,31 +715,31 @@ func discoverAndDelegate(agentURL string, taskText string) (*Task, error) {
 }
 ```
 
-### When to Use A2A vs Supervisor/Worker Pattern
+### When to use A2A vs the Supervisor/Worker pattern
 
 | Criterion | A2A | Supervisor/Worker |
-|-----------|-----|-------------------|
-| **Agents from different teams** | Yes — standard discovery protocol | No — requires shared code |
-| **Different frameworks** | Yes — protocol is implementation-agnostic | No — shared framework |
-| **Simple orchestration** | Overkill | Yes — simpler to implement |
-| **Dynamic discovery** | Yes — via Agent Card | No — agents are statically defined |
-| **One team, one repo** | Overkill | Yes — direct calls are simpler |
+|----------|-----|-------------------|
+| **Agents from different teams** | Yes — a standard discovery protocol | No — requires shared code |
+| **Different frameworks** | Yes — the protocol is implementation-agnostic | No — a shared framework |
+| **Simple orchestration** | Overkill | Yes — easier to implement |
+| **Dynamic discovery** | Yes — via the Agent Card | No — agents are defined statically |
+| **One team, one repository** | Overkill | Yes — direct calls are simpler |
 
-**Rule:** Use A2A when agents are built by independent teams and need to discover each other dynamically. For agents within one system, direct orchestration is enough (see [Chapter 07: Multi-Agent Systems](../07-multi-agent/README.md)).
+**Rule of thumb:** A2A is needed when agents are built by independent teams and must discover each other dynamically. For agents inside a single system, direct orchestration is enough (see [Chapter 07: Multi-Agent Systems](../07-multi-agent/README.md)).
 
 ## Protocol Comparison Table
 
 | | stdio | HTTP | gRPC | MCP | A2A |
 |---|---|---|---|---|---|
-| **Use case** | Local tools | Distributed services | Production API | Tools for LLM agents | Agent-to-agent communication |
-| **Latency** | Minimal (IPC) | Medium (network + HTTP/1.1) | Low (HTTP/2 + binary format) | Depends on transport (stdio or HTTP) | Medium (HTTP) |
-| **Implementation complexity** | Low | Medium | High (protobuf, codegen) | Medium (JSON-RPC 2.0) | Medium-high |
-| **Tool discovery** | None | Swagger / OpenAPI | Reflection, service mesh | `tools/list`, `resources/list` | Agent Card (`/.well-known/agent.json`) |
+| **Use case** | Local tools | Distributed services | Production APIs | Tools for LLM agents | Agent-to-agent interaction |
+| **Latency** | Minimal (IPC) | Moderate (network + HTTP/1.1) | Low (HTTP/2 + binary format) | Depends on transport (stdio or HTTP) | Moderate (HTTP) |
+| **Implementation complexity** | Low | Moderate | High (protobuf, codegen) | Moderate (JSON-RPC 2.0) | Moderate-high |
+| **Tool discovery** | None | Swagger / OpenAPI | Reflection, service mesh | `tools/list`, `resources/list` | Agent Card (discovery document) |
 | **Streaming** | Line-by-line via stdout | SSE, WebSocket | Bidirectional streams | SSE (Streamable HTTP) | SSE |
 | **Contract typing** | None (free-form JSON) | JSON Schema / OpenAPI | Strict (Protobuf IDL) | JSON Schema (for tools) | JSON Schema |
 | **When to choose** | CLI utilities, IDE plugins | External APIs, webhooks | Microservices, high load | Tools for LLM agents | Multi-agent systems |
 
-### Authentication: Examples
+### Authentication: examples
 
 **HTTP — Bearer Token:**
 
@@ -751,12 +763,12 @@ func authMiddleware(next http.Handler) http.Handler {
 }
 ```
 
-**MCP — Authentication via OAuth 2.1:**
+**MCP — authentication via OAuth 2.1:**
 
-MCP uses [OAuth 2.1](https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization) (IETF draft-ietf-oauth-v2-1) for remote servers (Streamable HTTP transport). The client obtains a token through the standard OAuth flow and passes it in the `Authorization` header:
+MCP uses OAuth 2.1 (IETF draft-ietf-oauth-v2-1) for remote servers (the Streamable HTTP transport); the exact flow and requirements are in the current version of the specification ([modelcontextprotocol.io](https://modelcontextprotocol.io/specification)). The client obtains a token through the standard OAuth flow and passes it in the `Authorization` header:
 
 ```go
-// Authenticated MCP client for HTTP transport
+// MCP client with authentication for the HTTP transport
 type AuthenticatedMCPClient struct {
     serverURL string
     token     string
@@ -796,19 +808,19 @@ func (c *AuthenticatedMCPClient) call(method string, params any) (json.RawMessag
 }
 ```
 
-For stdio transport, authentication is typically unnecessary — the server runs locally as a subprocess of the host.
+For the stdio transport, authentication is usually unnecessary — the server runs locally as a subprocess of the host.
 
-## Common Errors
+## Common Mistakes
 
-### Error 1: No Versioning
+### Mistake 1: No versioning
 
 **Symptom:** Tool updates break the agent.
 
-**Cause:** No versioning, agent expects old interface.
+**Cause:** There is no versioning, and the agent expects the old interface.
 
-**Solution:** Version tool schemas, check compatibility.
+**Solution:** Version your tool schemas and check compatibility.
 
-### Error 2: No Authentication
+### Mistake 2: No authentication
 
 **Symptom:** Unauthorized access to tools.
 
@@ -816,11 +828,11 @@ For stdio transport, authentication is typically unnecessary — the server runs
 
 **Solution:** Implement authentication (API keys, tokens).
 
-## Mini-Exercises
+## Exercises
 
-### Exercise 1: Implement stdio Tool Server
+### Exercise 1: Implement a stdio tool server
 
-Create a tool server that communicates via stdio:
+Create a tool server that communicates over stdio:
 
 ```go
 func main() {
@@ -834,33 +846,32 @@ func main() {
 - Executes tools
 - Writes responses to stdout
 
-## Completion Criteria / Checklist
+## Acceptance Criteria / Checklist
 
-**Completed:**
-- [x] Understand tool server architecture
-- [x] Can implement stdio protocol
-- [x] Can implement HTTP protocol
-- [x] Understand advantages of gRPC for production tool servers
-- [x] Understand schema versioning
-- [x] Understand MCP: architecture, three primitives, transport
-- [x] Can write an MCP server and MCP client in Go
-- [x] Understand A2A: Agent Card, task lifecycle
-- [x] Know when to choose MCP, A2A, HTTP, or gRPC
+**Passing:**
+- [x] You understand the tool server architecture
+- [x] You can implement the stdio protocol
+- [x] You can implement the HTTP protocol
+- [x] You understand the advantages of gRPC for production tool servers
+- [x] You understand schema versioning
+- [x] You understand MCP: architecture, the three primitives, transports
+- [x] You can write an MCP server and an MCP client in Go
+- [x] You understand A2A: the Agent Card and the task lifecycle
+- [x] You know when to choose MCP, A2A, HTTP, or gRPC
 
-**Not completed:**
-- [ ] No versioning, updates break compatibility
-- [ ] No authentication, security risk
-- [ ] Using MCP for high-load APIs instead of gRPC
-- [ ] Using A2A where direct orchestration would suffice
+**Failing:**
+- [ ] No versioning — updates break compatibility
+- [ ] No authentication — a security risk
+- [ ] Using MCP as a public high-load API instead of HTTP/gRPC
+- [ ] Using A2A where direct orchestration is enough
 
-## Connection with Other Chapters
+## Relation to Other Chapters
 
-- **[Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md)** — Basics of tool execution
+- **[Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md)** — Tool execution basics
 - **[Chapter 07: Multi-Agent Systems](../07-multi-agent/README.md)** — Agent orchestration patterns (Supervisor/Worker and others)
 - **[Chapter 17: Security and Governance](../17-security-and-governance/README.md)** — Security for tool servers
 
 ## What's Next?
 
-After understanding tool protocols, proceed to:
+Once you understand tool protocols, move on to:
 - **[19. Observability and Tracing](../19-observability-and-tracing/README.md)** — Learn production observability
-

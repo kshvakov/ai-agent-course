@@ -1,113 +1,113 @@
 # 06. RAG and Knowledge Base
 
-## Why This Chapter?
+## Why does this matter?
 
-A regular agent only knows what it was trained on (up to the cut-off date). It won't know your local instructions like "How to restart Phoenix server according to protocol #5" unless you provide them at runtime.
+An ordinary agent only knows what it was taught during training (up to its cut-off date). Your local instructions, like "how to restart the Phoenix server per runbook #5", are not something it knows on its own.
 
-**RAG (Retrieval Augmented Generation)** is a "cheat sheet lookup" pattern. The agent first pulls relevant text from a knowledge base, then acts.
+**RAG (Retrieval Augmented Generation)** is a way to "peek at a cheat sheet". The agent first finds the relevant piece in the knowledge base, and only then acts.
 
-Without RAG, an agent can't reliably use your documentation, protocols, and knowledge base. With RAG, it can: fetch what's relevant and act according to your instructions.
+Without RAG the agent cannot rely on your documentation, runbooks and knowledge base. With RAG it can: it finds the right material and follows the steps according to your rules.
 
-### Real-World Case Study
+### A real-world case
 
-**Situation:** A user writes: "Restart Phoenix server according to protocol"
+**Situation:** The user writes: "Restart the Phoenix server according to the runbook"
 
-**Problem:** The agent doesn't know the Phoenix server restart protocol. It may perform a standard restart that doesn't match your procedures.
+**Problem:** The agent doesn't know the Phoenix server restart runbook. It may perform a standard restart that doesn't match your procedures.
 
-**Solution:** With RAG, the agent looks up the protocol in the knowledge base before acting. It finds the document "Phoenix server restart protocol: 1. Turn off load balancer 2. Restart server 3. Turn on load balancer" and follows the steps.
+**Solution:** With RAG, the agent first finds the runbook in the knowledge base and only then acts. It retrieves the document "Phoenix server restart runbook: 1. Shut down the load balancer 2. Restart the server 3. Bring the load balancer back up" and follows the steps.
 
-## Theory in Simple Terms
+## The theory in plain words
 
-### How Does RAG Work?
+### How does RAG work?
 
-1. **Agent receives a request** from the user
-2. **Agent searches for information** in the knowledge base via a search tool
-3. **Knowledge base returns** relevant documents
-4. **Agent uses the information** to perform the action
+1. **The agent receives a request** from the user
+2. **The agent searches for information** in the knowledge base via a search tool
+3. **The knowledge base returns** relevant documents
+4. **The agent uses the information** to perform the action
 
 ## How Does RAG Work? — Magic vs Reality
 
 **Magic:**
-> Agent "knows" it needs to search the knowledge base and finds the needed information on its own
+> The agent "knows" what to search for in the knowledge base and finds the right information by itself
 
 **Reality:**
 
-### Complete RAG Protocol
+### The full RAG protocol
 
-**Step 1: User Request**
+**Step 1: The user's request**
 
 ```go
-messages := []openai.ChatCompletionMessage{
-    {Role: "system", Content: "You are a DevOps assistant. Always search knowledge base before actions."},
-    {Role: "user", Content: "Restart Phoenix server according to protocol"},
+messages := []Message{
+    {Role: "system", Content: "You are a DevOps assistant. Internal procedures and protocols live in the knowledge base."},
+    {Role: "user", Content: "Перезагрузи сервер Phoenix согласно регламенту"},
 }
 ```
 
-**Step 2: Model Receives Search Tool Description**
+**Step 2: The model sees the description of the search tool**
 
 ```go
-tools := []openai.Tool{
+tools := []ToolDef{
     {
-        Function: &openai.FunctionDefinition{
-            Name: "search_knowledge_base",
-            Description: "Search the knowledge base for documentation, protocols, and procedures. Use this BEFORE performing actions that require specific procedures.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Search query"}
-                },
-                "required": ["query"]
-            }`),
-        },
+        Name:        "search_knowledge_base",
+        Description: "Search the knowledge base for documentation, protocols, and procedures.",
+        Parameters: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query"}
+            },
+            "required": ["query"]
+        }`),
     },
     {
-        Function: &openai.FunctionDefinition{
-            Name: "restart_server",
-            Description: "Restart a server",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "hostname": {"type": "string"}
-                },
-                "required": ["hostname"]
-            }`),
-        },
+        Name:        "restart_server",
+        Description: "Restart a server",
+        Parameters: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "hostname": {"type": "string"}
+            },
+            "required": ["hostname"]
+        }`),
     },
 }
 ```
 
-**Step 3: Model Generates Tool Call for Search**
+**Step 3: The model generates a tool call to search**
 
 ```go
-resp1, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    "gpt-4o-mini",
-    Messages: messages,
-    Tools:    tools,
-})
+client, err := NewClient(...) // provider from the config (ch. 04)
+
+resp1, err := client.Complete(ctx, Request{
+    Model:       "glm-5.3",
+    Messages:    messages,
+    Tools:       tools,
+    Temperature: 0.2, // quality: less variance in tool selection
+}) // the error is handled by the loop (ch. 04)
 
 msg1 := resp1.Choices[0].Message
 // msg1.ToolCalls = [{
-//     Function: {
-//         Name: "search_knowledge_base",
-//         Arguments: "{\"query\": \"Phoenix restart protocol\"}"
-//     }
+//     ID: "call_1",
+//     Name: "search_knowledge_base",
+//     Arguments: "{\"query\": \"Phoenix restart protocol\"}"
 // }]
 ```
 
-**Why did the model generate a tool_call for search?**
-- System Prompt says: "Always search knowledge base before actions"
-- Tool Description says: "Use this BEFORE performing actions"
-- The model identifies the word "protocol" in the request and links it to the search tool
+**Why did the model generate a tool call to search?**
+- The model **decided on its own** that for the word "runbook" it needs internal instructions, not general knowledge
+- The tool's Description says where to look for documentation and procedures
+- The model sees the word "runbook" in the request and links it to the search tool
 
-**Step 4: Runtime (Your Code) Executes Search**
+There is no coercive line in the prompt like "Always search knowledge base before actions": the search is an ordinary tool call, and the decision of "whether to search or not" is made by the model based on the tool description. If in your task the search is always mandatory — that's a runtime invariant (the code does not perform the action without a search), not a line in the system prompt.
 
-> **Note:** Runtime is the agent code you write in Go. See [Chapter 00: Preface](../00-preface/README.md#runtime-execution-environment) for definition.
+**Step 4: The runtime (your code) performs the search**
+
+> **Note:** The runtime is the agent code that you write in Go. See [Chapter 00: Preface](../00-preface/README.md#runtime) for the definition.
 
 ```go
 func searchKnowledgeBase(query string) string {
     // Simple keyword search (in production - vector search)
     knowledgeBase := map[string]string{
-        "protocols.txt": "Phoenix server restart protocol:\n1. Turn off load balancer\n2. Restart server\n3. Turn on load balancer",
+        "protocols.txt": "Регламент перезагрузки сервера Phoenix:\n1. Выключить балансировщик\n2. Перезагрузить сервер\n3. Включить балансировщик",
     }
     
     for filename, content := range knowledgeBase {
@@ -119,58 +119,58 @@ func searchKnowledgeBase(query string) string {
 }
 
 result1 := searchKnowledgeBase("Phoenix restart protocol")
-// result1 = "File: protocols.txt\nContent: Phoenix server restart protocol:\n1. Turn off load balancer..."
+// result1 = "File: protocols.txt\nContent: Регламент перезагрузки сервера Phoenix:\n1. Выключить балансировщик..."
 ```
 
-**Step 5: Search Result Added to Context**
+**Step 5: The search result is added to the context**
 
 ```go
-messages = append(messages, openai.ChatCompletionMessage{
+messages = append(messages, Message{
     Role:       "tool",
-    Content:    result1,  // All found documentation!
+    Content:    result1,  // The full retrieved documentation!
     ToolCallID: msg1.ToolCalls[0].ID,
 })
 // Now messages contains:
 // [system, user, assistant(tool_call: search_kb), tool("File: protocols.txt\nContent: ...")]
 ```
 
-**Step 6: Model Receives Documentation and Acts**
+**Step 6: The model sees the documentation and acts**
 
 ```go
-// Send updated history (with documentation!) to model
-resp2, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model:    "gpt-4o-mini",
-    Messages: messages,  // Model receives found documentation!
+// Send the updated history (with the documentation!) to the model
+resp2, err := client.Complete(ctx, Request{
+    Model:    "glm-5.3",
+    Messages: messages,  // The model sees the retrieved documentation!
     Tools:    tools,
-})
+}) // the error is handled by the loop (ch. 04)
 
 msg2 := resp2.Choices[0].Message
-// Model receives in context:
-// "Phoenix server restart protocol:\n1. Turn off load balancer..."
-// Model generates tool calls according to protocol:
+// The model sees in its context:
+// "Регламент перезагрузки сервера Phoenix:\n1. Выключить балансировщик..."
+// The model generates tool calls according to the runbook:
 
 // msg2.ToolCalls = [
-//     {Function: {Name: "restart_server", Arguments: "{\"hostname\": \"phoenix\"}"}},
-//     // Or first turn off load balancer, then server
+//     {ID: "call_1", Name: "restart_server", Arguments: "{\"hostname\": \"phoenix\"}"},
+//     // Or first shut down the load balancer, then the server
 // ]
 ```
 
-**Why this isn't magic:**
+**What actually happens:**
 
-1. **Model doesn't "know" the protocol** — it receives it in context after search
-2. **Search is a regular tool** — same as `ping` or `restart_service`
-3. **Search result is added to `messages[]`** — model receives it as a new message
-4. **Model generates actions based on context** — it processes documentation and follows it
+1. **The model doesn't "know" the runbook** — it sees it in its context after the search
+2. **Search is just an ordinary tool** — the same as `ping` or `restart_service`
+3. **The search result is appended to `messages[]`** — the model sees it as a new message
+4. **The model generates actions based on the context** — it sees the documentation and follows it
 
-**Takeaway:** RAG is not magic "knowledge", but a mechanism for adding relevant information to the model's context through a regular tool call.
+**The essence:** RAG is not "knowledge out of thin air" — it's a way to add relevant information to the model's context through an ordinary tool call.
 
 ## Simple RAG vs Vector Search
 
-In this lab, we implement **simple RAG** (keyword search). In production, **vector search** (Semantic Search) is used, which searches by meaning, not by words.
+Simple RAG (keyword search) is implemented in [Lab 07](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab07-rag) — the lab is not yet revised and will be updated in a separate pass. Production uses **vector search** (Semantic Search), which searches by meaning rather than by words.
 
 **Simple RAG ([Lab 07](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab07-rag)):**
 ```go
-// Search by substring match
+// Search by substring occurrence
 if strings.Contains(content, query) {
     return content
 }
@@ -178,22 +178,23 @@ if strings.Contains(content, query) {
 
 **Vector search (production):**
 ```go
-// 1. Documents are split into chunks and converted to vectors (embeddings)
+// 1. Documents are split into chunks and converted to vectors
+// by the provider's embedding model (dimensionality d depends on the model)
 chunks := []Chunk{
-    {ID: "chunk_1", Text: "Phoenix restart protocol...", Embedding: [1536]float32{...}},
-    {ID: "chunk_2", Text: "Step 2: Turn off load balancer...", Embedding: [1536]float32{...}},
+    {ID: "chunk_1", Text: "Регламент перезагрузки Phoenix...", Embedding: embed("Регламент перезагрузки Phoenix...")},
+    {ID: "chunk_2", Text: "Шаг 2: Выключить балансировщик...", Embedding: embed("Шаг 2: Выключить балансировщик...")},
 }
 
-// 2. User query is also converted to vector
-queryEmbedding := embedQuery("Phoenix restart protocol")  // [1536]float32{...}
+// 2. The user's query is also converted to a vector
+queryEmbedding := embed("Phoenix restart protocol")
 
 // 3. Search for similar vectors by cosine distance
 similarDocs := vectorDB.Search(queryEmbedding, topK=3)
-// Returns 3 most similar chunks by meaning (not by words!)
+// Returns the 3 most semantically similar chunks (not by words!)
 
-// 4. Result is added to model context the same way as in simple RAG
+// 4. The result is added to the model's context just like in simple RAG
 result := formatChunks(similarDocs)  // "Chunk 1: ...\nChunk 2: ...\nChunk 3: ..."
-messages = append(messages, openai.ChatCompletionMessage{
+messages = append(messages, Message{
     Role:    "tool",
     Content: result,
 })
@@ -201,165 +202,67 @@ messages = append(messages, openai.ChatCompletionMessage{
 
 **Why vector search is better:**
 - Searches by **meaning**, not by words
-- Will find "restart Phoenix" even if document says "Phoenix server restart"
+- Finds "restart Phoenix" even if the document says "перезагрузка сервера Phoenix"
 - Works with synonyms and different phrasings
 
 ## Chunking
 
-Documents are split into chunks (pieces) for efficient search.
+Documents are split into chunks (pieces) for efficient retrieval.
 
 **Example:**
 ```
-Document: "Phoenix server restart protocol..."
-Chunk 1: "Phoenix server restart protocol: step 1..."
-Chunk 2: "Step 2: Turn off load balancer..."
-Chunk 3: "Step 3: Restart server..."
+Document: "Регламент перезагрузки сервера Phoenix..."
+Chunk 1: "Регламент перезагрузки сервера Phoenix: шаг 1..."
+Chunk 2: "Шаг 2: Выключить балансировщик..."
+Chunk 3: "Шаг 3: Перезагрузить сервер..."
 ```
 
 ## Advanced RAG Techniques
 
-Basic RAG works like this: user query → search → retrieved documents → response. In practice, this isn't enough. The query can be vague, search can be imprecise, and results can be irrelevant.
+Basic RAG works like this: user query → search → retrieved documents → answer. In practice, this is not enough. The query may be vague, the search imprecise, and the results irrelevant.
 
 Let's look at techniques that solve these problems.
 
-### RAG Evolution
+### The evolution of RAG
 
 ```
 Basic RAG          Advanced RAG           Agentic RAG
-┌──────────┐       ┌──────────────┐       ┌──────────────────┐
-│ Query    │       │ Query        │       │ Agent decides:   │
-│   ↓      │       │   ↓          │       │ - Search or not  │
-│ Search   │       │ Transform    │       │ - Where to search│
-│   ↓      │       │   ↓          │       │ - Is it enough   │
-│ Retrieve │       │ Route        │       │ - Search more    │
-│   ↓      │       │   ↓          │       │   ↓              │
-│ Generate │       │ Hybrid Search│       │ Iterative        │
-│          │       │   ↓          │       │ search loop      │
-│          │       │ Rerank       │       │                  │
-│          │       │   ↓          │       │                  │
-│          │       │ Generate     │       │                  │
-└──────────┘       └──────────────┘       └──────────────────┘
+┌──────────┐       ┌──────────────┐       ┌─────────────────┐
+│ Query    │       │ Query        │       │ Agent decides:  │
+│   ↓      │       │   ↓          │       │ - Search or not │
+│ Search   │       │ Transform    │       │ - Where to look │
+│   ↓      │       │   ↓          │       │ - Enough info?  │
+│ Retrieve │       │ Route        │       │ - Search again  │
+│   ↓      │       │   ↓          │       │   ↓             │
+│ Generate │       │ Hybrid Search│       │ Iterative       │
+│          │       │   ↓          │       │ search in a loop│
+│          │       │ Rerank       │       │                 │
+│          │       │   ↓          │       │                 │
+│          │       │ Generate     │       │                 │
+└──────────┘       └──────────────┘       └─────────────────┘
 ```
 
-### Query Transformation
+### Pre- and post-query processing: when it's worth it
 
-**Problem:** A user writes "server is down". Searching for this query won't find the document "Server failure recovery procedure".
+Between the user's query and the search (and between the search and the answer) you can insert extra LLM calls: rephrase the query, generate a hypothetical document, pick a source, judge the relevance of what was found. These are working techniques — but each one carries the same price tag: **an extra LLM call before or after the search**. It adds latency and tokens to every request, even when the basic search would have coped on its own.
 
-**Solution:** Transform the query before searching — rephrase, expand, or break it into sub-queries.
+| Technique | What it does | When it's justified |
+|-------|-----------|----------------|
+| **Query Rewriting** | The LLM reformulates the query into the language of the documents: "the server is down" → "server recovery procedure after a failure" | User queries are conversational, documents are formal; search often misses |
+| **Sub-Query Decomposition** | A complex query is split into several simple ones: "compare nginx settings on prod and staging" → two independent searches | Queries aggregate several independent questions |
+| **HyDE** (Hypothetical Document Embeddings) | The LLM generates a hypothetical answer, and the search is run on its embedding: the embedding of a document is closer to the embedding of another document than the embedding of a short query | Short queries against long canonical documents; rare terminology |
+| **Routing** | Classifying the query and choosing a source: wiki, SQL database, metrics API | Several genuinely different sources that can't all be queried |
+| **Self-RAG** | The model evaluates the relevance and sufficiency of what was found: answer / refine the query / search again | A noisy corpus where a search miss costs more than an extra iteration |
 
-**Technique 1: Query Rewriting**
+**General rule:** turn on a technique when it gives you a cheap win specifically on your corpus (verify with evals — [ch. 23](../23-evals-in-cicd/README.md)), not "because the articles say so". Escalation order: first fix the search itself (chunking, hybrid, reranking below), and only then add LLM scaffolding around it.
 
-```go
-// Rewrite the query before search for better retrieval
-func rewriteQuery(originalQuery string, client *openai.Client) (string, error) {
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: "gpt-4o-mini", // Cheap model — simple task
-        Messages: []openai.ChatCompletionMessage{
-            {
-                Role: openai.ChatMessageRoleSystem,
-                Content: `Rewrite the user query to be more specific for document search.
-Return ONLY the rewritten query, nothing else.
-Examples:
-- "server is down" → "server failure recovery procedure"
-- "DB is slow" → "PostgreSQL performance diagnostics high latency"`,
-            },
-            {Role: openai.ChatMessageRoleUser, Content: originalQuery},
-        },
-        Temperature: 0,
-    })
-    if err != nil {
-        return originalQuery, err // Fall back to original
-    }
-    return resp.Choices[0].Message.Content, nil
-}
-```
+In agentic mode (the section below), some of these techniques come for free: the model reformulates the query itself, picks the source itself and decides on its own whether to search again — because for it, search is an ordinary tool call, not a pipeline step hardcoded in code.
 
-**Technique 2: Sub-Query Decomposition**
+### Hybrid search
 
-A complex query is broken into several simpler ones. Results are merged.
+**Problem:** Vector search is good at searching by meaning but poor at exact terms. Keyword search is the opposite. The query "ORA-12154 error" needs to be searched both by the keyword "ORA-12154" and by the meaning "Oracle connection error".
 
-```go
-// "Compare nginx config on prod and staging" breaks into:
-// 1. "nginx configuration production"
-// 2. "nginx configuration staging"
-subQueries := decomposeQuery(userQuery)
-var allResults []SearchResult
-for _, sq := range subQueries {
-    results := searchKnowledgeBase(sq)
-    allResults = append(allResults, results...)
-}
-```
-
-**Technique 3: HyDE (Hypothetical Document Embeddings)**
-
-Instead of searching by the query, ask the model to generate a **hypothetical answer**. Then search for documents similar to that answer.
-
-```go
-// Step 1: Model generates a hypothetical document
-hypothetical := generateHypotheticalAnswer(query)
-// query: "how to set up SSL"
-// hypothetical: "To set up SSL on nginx: 1. Obtain a certificate... 2. Add to config..."
-
-// Step 2: Search for documents similar to the hypothetical answer
-embedding := embedText(hypothetical)
-results := vectorDB.Search(embedding, topK=5)
-// Finds real documents about SSL setup, even if written differently
-```
-
-**Why this works:** The embedding of a hypothetical document is closer to the embedding of the real document than the embedding of a short query.
-
-### Routing (Query Routing)
-
-**Problem:** You have multiple data sources: a wiki, SQL database, monitoring API. The query "server response time for the last hour" won't be found in the wiki — you need the metrics database.
-
-**Solution:** Classify the query and route it to the right source.
-
-```go
-type QueryRoute struct {
-    Source   string // "wiki", "sql", "metrics_api", "vector_db"
-    Query    string // Original or transformed query
-    Reason   string // Why this source
-}
-
-func routeQuery(query string, client *openai.Client) (QueryRoute, error) {
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: "gpt-4o-mini",
-        Messages: []openai.ChatCompletionMessage{
-            {
-                Role: openai.ChatMessageRoleSystem,
-                Content: `Classify the query and route to the correct data source.
-Available sources:
-- "wiki": documentation, procedures, runbooks
-- "sql": structured data, tables, historical records
-- "metrics_api": real-time metrics, monitoring data
-- "vector_db": semantic search in knowledge base
-
-Return JSON: {"source": "...", "query": "...", "reason": "..."}`,
-            },
-            {Role: openai.ChatMessageRoleUser, Content: query},
-        },
-        Temperature: 0,
-    })
-    if err != nil {
-        return QueryRoute{Source: "vector_db", Query: query}, err
-    }
-
-    var route QueryRoute
-    json.Unmarshal([]byte(resp.Choices[0].Message.Content), &route)
-    return route, nil
-}
-
-// Usage:
-route, _ := routeQuery("server response time for the last hour")
-// route.Source = "metrics_api"
-// route.Reason = "query about real-time metrics"
-```
-
-### Hybrid Search
-
-**Problem:** Vector search finds meaning well but struggles with exact terms. Keyword search is the opposite. The query "error ORA-12154" needs both keyword search for "ORA-12154" and semantic search for "Oracle connection error".
-
-**Solution:** Combine both approaches and merge results.
+**Solution:** Combine both approaches and merge the results.
 
 ```go
 type SearchResult struct {
@@ -376,7 +279,7 @@ func hybridSearch(query string, topK int) []SearchResult {
     embedding := embedQuery(query)
     vectorResults := vectorDB.Search(embedding, topK)
 
-    // 3. Reciprocal Rank Fusion (RRF) — merge results
+    // 3. Reciprocal Rank Fusion (RRF) — merging the results
     return reciprocalRankFusion(keywordResults, vectorResults, topK)
 }
 
@@ -392,27 +295,27 @@ func reciprocalRankFusion(lists ...[]SearchResult) []SearchResult {
     }
 
     // Sort by combined score (descending)
-    // ... sort and return top-K ...
+    // ... sorting and returning top-K ...
 }
 ```
 
-**When each approach works best:**
+**When each approach works better:**
 
-| Query Type | Keyword | Vector | Hybrid |
-|------------|---------|--------|--------|
+| Query type | Keyword | Vector | Hybrid |
+|-------------|---------|--------|--------|
 | "ORA-12154" | Excellent | Poor | Excellent |
-| "can't connect to database" | Poor | Excellent | Excellent |
-| "ORA-12154 won't connect" | Medium | Medium | Excellent |
+| "can't connect to the database" | Poor | Excellent | Excellent |
+| "ORA-12154 not connecting" | Fair | Fair | Excellent |
 
 ### Reranking
 
-**Problem:** Search returned 20 results. Not all are equally relevant. Passing all 20 into context wastes tokens.
+**Problem:** The search returned 20 results. They are not all equally relevant. Passing all 20 into the context is a waste of tokens.
 
-**Solution:** After initial retrieval, rerank results using a more accurate (but slower) model.
+**Solution:** After the initial search, rerank the results with a more accurate (but slower) model.
 
 ```go
 func rerankResults(query string, results []SearchResult, topK int) []SearchResult {
-    // Use LLM to score relevance of each result
+    // Use an LLM to score the relevance of each result
     type scored struct {
         Result SearchResult
         Score  float64
@@ -438,745 +341,351 @@ func rerankResults(query string, results []SearchResult, topK int) []SearchResul
 }
 ```
 
-**Two-stage pipeline:** Fast retrieval (BM25/vector, top-100) → Precise reranking (cross-encoder, top-5).
+**The two-stage pipeline:** Fast search (BM25/vector, top-100) → Accurate reranking (cross-encoder, top-5).
 
-### Self-RAG (Self-Assessment of Retrieval Quality)
+### Agentic RAG (RAG as an agent tool)
 
-**Problem:** The agent found documents, but they may be irrelevant, outdated, or incomplete. Basic RAG doesn't notice this.
+**Problem:** The pre- and post-processing from the table above cannot make complex decisions: which source to use, whether information from several documents needs to be combined, or solve a multi-hop task (the answer requires a chain of searches). Each such decision there is a pipeline step hardcoded in code.
 
-**Solution:** The model assesses retrieved document quality and decides: answer, refine the query, or search more.
-
-```go
-type RetrievalAssessment struct {
-    IsRelevant  bool   `json:"is_relevant"`  // Are documents relevant to the query?
-    IsSufficient bool  `json:"is_sufficient"` // Is there enough information to answer?
-    Action      string `json:"action"`        // "answer", "refine_query", "search_more"
-    RefinedQuery string `json:"refined_query,omitempty"` // Refined query (if needed)
-}
-
-func assessRetrieval(query string, docs []SearchResult, client *openai.Client) (RetrievalAssessment, error) {
-    docsText := formatDocs(docs)
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model: "gpt-4o-mini",
-        Messages: []openai.ChatCompletionMessage{
-            {
-                Role: openai.ChatMessageRoleSystem,
-                Content: `Assess if the retrieved documents are relevant and sufficient to answer the query.
-Return JSON: {"is_relevant": bool, "is_sufficient": bool, "action": "answer"|"refine_query"|"search_more", "refined_query": "..."}`,
-            },
-            {
-                Role: openai.ChatMessageRoleUser,
-                Content: fmt.Sprintf("Query: %s\n\nRetrieved documents:\n%s", query, docsText),
-            },
-        },
-        Temperature: 0,
-    })
-    if err != nil {
-        return RetrievalAssessment{IsRelevant: true, IsSufficient: true, Action: "answer"}, err
-    }
-
-    var assessment RetrievalAssessment
-    json.Unmarshal([]byte(resp.Choices[0].Message.Content), &assessment)
-    return assessment, nil
-}
-```
-
-**Self-RAG in a loop:**
+**Solution:** RAG is embedded into the Agent Loop (a.k.a. the ReAct Loop — see [Chapter 04](../04-autonomy-and-loops/README.md)). The agent itself decides when to search, where to search and whether the information is sufficient.
 
 ```go
-func selfRAG(query string, maxAttempts int) ([]SearchResult, error) {
-    currentQuery := query
-
-    for attempt := 0; attempt < maxAttempts; attempt++ {
-        docs := hybridSearch(currentQuery, 10)
-        assessment, _ := assessRetrieval(currentQuery, docs)
-
-        switch assessment.Action {
-        case "answer":
-            return docs, nil // Documents are sufficient — answer
-        case "refine_query":
-            currentQuery = assessment.RefinedQuery // Refine the query
-        case "search_more":
-            // Expand search (more top-K or different source)
-            moreDocs := hybridSearch(currentQuery, 20)
-            docs = append(docs, moreDocs...)
-            return docs, nil
-        }
-    }
-    return nil, fmt.Errorf("could not find sufficient documents after %d attempts", maxAttempts)
-}
-```
-
-### Agentic RAG (RAG as an Agent Tool)
-
-**Problem:** Self-RAG assesses retrieval quality but can't make complex decisions: which source to use, whether to combine information from multiple documents, or solve multi-hop tasks (where the answer requires a chain of searches).
-
-**Solution:** RAG is embedded into the Agent Loop (a.k.a. ReAct Loop — see [Chapter 04](../04-autonomy-and-loops/README.md)). The agent decides when to search, where to search, and whether it has enough information.
-
-```go
-// Agentic RAG: RAG is simply agent tools
-tools := []openai.Tool{
-    // Tool 1: Search documentation
+// Agentic RAG: RAG is just the agent's tools
+tools := []ToolDef{
+    // Tool 1: Search in documentation
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "search_docs",
-            Description: "Search documentation and runbooks. Use when you need procedures or technical details.",
-            Parameters:  searchParamsSchema,
-        },
+        Name:        "search_docs",
+        Description: "Search documentation and runbooks. Use when you need procedures or technical details.",
+        Parameters:  searchParamsSchema,
     },
-    // Tool 2: SQL query to metrics database
+    // Tool 2: SQL query against the metrics database
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "query_metrics",
-            Description: "Query metrics database. Use when you need historical data or statistics.",
-            Parameters:  sqlParamsSchema,
-        },
+        Name:        "query_metrics",
+        Description: "Query metrics database. Use when you need historical data or statistics.",
+        Parameters:  sqlParamsSchema,
     },
-    // Tool 3: Search similar incidents
+    // Tool 3: Search for similar incidents
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "search_incidents",
-            Description: "Search past incidents for similar issues and their resolutions.",
-            Parameters:  searchParamsSchema,
-        },
+        Name:        "search_incidents",
+        Description: "Search past incidents for similar issues and their resolutions.",
+        Parameters:  searchParamsSchema,
     },
 }
 
-// Agent decides on its own:
+// The agent decides on its own:
 // Iteration 1: search_docs("nginx 502 error troubleshooting")
 // Iteration 2: query_metrics("SELECT avg(latency) FROM requests WHERE status=502 AND time > now()-1h")
 // Iteration 3: search_incidents("nginx 502 upstream timeout")
 // Iteration 4: Final answer combining information from all sources
 ```
 
-**Multi-hop RAG (search chains):**
+**Multi-hop RAG (a chain of searches):**
 
 ```
 Query: "Why did the payments service go down yesterday?"
 
 Step 1: search_incidents("payments service outage yesterday")
-       → "Incident INC-4521: payments went down due to DB timeout"
+       → "Incident INC-4521: payments went down due to a database timeout"
 
 Step 2: search_docs("payments database connection configuration")
        → "Payments uses PostgreSQL on db-prod-03, connection pool = 20"
 
 Step 3: query_metrics("SELECT connections FROM pg_stat WHERE time = yesterday")
-       → "Peak connections: 150 (with limit of 100)"
+       → "Connection peak: 150 (limit is 100)"
 
-Step 4: Final answer: "Payments went down due to connection pool exhaustion.
-        Peak was 150 connections with a limit of 100. Recommendation: increase pool to 200."
+Step 4: Final answer: "Payments went down because the connection pool was exhausted.
+        The peak was 150 connections against a limit of 100. Recommendation: increase the pool to 200."
 ```
 
-**Differences between approaches:**
+**The difference between the approaches:**
 
-| Approach | Who makes decisions | Where's the logic |
-|----------|-------------------|------------------|
+| Approach | Who makes the decisions | Where the logic lives |
+|--------|----------------------|-----------|
 | Basic RAG | Rigid pipeline | Code (hardcoded) |
-| Advanced RAG | Pipeline with branching | Code + config |
-| Self-RAG | Model assesses quality | Model (assessment) |
-| Agentic RAG | Agent controls everything | Agent Loop |
+| Advanced RAG | Pipeline with branches | Code + config |
+| Self-RAG | The model evaluates quality | Model (assessment) |
+| Agentic RAG | The agent runs everything | Agent loop |
 
-## RAG for Action Space (Tool Retrieval)
+## Many Tools ≠ You Need a Catalog of Them
 
-So far we've discussed RAG for **documents** (protocols, instructions). But RAG is also needed for **action space** — when an agent has a potentially infinite number of tools.
+So far we've talked about RAG for **documents** (runbooks, procedures). A frequent next thought is: "why not apply RAG to the action space?" — after all, an agent potentially has an endless number of commands and tools. Let's look at why a tool catalog with retrieval over it is almost always over-engineering, and what the right form is.
 
-### The Problem: "Infinite" Tools
+### The problem: "infinite" commands
 
-**Situation:** An agent needs to work with Linux commands for troubleshooting. Linux has thousands of commands (`grep`, `awk`, `sed`, `jq`, `sort`, `uniq`, `head`, `tail`, etc.), and they can be combined into pipelines.
+**Situation:** The agent has to work with Linux commands for troubleshooting. Linux has thousands of commands (`grep`, `awk`, `sed`, `jq`, `sort`, `uniq`, `head`, `tail`, etc.), and they combine into pipelines.
 
-**Problem:**
-- Can't pass all commands in `tools[]` — that's thousands of tokens
-- Model performs worse with large lists (more hallucinations)
-- Latency increases (more tokens = slower)
-- No security control (which commands are dangerous?)
+**The problem:**
+- You can't put all the commands into `tools[]` — that's thousands of tokens in every request
+- The model chooses worse from a large list (more hallucinations)
+- There's no safety control (which commands are dangerous?)
 
-**Naive solution (doesn't work):**
-```go
-// BAD: One universal tool for everything
-tools := []openai.Tool{
-    {
-        Function: &openai.FunctionDefinition{
-            Name: "run_shell",
-            Description: "Execute any shell command",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "command": {"type": "string"}
-                }
-            }`),
-        },
-    },
-}
+**The naive solution (doesn't work):** one universal `run_shell(command)` tool with no restrictions. No validation (`rm -rf /` can be executed), no audit (it's unclear which commands were run), no control.
+
+### Anti-pattern: a catalog of tool wrappers and tool RAG over shell commands
+
+The first idea: build a **tool catalog** — one wrapper per command (`grep`, `sort`, `head`...) with descriptions and tags — and retrieve the relevant ones before planning. This is called Tool RAG (action-space retrieval), and for shell commands it's over-engineering:
+
+- **A command already knows how to be found.** The knowledge that "filtering logs requires `grep | sort | head`" lives in documentation (README, skill) and in the model's own knowledge — not in a catalog of schemas. Retrieval over command descriptions solves a problem that doesn't exist.
+- **Retrieval doesn't check correctness.** Searching the catalog returns commands "similar in description," but doesn't guarantee the command fits or that its arguments are correct. Correctness is still the runtime's responsibility (validation, allowlist) — the safety system doesn't change, and a retrieval layer is added on top as a second subsystem that has to be kept in sync with the actual commands and run through evals.
+- **A catalog of 20+ wrappers over one system** (shell, kubectl, docker) is not a "rich action space" — it's one `exec` tool duplicated by twenty schemas, each paying for itself in every request.
+
+A special case of this anti-pattern is **JSON DSL pipelines**: the model generates a JSON plan of steps (`grep` → `sort` → `head`), and the runtime executes it. It looks "more reliable," but in practice it's a second language for describing actions that needs to be validated, debugged, and maintained — instead of ordinary tool calls, which the model already generates well.
+
+### The right form: skills + exec with an allowlist
+
+When there are many actions, their **description** moves out of `tools[]` into files, and **execution** goes into a single `exec` tool with an allowlist. This is the **skills** mechanism ([ch. 09](../09-agent-architecture/README.md)): one `SKILL.md` per area of knowledge + progressive disclosure.
+
+1. **Discovery.** At startup, the runtime reads all `SKILL.md` files and adds one line per skill to the system prompt: name + `description`. 10 skills ≈ 10 lines — that's the entire cost of discovery.
+2. **Activation.** When the model decides it needs a skill, it reads the body of `SKILL.md` itself — via the ordinary `read` tool. The text enters the history as a tool_result.
+3. **Execution.** The model acts on the skill's instructions through `exec` — with a command allowlist and confirmation of dangerous operations.
+
+**Example: the "k8s-debug" skill**
+
+```
+skills/k8s-debug/SKILL.md
+---
+name: k8s-debug
+description: Debug Kubernetes pods — check status, logs, describe.
+  Use when user reports pod crashes or restart loops.
+---
+1. kubectl get pods -n <namespace> — find the problem pod
+2. kubectl describe pod <pod> -n <namespace> — events and restart causes
+3. kubectl logs <pod> -n <namespace> --tail=100 — the latest logs
+Dangerous operations (delete, rollout undo) — only with confirmation.
 ```
 
-**Why this is bad:**
-- No validation (could execute `rm -rf /`)
-- No audit trail (unclear which commands were used)
-- No control (model can call anything)
-
-### Solution: Tool RAG (Action-Space Retrieval)
-
-**Idea:** Store a **tool catalog** and retrieve only relevant tools before planning.
-
-**How it works:**
-
-1. **Tool catalog** stores metadata for each tool:
-    - Name and description
-    - Tags/categories (e.g., "text-processing", "network", "filesystem")
-    - Parameters and their types
-    - Risk level (safe/moderate/dangerous)
-    - Usage examples
-
-2. **Before planning**, agent searches for relevant tools:
-    - Based on user query ("find errors in logs")
-    - Retrieves top-k tools (e.g., `grep`, `tail`, `jq`)
-    - Adds only their schemas to `tools[]`
-
-3. **For pipelines**, use a two-level contract:
-    - **JSON DSL** describes the pipeline plan (steps, stdin/stdout, expectations)
-    - **Runtime** maps DSL to tool calls or executes via single `execute_pipeline`
-
-### Example: Tool RAG for Linux Commands
-
-**Step 1: Tool Catalog**
+The system prompt has a single line: `k8s-debug: Debug Kubernetes pods...`. From there the model works on its own: `read("skills/k8s-debug/SKILL.md")` → `exec("kubectl", "get", "pods", "-n", "prod")` → `exec("kubectl", "logs", ...)`. No catalog of hundreds of tool wrappers and no retrieval over it — yet the model sees all the diagnostic steps and executes them through a single controlled tool:
 
 ```go
-type ToolDefinition struct {
-    Name        string
-    Description string
-    Tags        []string  // "text-processing", "filtering", "sorting"
-    RiskLevel   string    // "safe", "moderate", "dangerous"
-    Schema      json.RawMessage
-}
-
-var toolCatalog = []ToolDefinition{
-    {
-        Name:        "grep",
-        Description: "Search for patterns in text. Use for filtering lines matching a pattern.",
-        Tags:        []string{"text-processing", "filtering", "search"},
-        RiskLevel:   "safe",
-        Schema: json.RawMessage(`{
-            "type": "object",
-            "properties": {
-                "pattern": {"type": "string"},
-                "input": {"type": "string"}
-            }
-        }`),
-    },
-    {
-        Name:        "sort",
-        Description: "Sort lines of text. Use for ordering output.",
-        Tags:        []string{"text-processing", "sorting"},
-        RiskLevel:   "safe",
-        Schema: json.RawMessage(`{
-            "type": "object",
-            "properties": {
-                "input": {"type": "string"}
-            }
-        }`),
-    },
-    {
-        Name:        "head",
-        Description: "Show first N lines. Use for limiting output.",
-        Tags:        []string{"text-processing", "filtering"},
-        RiskLevel:   "safe",
-        Schema: json.RawMessage(`{
-            "type": "object",
-            "properties": {
-                "lines": {"type": "number"},
-                "input": {"type": "string"}
-            }
-        }`),
-    },
-    // ... hundreds more tools
-}
-```
-
-**Step 2: Search for Relevant Tools**
-
-For tool search, you can use two approaches: simple keyword search (for learning) and vector search (for production).
-
-**Simple search ([Lab 13](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab13-tool-retrieval)):**
-```go
-func searchToolCatalog(query string, topK int) []ToolDefinition {
-    // Simple search by description and tags
-    var results []ToolDefinition
-    
-    queryLower := strings.ToLower(query)
-    for _, tool := range toolCatalog {
-        // Search by description
-        if strings.Contains(strings.ToLower(tool.Description), queryLower) {
-            results = append(results, tool)
-            continue
-        }
-        // Search by tags
-        for _, tag := range tool.Tags {
-            if strings.Contains(strings.ToLower(tag), queryLower) {
-                results = append(results, tool)
-                break
-            }
-        }
+// exec with an allowlist — the single "executor" of commands
+func execCommand(command string, args ...string) (string, error) {
+    allowed := []string{"kubectl", "grep", "sort", "head", "tail", "jq"} // allowlist, not a denylist
+    if !slices.Contains(allowed, command) {
+        return "", fmt.Errorf("command %q is not in the allowlist", command)
     }
-    
-    // Return top-k
-    if len(results) > topK {
-        return results[:topK]
-    }
-    return results
+    cmd := exec.Command(command, args...)
+    // ... execute, log for audit, cap the output size
+    return string(output), nil
 }
 ```
 
-**Vector search (production):**
+> **How the real SDK does it.** Tool catalogs with retrieval are rare precisely because skills displaced them: one line per skill in the system prompt instead of hundreds of schemas in `tools[]`. The agent's main "retrieval" tool is `read`: the model reads the file it needs when it needs it. Reading is constrained by an FSHooks policy: which directories can be read, what gets logged, and what enters the context — that's decided by the runtime, not the model.
+
+### When there really are many tools: tool retrieval as a necessary evil
+
+There are cases where a tool really is a separate tool with its own schema: dozens of SaaS integrations, hundreds of endpoints behind tool servers ([ch. 18](../18-tool-protocols-and-servers/README.md)). Then dynamically selecting a subset of tools before a request (tool retrieval) is a justified **forced** measure. Remember the cost: the `tools[]` block is sent and paid for in **every** request ([ch. 03](../03-tools-and-function-calling/README.md)); retrieval shrinks the block but doesn't eliminate the catalog, which still needs to be versioned and checked with evals. A reference implementation — [Lab 13](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab13-tool-retrieval).
+
+## Common Mistakes
+
+### Mistake 1: The agent doesn't search the knowledge base
+
+**Symptom:** The agent performs actions without searching the knowledge base, relying only on general knowledge.
+
+**Cause:** The search tool's description doesn't tell the model **what** it contains: it's unclear which tasks require a search.
+
+**Fix:** Don't force it via the prompt ("Always search knowledge base before actions" is an anti-pattern: the line is either ignored or makes the model search even where it isn't needed). Let the model make the decision itself — via an accurate tool description:
+
 ```go
-// 1. Tools are converted to vectors (embeddings)
-toolEmbeddings := []ToolEmbedding{
-    {
-        Tool:      toolCatalog[0], // grep
-        Embedding: embedText("Search for patterns in text. Use for filtering lines matching a pattern."), // [1536]float32{...}
-    },
-    {
-        Tool:      toolCatalog[1], // sort
-        Embedding: embedText("Sort lines of text. Use for ordering output."), // [1536]float32{...}
-    },
-    // ... all tools
-}
+// GOOD: the description says WHAT is in the knowledge base — the model decides on its own when it's needed
+Description: "Search the internal knowledge base: runbooks, procedures, protocols. Use when the task involves internal systems or company-specific procedures."
 
-// 2. User query is also converted to vector
-queryEmbedding := embedQuery("find errors in logs")  // [1536]float32{...}
-
-// 3. Search for similar vectors by cosine distance
-similarTools := vectorDB.Search(queryEmbedding, topK=5)
-// Returns 5 most similar tools by meaning (not by words!)
-
-// 4. Result is used the same way as in simple search
-relevantTools := extractTools(similarTools)  // [grep, tail, jq, ...]
+// BAD: forcing it via the prompt
+systemPrompt := "... Always search knowledge base before performing actions ..."
 ```
 
-**Why vector search is better for tools:**
-- Searches by **meaning**, not by words
-- Will find `grep` even if query is "filter lines by pattern" (without word "grep")
-- Works with synonyms and different phrasings
-- Especially important for large catalogs (1000+ tools)
+If a search is **always** mandatory in your task (for example, an action cannot be performed without a runbook) — that's a runtime invariant, not a line in the prompt: the code doesn't perform the action until the history contains a search result.
 
-**Example usage:**
+### Mistake 2: A poor search query
+
+**Symptom:** The agent can't find the information it needs in the knowledge base.
+
+**Cause:** The search query is too generic or doesn't contain keywords from the document.
+
+**Fix:**
 ```go
-userQuery := "find errors in logs"
-relevantTools := searchToolCatalog("error log filter", 5)
-// Returns: [grep, tail, jq, ...] - only relevant ones!
-```
-
-**Step 3: Add Only Relevant Tools to Context**
-
-```go
-// Instead of passing all 1000+ tools
-relevantTools := searchToolCatalog(userQuery, 5)
-
-// Convert to OpenAI format
-tools := make([]openai.Tool, 0, len(relevantTools))
-for _, toolDef := range relevantTools {
-    tools = append(tools, openai.Tool{
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        toolDef.Name,
-            Description: toolDef.Description,
-            Parameters:  toolDef.Schema,
-        },
-    })
-}
-
-// Now tools contains only 5 relevant tools instead of 1000+
-```
-
-### Pipelines: JSON DSL + Runtime
-
-For complex tasks (e.g., "find top 10 errors in logs"), the agent must build **pipelines** from multiple commands.
-
-**Approach 1: JSON DSL Pipeline**
-
-Agent generates a formalized pipeline plan:
-
-```go
-type PipelineStep struct {
-    Tool    string                 `json:"tool"`
-    Args    map[string]interface{} `json:"args"`
-    Input   string                 `json:"input,omitempty"`  // stdin from previous step
-    Output  string                 `json:"output,omitempty"` // expected format
-}
-
-type Pipeline struct {
-    Steps         []PipelineStep `json:"steps"`
-    ExpectedOutput string        `json:"expected_output"`
-    RiskLevel     string         `json:"risk_level"` // "safe", "moderate", "dangerous"
-}
-
-// Example: Agent generates this JSON
-pipelineJSON := `{
-    "steps": [
-        {
-            "tool": "grep",
-            "args": {"pattern": "ERROR"},
-            "input": "logs.txt"
-        },
-        {
-            "tool": "sort",
-            "args": {},
-            "input": "{{step_0.output}}"
-        },
-        {
-            "tool": "head",
-            "args": {"lines": 10},
-            "input": "{{step_1.output}}"
-        }
-    ],
-    "expected_output": "Top 10 error lines, sorted",
-    "risk_level": "safe"
-}`
-```
-
-**Approach 2: Runtime Executes Pipeline**
-
-```go
-func executePipeline(pipelineJSON string, inputData string) (string, error) {
-    var pipeline Pipeline
-    if err := json.Unmarshal([]byte(pipelineJSON), &pipeline); err != nil {
-        return "", err
-    }
-    
-    // Validation: check risk
-    if pipeline.RiskLevel == "dangerous" {
-        return "", fmt.Errorf("dangerous pipeline requires confirmation")
-    }
-    
-    // Execute steps sequentially
-    currentInput := inputData
-    for i, step := range pipeline.Steps {
-        // Substitute result from previous step
-        if strings.Contains(step.Input, "{{step_") {
-            step.Input = currentInput
-        }
-        
-        // Execute step (in reality - call corresponding tool)
-        result, err := executeToolStep(step.Tool, step.Args, step.Input)
-        if err != nil {
-            return "", fmt.Errorf("step %d failed: %v", i, err)
-        }
-        
-        currentInput = result
-    }
-    
-    return currentInput, nil
-}
-```
-
-**Approach 3: `execute_pipeline` Tool**
-
-Agent calls a single tool with pipeline JSON:
-
-```go
-tools := []openai.Tool{
-    {
-        Function: &openai.FunctionDefinition{
-            Name: "execute_pipeline",
-            Description: "Execute a pipeline of tools. Provide pipeline JSON with steps, expected output, and risk level.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "pipeline": {"type": "string", "description": "JSON pipeline definition"},
-                    "input_data": {"type": "string", "description": "Input data (e.g., log file content)"}
-                },
-                "required": ["pipeline", "input_data"]
-            }`),
-        },
-    },
-}
-
-// Agent generates tool call:
-// execute_pipeline({
-//     "pipeline": "{\"steps\":[...], \"risk_level\": \"safe\"}",
-//     "input_data": "log content here"
-// })
-```
-
-### Practical Patterns
-
-**Tool Discovery via Tool Servers:**
-
-In production, tools are often provided via [Tool Servers](../18-tool-protocols-and-servers/README.md). The catalog can be retrieved dynamically:
-
-```go
-// Tool Server provides ListTools()
-toolServer := connectToToolServer("http://localhost:8080")
-allTools, _ := toolServer.ListTools()
-
-// Filter by task
-relevantTools := filterToolsByQuery(allTools, userQuery, topK=5)
-```
-
-**Validation and Security:**
-
-```go
-func validatePipeline(pipeline Pipeline) error {
-    // Check risk
-    if pipeline.RiskLevel == "dangerous" {
-        return fmt.Errorf("dangerous pipeline requires human approval")
-    }
-    
-    // Check tool allowlist
-    allowedTools := map[string]bool{
-        "grep": true, "sort": true, "head": true,
-        // rm, dd and other dangerous ones - NOT in allowlist
-    }
-    
-    for _, step := range pipeline.Steps {
-        if !allowedTools[step.Tool] {
-            return fmt.Errorf("tool %s not allowed", step.Tool)
-        }
-    }
-    
-    return nil
-}
-```
-
-**Observability:**
-
-```go
-// Log selected tools and reasons
-log.Printf("Tool retrieval: query=%s, selected=%v, reason=%s",
-    userQuery,
-    []string{"grep", "sort", "head"},
-    "matched tags: text-processing, filtering")
-
-// Store pipeline JSON for audit
-auditLog.StorePipeline(userID, pipelineJSON, result)
-```
-
-## Common Errors
-
-### Error 1: Agent Doesn't Search Knowledge Base
-
-**Symptom:** Agent performs actions without searching the knowledge base, using only general knowledge.
-
-**Cause:** The System Prompt doesn't instruct the agent to search the knowledge base, or the search tool description isn't clear enough.
-
-**Solution:**
-```go
-// GOOD: System Prompt requires search
-systemPrompt := `... Always search knowledge base before performing actions that require specific procedures.`
-
-// GOOD: Clear tool description
-Description: "Search the knowledge base for documentation, protocols, and procedures. Use this BEFORE performing actions that require specific procedures."
-```
-
-### Error 2: Poor Search Query
-
-**Symptom:** Agent doesn't find needed information in the knowledge base.
-
-**Cause:** Search query is too general or doesn't contain keywords from the document.
-
-**Solution:**
-```go
-// BAD: Too general query
+// BAD: too generic a query
 query := "server"
 
-// GOOD: Specific query with keywords
+// GOOD: a specific query with keywords
 query := "Phoenix server restart protocol"
 ```
 
-### Error 3: Chunks Too Large
+### Mistake 3: Chunks too large
 
-**Symptom:** Search returns documents that are too large and don't fit in context.
+**Symptom:** Search returns documents that are too large and don't fit in the context.
 
-**Cause:** Chunk size is too large (larger than context window).
+**Cause:** Chunk sizes are too large (larger than the context window).
 
-**Solution:**
+**Fix:**
 ```go
-// GOOD: Chunk size ~500-1000 tokens
-chunkSize := 500  // Tokens
+// GOOD: chunk size ~500-1000 tokens
+chunkSize := 500  // tokens
 ```
 
-### Error 4: Passing All Tools to Context
+### Mistake 4: A catalog of 20+ tool wrappers over one system
 
-**Symptom:** Agent receives a list of 1000+ tools, model performs worse, latency increases.
+**Symptom:** The agent has dozens of `grep`/`sort`/`head`/`tail` tools — one wrapper per command. The `tools[]` block is huge, the model gets confused, and every request gets more expensive.
 
-**Cause:** All tools are passed in `tools[]` without filtering.
+**Cause:** The action space is confused with the tool space: one system (shell) is wrapped by twenty schemas.
 
-**Solution:**
+**Fix:** Move the description of actions into skills (`SKILL.md` + progressive disclosure) and execution into a single `exec` with an allowlist (the "Many Tools ≠ You Need a Catalog of Them" section above). A tool catalog with retrieval only if the tools really are different and numerous (SaaS integrations).
+
+### Mistake 5: A universal `run_shell` with no control
+
+**Symptom:** The agent uses a single `run_shell(command)` tool for all commands. No validation, no audit.
+
+**Cause:** Simplifying the architecture at the expense of safety.
+
+**Fix:**
 ```go
-// BAD: All tools
-tools := getAllTools()  // 1000+ tools
-
-// GOOD: Only relevant ones
-userQuery := "find errors in logs"
-relevantTools := searchToolCatalog(userQuery, topK=5)  // Only 5 relevant tools
-tools := convertToOpenAITools(relevantTools)
-```
-
-### Error 5: Universal `run_shell` Without Control
-
-**Symptom:** Agent uses a single `run_shell(command)` tool for all commands. No validation, no audit trail.
-
-**Cause:** Simplifying architecture at the expense of security.
-
-**Solution:**
-```go
-// BAD: Universal shell
-tools := []openai.Tool{{
-    Function: &openai.FunctionDefinition{
-        Name: "run_shell",
-        Description: "Execute any shell command",
-    },
+// BAD: a universal shell with no restrictions
+tools := []ToolDef{{
+    Name:        "run_shell",
+    Description: "Execute any shell command",
 }}
 
-// GOOD: Specific tools + pipeline DSL
-tools := []openai.Tool{
-    {Function: &openai.FunctionDefinition{Name: "grep", ...}},
-    {Function: &openai.FunctionDefinition{Name: "sort", ...}},
-    {Function: &openai.FunctionDefinition{Name: "execute_pipeline", ...}},
-}
-
-// Pipeline JSON is validated before execution
-if err := validatePipeline(pipeline); err != nil {
-    return err
+// GOOD: exec with an allowlist (not a denylist!) and confirmation of dangerous operations
+func execCommand(command string, args ...string) (string, error) {
+    allowed := map[string]bool{
+        "grep": true, "sort": true, "head": true, "kubectl": true,
+        // rm, dd and other dangerous ones are NOT in the allowlist
+    }
+    if !allowed[command] {
+        return "", fmt.Errorf("command %q is not in the allowlist", command)
+    }
+    // ... execute, log for audit
+    return string(output), nil
 }
 ```
 
-### Error 6: No Pipeline Validation
+### Mistake 6: Dangerous operations without confirmation
 
-**Symptom:** Agent generates a pipeline with dangerous commands (`rm -rf`, `dd`), which execute without checks.
+**Symptom:** The agent executes destructive commands (`rm`, `kubectl delete`) without checking and human confirmation.
 
-**Cause:** No risk level check and allowlist validation before execution.
+**Cause:** "On average" validation doesn't distinguish dangerous calls from safe ones.
 
-**Solution:**
+**Fix:** The allowlist answers "is it allowed at all," while confirmation ([ch. 05](../05-safety-and-hitl/README.md)) answers "is it allowed right now, with a human in the loop":
+
 ```go
-// GOOD: Validate before execution
-func executePipeline(pipelineJSON string) error {
-    var pipeline Pipeline
-    json.Unmarshal([]byte(pipelineJSON), &pipeline)
-    
-    // Check risk
-    if pipeline.RiskLevel == "dangerous" {
-        return fmt.Errorf("dangerous pipeline requires confirmation")
-    }
-    
-    // Check allowlist
-    allowedTools := map[string]bool{"grep": true, "sort": true}
-    for _, step := range pipeline.Steps {
-        if !allowedTools[step.Tool] {
-            return fmt.Errorf("tool %s not allowed", step.Tool)
-        }
-    }
-    
-    // Execute only after validation
-    return runValidatedPipeline(pipeline)
+// GOOD: two separate checks before execution
+if !allowedCommands[cmd.Command] {
+    return fmt.Errorf("command %q is not allowed", cmd.Command)
 }
+if destructive(cmd.Command, cmd.Args) { // delete, drop, rollout undo...
+    return confirmWithHuman(cmd) // without confirmation, it doesn't run
+}
+return run(cmd)
 ```
 
-## Mini-Exercises
+## Exercises
 
-### Exercise 1: Implement Simple Search
+### Exercise 1: Implement simple search
 
 Implement a simple keyword search function:
 
 ```go
 func searchKnowledgeBase(query string) string {
     // Simple keyword search
-    // Return relevant documents
+    // Return the relevant documents
 }
 ```
 
 **Expected result:**
-- Function finds documents containing keywords from query
-- Function returns first N relevant documents
+- The function finds documents containing keywords from the query
+- The function returns the first N relevant documents
 
-### Exercise 2: Implement Chunking
+### Exercise 2: Implement chunking
 
-Implement a function to split a document into chunks:
+Implement a function that splits a document into chunks:
 
 ```go
 func chunkDocument(text string, chunkSize int) []string {
-    // Split document into chunks of chunkSize tokens
-    // Return list of chunks
+    // Split the document into chunks of chunkSize tokens
+    // Return the list of chunks
 }
 ```
 
 **Expected result:**
-- Function splits document into chunks of specified size
-- Chunks don't overlap (or overlap minimally)
+- The function splits the document into chunks of the given size
+- The chunks don't overlap (or overlap minimally)
 
-### Exercise 3: Implement Tool Search
+### Exercise 3: Implement search over the skill catalog
 
-Implement a function to search for relevant tools in the catalog:
+The runtime reads all `SKILL.md` files and needs to pick the relevant ones. Implement a search function:
 
 ```go
-func searchToolCatalog(query string, catalog []ToolDefinition, topK int) []ToolDefinition {
-    // Search by description and tags
-    // Return top-k most relevant tools
+type SkillDef struct {
+    Name        string // "k8s-debug"
+    Description string // "Debug Kubernetes pods — check status, logs, describe..."
+}
+
+func searchSkills(query string, skills []SkillDef, topK int) []SkillDef {
+    // Search over the descriptions
+    // Return the top-k most relevant skills
 }
 ```
 
 **Expected result:**
-- Function finds tools relevant to the query
-- Returns no more than topK tools
-- Considers tool descriptions and tags
+- The function finds skills relevant to the query
+- It returns at most topK skills
+- It takes skill descriptions into account
 
-**Advanced:** Implement vector search for tools (similar to vector search for documents above). This is especially useful for large catalogs (1000+ tools).
+**For advanced readers:** Implement vector search over the descriptions (similar to the vector document search above) — useful when there are dozens of skills. The same mechanism underlies tool retrieval for really large sets of genuinely different tools ([Lab 13](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab13-tool-retrieval)).
 
-### Exercise 4: Pipeline Validation
+### Exercise 4: Validate an exec command
 
-Implement a function to validate a pipeline before execution:
+Implement a function that validates a command before execution:
 
 ```go
-func validatePipeline(pipeline Pipeline, allowedTools map[string]bool) error {
-    // Check risk level
-    // Check tool allowlist
-    // Return error if pipeline is unsafe
+func validateCommand(command string, args []string, allowed map[string]bool) error {
+    // Check that command is in the allowlist
+    // Return an error if the command is not allowed
 }
 ```
 
 **Expected result:**
-- Function returns error for dangerous pipelines
-- Function returns error if disallowed tools are used
-- Function returns nil for safe pipelines
+- The function returns an error for commands outside the allowlist
+- The function returns nil for allowed commands
 
-## Completion Criteria / Checklist
+## Acceptance Criteria / Checklist
 
-**Completed:**
-- [x] Agent searches knowledge base before performing actions
+**Passing:**
+- [x] The agent searches the knowledge base when the task requires internal procedures
 - [x] Search queries are specific and contain keywords
-- [x] Documents are split into appropriately sized chunks
-- [x] Search tool has clear description
-- [x] System Prompt instructs agent to use knowledge base
-- [x] For large tool spaces, tool retrieval is used (only relevant tools in context)
-- [x] Pipelines are validated before execution (risk level, allowlist)
-- [x] Dangerous operations require confirmation
+- [x] Documents are split into chunks of a suitable size
+- [x] The search tool has a clear description (what's in the base — the model decides on its own, without an "Always search" line in the prompt)
+- [x] A large action space is organized via skills (`SKILL.md` + progressive disclosure) and `exec` with an allowlist; tool retrieval only for genuinely different and numerous tools
+- [x] Commands pass the allowlist before execution; dangerous operations require confirmation
+- [x] The search result fits within the tool-result budget (~128 KB); chunks are stored with path/ID so the full document can be moved to an artifact
 
-**Not completed:**
-- [ ] Agent doesn't search knowledge base (uses only general knowledge)
-- [ ] Search queries are too general (doesn't find needed information)
-- [ ] Chunks are too large (don't fit in context)
-- [ ] All tools are passed to context without filtering (1000+ tools)
-- [ ] Universal `run_shell` is used without security controls
-- [ ] Pipelines execute without validation
+**Not passing:**
+- [ ] The agent doesn't search the knowledge base (relies only on general knowledge)
+- [ ] Search queries are too generic (the needed information isn't found)
+- [ ] Chunks are too large (they don't fit in the context)
+- [ ] A catalog of 20+ tool wrappers over one system instead of skills and `exec`
+- [ ] A universal `run_shell` is used without safety controls
+- [ ] Commands are executed without an allowlist; dangerous ones without confirmation
 
 ## Production Notes
 
-When using RAG in production, consider:
+When using RAG in production, keep in mind:
 
-- **Document versioning:** Track document versions and update date (`updated_at`). This helps understand which version was used in the response.
-- **Freshness (currency):** Filter outdated documents (e.g., older than 30 days) before using in context.
-- **Grounding:** Require agent to reference found documents in response. This reduces hallucinations and increases trust.
+- **Document versioning:** Track document versions and update dates (`updated_at`). This helps understand which version was used in an answer.
+- **Freshness:** Filter out stale documents (for example, older than 30 days) before putting them into the context.
+- **Grounding:** Require the agent to cite the retrieved documents in its answer. This reduces hallucinations and increases trust.
+- **Read permissions:** `read` is the main tool for accessing knowledge, and it must be constrained by a policy: which directories can be read, what gets logged, and what enters the context — that's decided by the runtime (FSHooks policy), not the model.
+- **Tool-result budget:** A search result is an ordinary tool result: the guideline is ~128 KB per result ([ch. 13](../13-context-engineering/README.md)). What doesn't fit — an excerpt in the context + the full document as an artifact ([ch. 11](../11-state-management/README.md)); for that, store chunks with `path`/`ID`.
 
 More on production readiness: [Chapter 19: Observability](../19-observability-and-tracing/README.md), [Chapter 23: Evals in CI/CD](../23-evals-in-cicd/README.md).
 
-## Connection with Other Chapters
+## Relation to Other Chapters
 
-- **Tools:** How search tool integrates into agent, see [Chapter 03: Tools](../03-tools-and-function-calling/README.md). The problem of large tool lists is solved via tool retrieval (see "RAG for Action Space" section above).
-- **Autonomy:** How RAG works in the agent loop, see [Chapter 04: Autonomy](../04-autonomy-and-loops/README.md)
-- **Tool Servers:** How to retrieve tool catalogs dynamically via tool servers, see [Chapter 18: Tool Protocols](../18-tool-protocols-and-servers/README.md)
-- **MCP Resources:** MCP provides a standard mechanism for data access (Resources) — [Model Context Protocol](https://modelcontextprotocol.io/)
+- **Tools:** How the search tool integrates into the agent — see [Chapter 03: Tools](../03-tools-and-function-calling/README.md). A large action space is organized via skills and `exec` (the "Many Tools ≠ You Need a Catalog of Them" section above; skills — [ch. 09](../09-agent-architecture/README.md)).
+- **Autonomy:** How RAG works inside the agent loop — see [Chapter 04: Autonomy](../04-autonomy-and-loops/README.md)
+- **Tool Servers:** How to get tools dynamically via tool servers — see [Chapter 18: Tool Protocols](../18-tool-protocols-and-servers/README.md)
+- **MCP Resources:** MCP provides a standard mechanism for accessing data (Resources) — [Model Context Protocol](https://modelcontextprotocol.io/)
 
 ## What's Next?
 
-After studying RAG, proceed to:
-- **[07. Multi-Agent Systems](../07-multi-agent/README.md)** — how to create a team of agents
-
+After studying RAG, move on to:
+- **[07. Multi-Agent Systems](../07-multi-agent/README.md)** — how to build a team of agents

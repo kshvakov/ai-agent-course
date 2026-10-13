@@ -1,122 +1,140 @@
 # 01. LLM Physics — How the Agent's "Brain" Works
 
-## Why This Chapter?
+## Why does this matter?
 
-To control an agent, it helps to understand how its "brain" works. Without basic LLM physics, you won't be able to:
-- Properly configure the model for the agent
-- Understand why the agent behaves non-deterministically
-- Manage context and conversation history
+To steer an agent, it helps to understand how its "brain" works. Without a basic grasp of LLM physics, you won't be able to:
+- Configure the model for your agent correctly
+- Understand why the agent behaves nondeterministically
+- Manage the context and conversation history
 - Avoid hallucinations and errors
 
-In this chapter, we'll cover the basics of how LLMs work in simple terms, without excessive math.
+In this chapter we'll cover the fundamentals of how LLMs work in plain language, without unnecessary math.
 
-### Real-World Case Study
+### A real-world case
 
-**Situation:** You've created a DevOps agent. The user writes: "Check the status of server web-01"
+**Situation:** You built a DevOps agent. The user writes: "Check the status of server web-01"
 
-**Problem:** The agent sometimes responds with text "Server is working" and sometimes calls the `check_status` tool. The behavior is unpredictable.
+**Problem:** Sometimes the agent replies with the text "Server is running", and sometimes it calls the `check_status` tool. The behavior is unpredictable.
 
-**Solution:** Understanding the probabilistic nature of LLMs and setting `Temperature = 0` makes behavior deterministic. Understanding the context window helps manage conversation history.
+**Solution:** Understanding the probabilistic nature of LLMs helps you manage generation variety: a low `Temperature` and clear tool `Description`s. But what makes the agent process predictable is not the model's "determinism" — it's structure: strict call schemas, response validation, and guards in code. Understanding the context window helps you manage conversation history.
 
-## Theory in Simple Terms
+## The theory in plain words
 
-### Probabilistic Nature
+### The probabilistic nature
 
-**Key Fact:** LLM doesn't think, it predicts.
+**Key fact:** An LLM doesn't think — it predicts.
 
-LLM is a function `NextToken(Context) -> Distribution`.  
-A sequence of tokens $x_1, ..., x_t$ is fed as input. The model computes a probability distribution for the next token:
+An LLM is a function `NextToken(Context) -> Distribution`.  
+Its input is a sequence of tokens $x_1, ..., x_t$. The model computes a probability distribution over the next token:
 
 $$P(x_{t+1} | x_1, ..., x_t)$$
 
 **What does this mean in practice?**
 
-> **Note:** The examples below use Function Calling — a mechanism for calling tools via the LLM API. See [Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md) for a detailed explanation. For now, it's enough to understand that the model receives tool descriptions (`tools[]`) and selects the right one based on `Description`.
+> **Note:** The examples below use Function Calling — the mechanism for calling tools via the LLM API. For a detailed explanation, see [Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md). For now it's enough to understand that the model receives tool descriptions (`tools[]`) and picks one based on its `Description`.
 
-#### Example 1: DevOps — Magic vs Reality
+#### Example 1: DevOps — magic vs reality
 
-**Magic (as usually explained):**
-> Prompt: `"Check server status"`  
-> Model processes context and predicts: "I will call the `check_status` tool" (probability 0.85)
+**Magic (the way it's usually explained):**
+> Prompt: `"Check the server status"`  
+> The model sees the context and predicts: "I will call the `check_status` tool" (probability 0.85)
 
-**Reality (how it actually works):**
+**Reality (what actually happens):**
 
 **1. What gets sent to the model:**
 
 ```go
-// System Prompt (sets role and behavior)
+// Neutral structures for a direct tool-calling protocol.
+// Most providers (cloud and local) use a protocol that looks the same —
+// for details and the full cycle, see Chapter 03.
+type Message struct {
+    Role       string     // "system" | "user" | "assistant" | "tool"
+    Content    string
+    ToolCalls  []ToolCall // populated by the model for role="assistant"
+    ToolCallID string     // for role="tool": ID of the call this result belongs to
+}
+
+type ToolCall struct {
+    ID        string // e.g., "call_abc123"
+    Name      string // e.g., "check_status"
+    Arguments string // JSON string, e.g. {"hostname":"web-01"}
+}
+
+type ToolDef struct {
+    Name        string
+    Description string
+    Parameters  json.RawMessage // JSON Schema of the arguments
+}
+
+type Request struct {
+    Model       string
+    Messages    []Message
+    Tools       []ToolDef
+    Temperature float64
+}
+
+// System Prompt (sets the role and behavior)
 systemPrompt := `You are a DevOps assistant. 
 When user asks about server status, use the check_status tool.
 When user asks about logs, use the read_logs tool.
 When user asks to restart, use the restart_service tool.`
 
 // User Input
-userInput := "Check server status"
+userInput := "Check the server status"
 
-// Description of available tools (tools schema)
-// IMPORTANT: The model receives ALL tools and selects the needed one!
-tools := []openai.Tool{
+// Descriptions of the available tools (tools schema)
+// IMPORTANT: The model sees ALL the tools and picks the right one!
+tools := []ToolDef{
     {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "check_status",
-            Description: "Check the status of a server by hostname. Use this when user asks about server status or availability.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "hostname": {"type": "string", "description": "Server hostname"}
-                },
-                "required": ["hostname"]
-            }`),
-        },
+        Name:        "check_status",
+        Description: "Check the status of a server by hostname. Use this when user asks about server status or availability.",
+        Parameters: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "hostname": {"type": "string", "description": "Server hostname"}
+            },
+            "required": ["hostname"]
+        }`),
     },
     {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "read_logs",
-            Description: "Read the last N lines of service logs. Use this when user asks about logs, errors, or troubleshooting.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "service": {"type": "string", "description": "Service name"},
-                    "lines": {"type": "number", "description": "Number of lines to read"}
-                },
-                "required": ["service"]
-            }`),
-        },
+        Name:        "read_logs",
+        Description: "Read the last N lines of service logs. Use this when user asks about logs, errors, or troubleshooting.",
+        Parameters: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "service": {"type": "string", "description": "Service name"},
+                "lines": {"type": "number", "description": "Number of lines to read"}
+            },
+            "required": ["service"]
+        }`),
     },
     {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "restart_service",
-            Description: "Restart a systemd service. Use this when user explicitly asks to restart a service. WARNING: This causes downtime.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "service_name": {"type": "string", "description": "Service name to restart"}
-                },
-                "required": ["service_name"]
-            }`),
-        },
+        Name:        "restart_service",
+        Description: "Restart a systemd service. Use this when user explicitly asks to restart a service. WARNING: This causes downtime.",
+        Parameters: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "service_name": {"type": "string", "description": "Service name to restart"}
+            },
+            "required": ["service_name"]
+        }`),
     },
 }
 
-// Full API request
-messages := []openai.ChatCompletionMessage{
-    {Role: "system", Content: systemPrompt},
-    {Role: "user", Content: userInput},
-}
-
-req := openai.ChatCompletionRequest{
-    Model:    "gpt-4o-mini",
-    Messages: messages,
-    Tools:    tools,  // Note: the model receives tool descriptions!
+// The full API request
+req := Request{
+    Model: "glm-5.3", // any current model with native tool calling
+    Messages: []Message{
+        {Role: "system", Content: systemPrompt},
+        {Role: "user", Content: userInput},
+    },
+    Tools: tools,  // Important: the model sees the tool descriptions!
 }
 ```
 
 **2. What the model returns:**
 
-The model **doesn't return text** like "I will call the tool". Instead, it returns a **structured tool call**:
+The model does **not return the text** "I will call the tool". It returns a **structured tool call**:
 
 ```json
 {
@@ -135,100 +153,104 @@ The model **doesn't return text** like "I will call the tool". Instead, it retur
 }
 ```
 
-**How does the model choose the tool?**
+**How does the model choose a tool?**
 
-The model receives **all three tools** and their `Description`:
+The model sees **all three tools** and their `Description`s:
 - `check_status`: "Check the status... Use this when user asks about server status"
 - `read_logs`: "Read logs... Use this when user asks about logs"
 - `restart_service`: "Restart service... Use this when user explicitly asks to restart"
 
-User request: "Check server status"
+The user's request: "Check the server status"
 
-The model matches the request with descriptions:
-- [x] `check_status` — description contains "server status" → **selects this**
-- [ ] `read_logs` — description is about logs, not status
-- [ ] `restart_service` — description is about restart, not checking
+The model matches the request against the descriptions:
+- [x] `check_status` — the description mentions "server status" → **this one is picked**
+- [ ] `read_logs` — the description is about logs, not status
+- [ ] `restart_service` — the description is about restarting, not checking
 
-**Example with a different request:**
+**An example with a different request:**
 
 ```go
-userInput := "Show the latest errors in nginx logs"
+userInput := "Show me the latest errors in the nginx logs"
 
-// Model sees the same 3 tools
-// Matches:
-// - check_status: about status, not logs → doesn't fit
-// - read_logs: "Use this when user asks about logs" → SELECTS THIS
-// - restart_service: about restart → doesn't fit
+// The model sees the same 3 tools
+// It matches:
+// - check_status: about status, not logs → not a fit
+// - read_logs: "Use this when user asks about logs" → THIS ONE IS PICKED
+// - restart_service: about restarting → not a fit
 
-// Model returns:
+// The model returns:
 // tool_calls: [{function: {name: "read_logs", arguments: "{\"service\": \"nginx\", \"lines\": 50}"}}]
 ```
 
-**Takeaway:** The model selects a tool based on **semantic matching** between the user's request and the tool's `Description`. The more accurate the `Description`, the better the selection.
+**The point:** The model picks a tool based on the **semantic match** between the user's request and the tool's `Description`. The more precise the `Description`, the better the choice.
 
-**3. What Runtime does:**
+**3. What the Runtime does:**
 
 ```go
-resp, _ := client.CreateChatCompletion(ctx, req)
-msg := resp.Choices[0].Message
+resp, err := client.Complete(ctx, req) // neutral call: one protocol, any provider
+if err != nil {
+    return err // client errors are not for the model: retry/logging in code (ch. 04)
+}
+msg := resp.Choices[0].Message // the model's response
 
-// Runtime checks: are there tool_calls?
+// The Runtime checks: are there any tool_calls?
 if len(msg.ToolCalls) > 0 {
-    // Parse arguments
+    call := msg.ToolCalls[0]
+
+    // Parse the arguments (Arguments is a JSON string)
     var args struct {
         Hostname string `json:"hostname"`
     }
-    json.Unmarshal([]byte(msg.ToolCalls[0].Function.Arguments), &args)
-    
+    json.Unmarshal([]byte(call.Arguments), &args)
+
     // Execute the real function
     result := checkStatus(args.Hostname)  // "Server is ONLINE"
-    
-    // Return result back to the model
-    messages = append(messages, openai.ChatCompletionMessage{
-        Role:       "tool",
-        Content:    result,
-        ToolCallID: msg.ToolCalls[0].ID,
-    })
-    
-    // Send updated history to the model again
-    // Model receives the result and decides what to do next
+
+    // Feed the result back into the model:
+    // the assistant message with tool_calls + the result with role="tool"
+    req.Messages = append(req.Messages, msg,
+        Message{Role: "tool", Content: result, ToolCallID: call.ID},
+    )
+
+    // Send the updated history to the model again
+    // The model sees the result and decides what to do next
 }
 ```
 
-**Note about "probabilities":**
+**A note about "probabilities":**
 
-Numbers like "probability 0.85" are **illustrations** for understanding. OpenAI/local model APIs usually **do not return** these probabilities directly (unless using `logprobs`). It's important to understand the principle: when there are `tools` with good `Description` in the context, the model will likely choose a tool call instead of text. But this happens **inside the model**, we only see the final choice.
+Numbers like "probability 0.85" are an **illustration**. Provider APIs (cloud and local) usually do **not** return these probabilities directly (unless you use `logprobs`). What matters is this: when the context contains `tools` with good `Description`s, the model will pick a tool call over text with high probability. But that happens **inside the model** — from the outside we only see the final choice.
 
-#### Example 2: Support — Magic vs Reality
+#### Example 2: Support — magic vs reality
 
 **Magic:**
-> Prompt: `"User reports error 500"`
-> Model predicts: "First I'll gather context via `get_ticket_details`" (probability 0.9)
+> Prompt: `"The user is complaining about a 500 error"`
+> The model predicts: "First I'll gather context via `get_ticket_details`" (probability 0.9)
 
-**Reality:** The principle is the same as in the DevOps example. The model receives 4 tools (`get_ticket_details`, `check_account_status`, `search_kb`, `draft_reply`) with descriptions. It selects `get_ticket_details` because its `Description` contains "Use this FIRST when user reports an error" — the best semantic match for the request.
+**Reality:** The same principle as in the DevOps example. The model receives 4 tools (`get_ticket_details`, `check_account_status`, `search_kb`, `draft_reply`) with descriptions. It picks `get_ticket_details` because its `Description` contains "Use this FIRST when user reports an error" — the best semantic match for the request.
 
-The model selects tools **sequentially**:
+The model picks tools **sequentially**:
 
 ```go
-// Iteration 1: User reports an error
-// Model selects: get_ticket_details (gathers context)
+// Iteration 1: The user is complaining about an error
+// The model picks: get_ticket_details (gathers context)
 
-// Iteration 2: Ticket details now appear in context
-// Model selects: search_kb("error 500") (searches for solution)
+// Iteration 2: The ticket details are now in the context
+// The model picks: search_kb("error 500") (looks for a solution)
 
-// Iteration 3: KB solution now appears in context
-// Model selects: draft_reply(ticket_id, solution) (creates response)
+// Iteration 3: The KB solution is now in the context
+// The model picks: draft_reply(ticket_id, solution) (drafts a reply)
 ```
 
-Runtime parses the tool call on each iteration, executes the function, and returns the result. More on the tool call protocol in [Chapter 03](../03-tools-and-function-calling/README.md).
+The runtime on each iteration parses the tool call, executes the function, and returns the result. For more on the tool-call protocol, see [Chapter 03](../03-tools-and-function-calling/README.md).
 
-#### Example 3: Data Analytics — Magic vs Reality
+#### Example 3: Data analytics — magic vs reality
 
 **Magic:**
 > Prompt: `"Show sales for the last month"`
-> Model predicts: "I'll formulate SQL query via `sql_select`" (probability 0.95)
+> The model predicts: "I'll formulate an SQL query via `sql_select`" (probability 0.95)
 
-**Reality:** The model receives 3 tools (`describe_table`, `sql_select`, `check_data_quality`). The request "Show sales for the last month" best matches `sql_select` with description "when user asks for specific data or reports". The model generates SQL directly in the arguments:
+**Reality:** The model receives 3 tools (`describe_table`, `sql_select`, `check_data_quality`). The request "Show sales for the last month" best matches `sql_select` with its description "when user asks for specific data or reports". The model generates the SQL directly in the arguments:
 
 ```json
 {
@@ -241,53 +263,55 @@ Runtime parses the tool call on each iteration, executes the function, and retur
 }
 ```
 
-For complex questions, the model uses tools **sequentially**: first `describe_table` (learn the structure), then `sql_select` (get data), then `check_data_quality` (check quality). Runtime validates that it's a SELECT (not DELETE/DROP!) and executes the query through a read-only connection. More details in [Chapter 03](../03-tools-and-function-calling/README.md).
+For complex questions, the model uses tools **sequentially**: first `describe_table` (learn the schema), then `sql_select` (fetch the data), then `check_data_quality` (check quality). The runtime validates that it is a SELECT (not DELETE/DROP!) and executes the query over a read-only connection. For more, see [Chapter 03](../03-tools-and-function-calling/README.md).
 
-### Why Is This Important for Engineers?
+### Why does this matter for an engineer?
 
-#### 1. Non-Determinism
+#### 1. Nondeterminism
 
 If you run the agent twice with the same prompt, you may get different actions.
 
 **Example:**
 ```
-Request 1: "Check server"
+Request 1: "Check the server"
 Response 1: [Calls check_status]
 
-Request 2: "Check server" (same prompt)
-Response 2: [Responds with text "Server is working"]
+Request 2: "Check the server" (same prompt)
+Response 2: [Replies with the text "Server is running"]
 ```
 
-**Solution:** `Temperature = 0` (Greedy decoding) compresses the distribution, forcing the model to always choose the most probable path.
+**Solution:** Lower the `Temperature` (0.0–0.3 is typical for agent loops) — this reduces generation variety and makes tool selection more stable. But don't expect "determinism": for many providers, `T=0` does not technically guarantee greedy decoding (request batching, MoE architectures). Reproducibility of the agent process comes from structure (JSON Schema, validation), guards in code, and evals — more on this in the "Temperature" section below.
 
 ```go
-req := openai.ChatCompletionRequest{
-    Temperature: 0,  // Deterministic behavior
+req := Request{
+    Model:       "glm-5.3",
+    Temperature: 0.2, // less spread in tool selection
     // ...
 }
 ```
 
 #### 2. Hallucinations
 
-The model strives to generate *plausible*, not *true* text.
+The model strives to generate *plausible* text, not *true* text.
 
-**DevOps example:** The model may write "use flag `--force`" for a command that doesn't support it.
+**DevOps example:** The model may suggest "use the `--force` flag" for a command that doesn't support it.
 
-**Data example:** The model may generate SQL with a non-existent field `user.email` instead of `users.email`.
+**Data example:** The model may generate SQL with a nonexistent field `user.email` instead of `users.email`.
 
-**Support example:** The model may "invent" a solution to a problem that doesn't exist in the knowledge base.
+**Support example:** The model may "invent" a solution to the problem that isn't in the knowledge base.
 
-**Solution:** **Grounding**. We give the agent access to real data (Tools/RAG) and forbid inventing facts.
+**Solution:** **Grounding**. We give the agent access to real data (Tools/RAG) and forbid it from inventing facts.
 
 ```go
 systemPrompt := `You are a DevOps assistant.
-CRITICAL: Never invent facts. Always use tools to get real data.
-If you don't know something, say "I don't know" or use a tool.`
+Do not invent facts: you have tools that return real data, and real data
+is always more reliable than a plausible guess. If you don't know
+something, say "I don't know" or use a tool.`
 ```
 
-## Tokens and Context Window
+## Tokens and the Context Window
 
-### What Is a Token?
+### What is a token?
 
 A **token** is a unit of text that the model processes.
 - One token ≈ 0.75 words (in English)
@@ -295,339 +319,304 @@ A **token** is a unit of text that the model processes.
 
 **Example:**
 ```
-Text: "Check server status"
-Tokens: ["Check", " server", " status"]  // ~3 tokens
+Text: "Check the server status"
+Tokens: ["Check", " the", " server", " status"]  // ~4 tokens
 ```
 
-### Context Window
+### The context window
 
 The **context window** is the model's "working memory".
 
-**Examples of context window sizes (at time of writing):**
-- GPT-3.5: 4k tokens (~3000 words)
-- GPT-4 Turbo: 128k tokens (~96000 words)
-- Llama 3 70B: 8k tokens
+**Orders of magnitude (no exact figures, which go stale quickly):**
+- Current models have context windows from ~128k to ~1M tokens (GLM-5.3, Fable 5.1, Opus 5.5)
+- Check the provider's documentation for exact values — windows change more often than book editions come out
 
-> **Note:** Specific models and context sizes may change over time. It's important to understand the principle: the larger the context window, the more information the agent can "remember" within a single request.
+> **Note:** What matters is the principle: the larger the context window, the more information the agent can "remember" in a single request. But a large window doesn't eliminate the need for context management: a long history costs money and degrades in quality (see [Chapter 13: Context Engineering](../13-context-engineering/README.md)).
 
-**What does this mean for the agent?**
+**What does this mean for an agent?**
 
-Everything the agent "knows" about the current task is what fits in the context window (Prompt + History).
+Everything the agent "knows" about the current task is what fits into the context window (Prompt + History).
 
-**Example calculation (approximate):**
+**Sample calculation (approximate):**
 ```
-Context window: 4k tokens
-System Prompt: 200 tokens
-Conversation history: 3000 tokens
-Tool results: 500 tokens
-Remaining space: 300 tokens
+Context window: 128k tokens
+System Prompt + tools: 2k tokens
+Conversation history: 60k tokens
+Tool results: 30k tokens
+Space left: 36k tokens
 ```
 
-> **Note:** This is an approximate estimate. Exact token counting depends on the model and library used (e.g., `tiktoken` for OpenAI models).
+> **Important for the agent (the rule of chapter 13).** In the agent runtime, **the primary source of the token count is `usage.PromptTokens` / `usage.CompletionTokens` from the provider's response**, not your own counter: the provider already knows its tokenizer and has applied it. For a rough **pre-flight estimate before sending**, the heuristic **~3 characters/token** is enough (closer to 4 for English); tokenizers like `tiktoken` are more accurate, but that precision is usually unnecessary when deciding "is it time to condense the history". Basing the agent's token budget only on your own estimates is a recipe for a 10–30% discrepancy with reality, which hurts most with a large window. For more, see [Chapter 13: Context Engineering](../13-context-engineering/README.md).
 
-> **Important for an agent (rule from Ch. 13).** In the agent's runtime, the **primary source for token counts is `usage.PromptTokens` / `usage.TotalTokens` from the provider response**, not your own counter. The provider already knows its tokenizer and applied it. Your own counter (`tiktoken`, `char/3`, `char/4`) is used only for a **pre-send estimate** — for example, to decide whether it's time to compress history. Building an agent's budget on your own estimates alone is a recipe for diverging from reality by 10–30%, which especially hurts at large window sizes. See [Chapter 13: Context Engineering](../13-context-engineering/README.md) for details.
+If the history overflows, the agent "forgets" the beginning of the conversation. In practice this means: either the earliest messages are truncated/condensed (and the model genuinely can't see them), or, if the overflow isn't handled, the API returns a context-window-exceeded error.
 
-If history overflows, the agent "forgets" the beginning of the conversation. In practice, it happens for one of two reasons: either your runtime trims/summarizes old messages to fit the limit (the model never sees them), or the API rejects the request with a context-length error if you don't handle overflow.
-
-**The Model is Stateless:** It doesn't remember your previous request if you don't pass it again in `messages`.
+**The model is stateless:** It doesn't remember your previous request unless you send it again in `messages`.
 
 ```go
-// Each request must include the full history
-messages := []openai.ChatCompletionMessage{
+// Every request must include the full history
+messages := []Message{
     {Role: "system", Content: systemPrompt},
-    {Role: "user", Content: "Check server"},
+    {Role: "user", Content: "Check the server"},
     {Role: "assistant", Content: "Checking..."},
     {Role: "tool", Content: "Server is ONLINE"},
-    {Role: "user", Content: "What about the database?"},  // Agent receives full history!
+    {Role: "user", Content: "And what about the database?"},  // The agent sees the whole history!
 }
 ```
 
 ## Temperature
 
-**Temperature** is a parameter that controls the entropy of the probability distribution.
+**Temperature** is a setting for the quality and variety of generation: it controls the entropy of the probability distribution when picking the next token.
 
 ```go
-Temperature = 0  // Deterministic (for agents!)
-Temperature = 0.7  // Balance of creativity and stability
-Temperature = 1.0+  // Creative, but unstable
+Temperature: 0.0–0.3  // typical for agent loops and structured calls
+Temperature: 0.7      // a balance of creativity and stability
+Temperature: 1.0+     // creative tasks, brainstorming
 ```
 
-### When to Use Which Value?
+### When to use which value?
 
-| Temperature | Usage | Example |
-|-------------|-------|---------|
-| 0.0 | Agents, JSON generation, Tool Calling | DevOps agent should consistently call `restart_service`, not "create" |
-| 0.1-0.3 | Structured responses | Support agent generates response templates |
-| 0.7-1.0 | Creative tasks | Product agent writes marketing texts |
+| Temperature | Use | Example |
+|-------------|-----|---------|
+| 0.0–0.3 | Agent loops, structured calls, JSON | A DevOps agent consistently calls `restart_service` instead of "getting creative"; tool and argument selection is additionally pinned down by JSON Schema and validation |
+| 0.3–0.7 | Template replies, drafts | A support agent generates reply templates |
+| 0.7–1.0 | Creative tasks | A product agent writes marketing copy |
 
-**Practical example:**
+### What temperature does not give you
+
+A common misconception: "`Temperature = 0` makes the agent deterministic." It does not:
+
+- **Technically**, `T=0` at many providers does not guarantee greedy determinism: request batching and MoE architectures introduce nondeterminism regardless of temperature.
+- **Reproducibility of the agent process** comes not from sampling settings but from structure: strict JSON Schema for tool arguments, response validation, guards in code (controlling permitted actions), and evals that pin down behavior.
+
+A low temperature reduces the spread and "noise" in tool selection — that is useful. But it is a generation-quality setting, not an on/off switch for "determinism".
+
+**A practical example:**
 
 ```go
-// BAD: For agent
-req := openai.ChatCompletionRequest{
-    Temperature: 0.9,  // Too random!
+// BAD: for the agent loop
+req := Request{
+    Temperature: 0.9,  // too much variance: the model will "get creative"
     // ...
 }
 
-// GOOD: For agent
-req := openai.ChatCompletionRequest{
-    Temperature: 0,  // Maximum determinism
+// GOOD: for the agent loop
+req := Request{
+    Temperature: 0.2,  // less variance; process predictability comes from schema + guards + evals
     // ...
 }
 ```
 
-## Choosing a Model for Local Deployment
+## Choosing a Model
 
 Not all models are equally good for agents.
 
-### Selection Criteria
+### Current models (as of this revision)
 
-1. **Function Calling Support:** The model must be able to generate structured tool calls.
-    - [x] Good: Models fine-tuned on function calling (e.g., `Hermes-2-Pro`, `Llama-3-Instruct`, `Mistral-7B-Instruct` at time of writing)
-    - [ ] Bad: Base models without fine-tuning on tools
+- **Fable 5.1** and **Opus 5.5** — flagship models for complex agent scenarios
+- **GLM-5.3** — a strong model with native tool calling, a good price/quality balance
+- **GLM-5.3 Flash** — a cheap and fast option for mass and simple calls
 
-    > **Note:** Specific models may change. It's important to verify function calling support through capability benchmark (see [Appendix: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization)).
+> **Note:** Model names and versions live for months, not years. Trust not lists from books, but the provider's up-to-date documentation and your own capability test (see below).
 
-2. **Context Size:** Complex tasks require large context.
-    - Minimum: 4k tokens
-    - Recommended: 8k+
+### Running locally
 
-3. **Instruction Following Quality:** The model must strictly follow System Prompt.
-    - Verified through capability benchmark (see [Appendix: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization))
+For local runs (Ollama, vLLM, LM Studio), pick a current instruct model with declared function calling support — and be sure to run a capability benchmark: how tools behave in local runtimes depends on the model's chat template, not just its weights.
 
-4. **Prompt Template Compatibility (when using LM Studio):** If you're using LM Studio, make sure the selected prompt template supports all required roles (system, user, assistant, tool). If the template only supports `user` and `assistant`, you'll get an error: `"Only user and assistant roles are supported!"`. To fix this, select the correct template in model settings (e.g., `ChatML` or a model-specific template like `Mistral Instruct` for Mistral models). See more details in [Mistake 3: LM Studio — Wrong Prompt Template](#mistake-3-lm-studio--wrong-prompt-template-role-support-error) in the "Common Mistakes" section.
+### Selection criteria
 
-### How to Test a Model?
+1. **Function Calling support (native tool calling):** The model must be able to generate structured tool calls.
+    - [x] Good: models with native tool calling (GLM-5.3, GLM-5.3 Flash, Fable 5.1, Opus 5.5)
+    - [ ] Bad: base models not trained on tools
 
-**Theory:** See [Appendix: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization) — detailed description of what we test and why it's important.
+    > **Note:** Specific models change. Verify function calling support via a capability benchmark (see [Appendix: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization)).
 
-**Practice:** See [Lab 00: Model Capability Benchmark](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab00-capability-check) — ready tool for testing the model.
+2. **Context size:** The context window must fit the system prompt, tools, history, and tool results. Modern models offer ~128k tokens and up — with context management (see [Chapter 13](../13-context-engineering/README.md)) that is usually enough.
+
+3. **Instruction-following quality:** The model must strictly follow the System Prompt.
+    - Verified via a capability benchmark (see [Appendix: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization))
+
+4. **Chat template compatibility (for local runtimes):** The message roles (system, user, assistant, tool) must match the model's chat template, otherwise the tool protocol won't work. See more in [Mistake 3: LM Studio — Wrong Prompt Template (Role Error)](#mistake-3-lm-studio-wrong-prompt-template-role-error) in the "Common Mistakes" section. Cloud providers with native tool calling don't have this problem.
+
+### How do you check a model?
+
+**Theory:** See [Appendix: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization) — a detailed description of what we check and why it matters.
+
+**Practice:** See [Lab 00: Model Capability Benchmark](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab00-capability-check) — a ready-made tool for checking a model.
 
 ## Common Mistakes
 
-### Mistake 1: Model is Non-Deterministic
+### Mistake 1: The model behaves differently on identical requests
 
-**Symptom:** The same prompt gives different results. Agent sometimes calls a tool, sometimes responds with text.
+**Symptom:** The same prompt gives different results. The agent sometimes calls a tool, sometimes replies with text.
 
-**Cause:** `Temperature > 0` makes the model random. It chooses not the most probable token, but a random one from the distribution.
+**Cause:** An LLM samples from a probability distribution. At high temperature the variance grows, and "gray zones" — situations where both text and a tool call are plausible — become unstable.
 
-**Solution:**
+**Fix:**
+
 ```go
-// BAD
-req := openai.ChatCompletionRequest{
-    Temperature: 0.7,  // Random behavior!
+// BAD: high temperature in the agent loop
+req := Request{
+    Temperature: 0.9,  // high variance: tool selection is unstable
     // ...
 }
 
-// GOOD
-req := openai.ChatCompletionRequest{
-    Temperature: 0,  // Always use for agents
+// GOOD: low temperature + structural guarantees
+req := Request{
+    Temperature: 0.2,  // less variance
     // ...
 }
+// And most importantly: validate tool calls against JSON Schema, reject
+// unparseable arguments, restrict the allowed tools.
+// Agent process reproducibility comes from guards and evals, not temperature.
 ```
 
-### Mistake 2: Context Overflow
+### Mistake 2: The context overflows
 
-**Symptom:** Agent "forgets" the beginning of the conversation. After N messages, stops remembering what was discussed at the start.
+**Symptom:** The agent "forgets" the beginning of the conversation. After N messages it stops remembering what was discussed at the start. Or the API returns a context window exceeded error.
 
-**Cause:** Conversation history exceeds the model's context window size. Old messages get "pushed out" of context.
+**Cause:** The dialogue history grows and exceeds the model's context window size.
 
-**Solution:**
+**Fix: Condense — a single condense as you approach the limit**
 
-There are two approaches:
+The canonical mechanism (more in [Chapter 09: Memory](../09-agent-architecture/README.md#memory) and [Chapter 13: Context Engineering](../13-context-engineering/README.md)):
 
-**Option 1: History Trimming (simple, but we lose information)**
+1. **The threshold is ~0.85 of the context window**, computed from `usage.PromptTokens` in the provider's response (not from your own counter).
+2. **At most one condense per run:** when the threshold is exceeded, the old part of the history (the head) is summarized with a separate LLM call, and the fresh part (the tail) is kept as is.
+3. **`tool_call` ↔ `tool_result` pairs are never split:** the condense boundary passes only between complete pairs, otherwise the history becomes invalid.
+4. **The cacheable prefix is unchanged:** `messages[0]` (the system prompt) and the `tools` list stay intact — this is exactly the prefix the provider caches.
+
 ```go
-// BAD: We lose important information from the start of conversation!
-if len(messages) > maxHistoryLength {
-    messages = append(
-        []openai.ChatCompletionMessage{messages[0]},  // System
-        messages[len(messages)-maxHistoryLength+1:]...,  // Last ones
-    )
+// Condense: threshold based on provider data, head -> summary, tail as is
+const condenseThreshold = 0.85
+
+if float64(resp.Usage.PromptTokens) > condenseThreshold*float64(ctxWindow) && !condensed {
+    // 1. Boundary: the index where the last tool_call <-> tool_result
+    //    pair completed (never split a pair!)
+    cut := lastCompleteToolBoundary(req.Messages)
+
+    // 2. Head (everything after system) is summarized with a separate LLM call
+    summary := summarize(ctx, req.Messages[1:cut])
+
+    // 3. New context: system (unchanged!) + summary + tail
+    req.Messages = append([]Message{
+        req.Messages[0], // system: must not be mutated — it would break the prompt cache
+        {Role: "user", Content: "Summary of earlier conversation:\n" + summary},
+    }, req.Messages[cut:]...)
+    condensed = true // at most once per run
 }
 ```
 
-**Option 2: Context Compression via Summarization (better solution)**
+**Why NOT "insert the summary as a second system message"?**
 
-Instead of trimming, it's better to **compress** old messages via LLM, preserving important information:
+A common temptation is to glue the condensed history right after the system message:
 
 ```go
-// 1. Split into "old" and "new" messages
-systemMsg := messages[0]
-oldMessages := messages[1 : len(messages)-10]  // All except last 10
-recentMessages := messages[len(messages)-10:]  // Last 10
-
-// 2. Compress old messages via LLM
-summary := summarizeMessages(ctx, client, oldMessages)
-
-// 3. Assemble new context: System + Summary + Recent
-compressed := []openai.ChatCompletionMessage{
+// BAD: mutates the cacheable prefix
+compressed := []Message{
     systemMsg,
-    {
-        Role:    "system",
-        Content: fmt.Sprintf("Summary of previous conversation:\n%s", summary),
-    },
+    {Role: "system", Content: "Summary of previous conversation:\n" + summary},
 }
-compressed = append(compressed, recentMessages...)
 ```
 
-**Why is summarization better than trimming?**
+This breaks the **prompt cache**: the provider caches an immutable prefix (system + tools). Inserting a new message right after the system message changes the prefix — the cache is invalidated, and every request after the condense is paid for in full. The summary should go into the body of the history (for example, as a `user` message), and `messages[0]` must not be touched.
 
-- **Preserves important information:** User name, task context, decisions made
-- **Saves tokens:** Compresses 2000 tokens to 200, preserving essence
-- **Agent remembers start:** Can answer questions about early messages
+**Why not truncation?**
+
+Naive truncation ("System + the last N messages") loses important information from the beginning: the user's name, task context, decisions already made. Condense preserves the essence: 2000 tokens shrink to ~200 while keeping the key facts.
 
 **Example:**
 ```
-Original history (2000 tokens):
+Original history (60k tokens):
 - User: "My name is Ivan, I'm a DevOps engineer"
-- Assistant: "Hello, Ivan!"
-- User: "We have a server problem"
+- Assistant: "Hi, Ivan!"
+- User: "We have a problem with our server"
 - Assistant: "Describe the problem"
-... (50 more messages)
-```
- 
-- [ ] After trimming: We lose name and context
-- [x] After summarization: "User Ivan, DevOps engineer. Discussed server problem. Current task: diagnostics."
-
-**When to use:**
-- **Trimming:** Quick one-time tasks, history not important
-- **Summarization:** Long sessions, contextual information important, autonomous agents
-
-See more: section "Context Optimization" in [Chapter 09: Agent Anatomy](../09-agent-architecture/README.md#context-optimization) and [Lab 09: Context Optimization](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab09-context-optimization)
-
-### Mistake 3: LM Studio — Wrong Prompt Template (role support error)
-
-**Symptom:** When trying to use a model through LM Studio, you get an error:
-
-```json
-{
-  "error": "Error rendering prompt with jinja template: \"Only user and assistant roles are supported!\".\n\nThis is usually an issue with the model's prompt template. If you are using a popular model, you can try to search the model under lmstudio-community, which will have fixed prompt templates. If you cannot find one, you are welcome to post this issue to our discord or issue tracker on GitHub. Alternatively, if you know how to write jinja templates, you can override the prompt template in My Models > model settings > Prompt Template."
-}
+... (50 more messages and tool results)
 ```
 
-**Cause:** The prompt template in LM Studio only accepts `user` and `assistant` roles and doesn't support `system` or `tool` roles that agents need. This usually happens when an incorrect community template is selected or the default template doesn't match your model.
+- [ ] After truncation: we lose the name and context
+- [x] After condense: "The user is Ivan, a DevOps engineer. We discussed a server problem. Current task: diagnostics." + recent messages as is
 
-**Solution:**
+See more: the "Memory" section in [Chapter 09: Agent Anatomy](../09-agent-architecture/README.md#memory) and [Lab 09: Context Optimization](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab09-context-optimization)
 
-Choose the correct prompt template in model settings. Here's how to fix it for `mistralai/mistral-7b-instruct-v0.3`:
+### Mistake 3: LM Studio — wrong prompt template (role error)
 
-1. Open LM Studio
-2. Go to **My Models**
-3. Find the model `mistralai/mistral-7b-instruct-v0.3`
-4. Click the three dots → **Model Settings**
-5. Go to the **Prompt Template** tab
-6. Select the correct template:
-    - For Mistral: **Mistral Instruct**
-    - Or try: **ChatML**
+**Symptom:** When running locally via LM Studio you get an error like `"Only user and assistant roles are supported!"`.
 
-For other models, select the appropriate template (e.g., `Llama 3` for Llama models, or `ChatML` as a universal option).
+**Cause and fix:** The model's chat template only accepts the `user`/`assistant` roles and doesn't know the `system`/`tool` roles the agent needs. In the model settings, choose a template that matches the model (ChatML-compatible or specific to the model family), or take a model from the repository that already has a correct template. Cloud providers with native tool calling don't have this problem.
 
-### Mistake 4: Hallucinations
+## Acceptance Criteria / Checklist
 
-**Symptom:** Model invents facts. For example, says "use flag `--force`" for a command that doesn't support it.
+**Passed:**
+- [x] You understand that an LLM predicts tokens rather than "thinking"
+- [x] You understand that temperature is a generation-quality setting; agent process reproducibility comes from JSON Schema, validation, guards, and evals
+- [x] You understand the limits of the context window
+- [x] You know how to manage dialogue history (condense at ~0.85 of the window based on `usage.PromptTokens`)
+- [x] The model supports Function Calling (verified via [Lab 00](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab00-capability-check))
+- [x] The System Prompt gives a motivated ban on hallucinations, and grounding via Tools/RAG is in place
 
-**Cause:** The model strives to generate *plausible* text, not necessarily *true* text. It doesn't know real facts about your system.
+**Not passed:**
+- [ ] The variance in agent behavior is uncontrolled (high temperature, no tool call validation)
+- [ ] The agent "forgets" the beginning of the conversation (context overflows, condense not implemented)
+- [ ] The model invents facts (no grounding via Tools/RAG)
 
-**Solution:**
-```go
-// GOOD: Forbid inventing facts
-systemPrompt := `You are a DevOps assistant.
-CRITICAL: Never invent facts. Always use tools to get real data.
-If you don't know something, say "I don't know" or use a tool.`
+## Exercises
 
-// Also use:
-// 1. Tools to get real data
-// 2. RAG for access to documentation
-```
+### Exercise 1: Counting tokens
 
-## Completion Criteria / Checklist
+> **Context.** This function is a **pre-estimate**, used to gauge whether it's time to condense the history **before** sending a request. After the request, we use the provider's `resp.Usage.PromptTokens` as the authoritative source. See the note in the "Context Window" section above and [Chapter 13](../13-context-engineering/README.md).
 
-**Completed:**
-- [x] Understand that LLM predicts tokens, not "thinks"
-- [x] Know how to set `Temperature = 0` for deterministic behavior
-- [x] Understand context window limitations
-- [x] Know how to manage conversation history (summarization or trimming)
-- [x] Model supports Function Calling (verified via [Lab 00](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab00-capability-check))
-- [x] System Prompt forbids hallucinations
-
-**Not completed:**
-- [ ] Model behaves non-deterministically (`Temperature > 0`)
-- [ ] Agent "forgets" conversation start (context overflow)
-- [ ] Model invents facts (no grounding via Tools/RAG)
-
-## Mini-Exercises
-
-### Exercise 1: Token Counting
-
-> **Context.** This function is a **pre-send estimate**, used to decide whether it's time to compress history **before** sending the request. After the request, use `resp.Usage.PromptTokens` from the provider as the authoritative source. See the note in the "Context Window" section above and [Chapter 13](../13-context-engineering/README.md).
-
-Write a function that approximately counts the number of tokens in text:
+Write a function that approximately counts the number of tokens in a text:
 
 ```go
 func estimateTokens(text string) int {
-    // Approximate estimate: 1 token ≈ 4 characters (for English)
+    // Rough estimate: 1 token ≈ 4 characters (for English)
     // For Russian: 1 token ≈ 3 characters
     return len(text) / 4
 }
 ```
 
 **Expected result:**
-- Function returns approximate number of tokens
-- Accounts for difference between English and Russian text
+- The function returns an approximate token count
+- It accounts for the difference between English and Russian text
 
-### Exercise 2: History Trimming
+### Exercise 2: Managing history
 
-Implement a function to trim message history:
+Implement a function that truncates the message history:
 
 ```go
-func trimHistory(messages []ChatCompletionMessage, maxTokens int) []ChatCompletionMessage {
-    // Keep System Prompt + last messages that fit in maxTokens
+func trimHistory(messages []Message, maxTokens int) []Message {
+    // Keep the System Prompt + the latest messages that fit into maxTokens
+    // The truncation boundary must not split a tool_call <-> tool_result pair
     // ...
 }
 ```
 
 **Expected result:**
-- System Prompt always remains first
-- Last messages are added until they exceed maxTokens
-- Function returns trimmed history
+- The System Prompt always stays first (messages[0] is not mutated)
+- Recent messages are added as long as maxTokens is not exceeded
+- The truncation boundary does not split `tool_call` ↔ `tool_result` pairs
+- The function returns the truncated history
 
-## For the Curious
+## For the curious
 
-> This section explains the formalization of LLM operation at a deeper level. Can be skipped if you're only interested in practice.
+> A dive into the formalism. Feel free to skip if you only care about practice.
 
-### Formal Definition of LLM
+### Temperature — formally
 
-An LLM is a function `NextToken(Context) -> Distribution`:
+Temperature $T$ scales the logits of the distribution $P(x_{t+1} | x_1, ..., x_t)$ before the softmax: as $T \to 0$ the distribution degenerates into an argmax (greedy), at $T = 1$ it stays "as is", and at $T > 1$ it flattens and becomes more random. Hence the practical effect from the "Temperature" section: a low temperature narrows the generation spread but does not guarantee reproducibility at the provider level (batching, MoE).
 
-$$P(x_{t+1} | x_1, ..., x_t)$$
+### Why does the model "choose" a tool?
 
-Where:
-- $x_1, ..., x_t$ — sequence of tokens (context)
-- $P(x_{t+1})$ — probability distribution for the next token
-- Model selects token based on this distribution
+Formally, the model doesn't "choose" — it generates a sequence of tokens that matches the tool call format, because it was trained on examples of function calls. The System Prompt and `tools[]` bias the distribution toward that format: the better the tool's `Description` matches the request, the higher the probability of the corresponding tokens. No magic — just the result of training.
 
-**Temperature** changes the entropy of the distribution:
-- `Temperature = 0`: most probable token is selected (greedy decoding)
-- `Temperature > 0`: random token is selected from distribution (sampling)
+## Relation to Other Chapters
 
-### Why Does the Model "Choose" a Tool?
-
-When the model receives in context:
-- System Prompt: "Use tools when needed"
-- Tools Schema: `[{name: "check_status", description: "..."}]`
-- User Input: "Check server status"
-
-The model generates a sequence of tokens that matches the tool call format. This isn't "magic" — it's the result of training on function call examples.
-
-## Connection to Other Chapters
-
-- **Function Calling:** More about how the model generates tool calls, see [Chapter 03: Tools](../03-tools-and-function-calling/README.md)
-- **Context Window:** How to manage message history, see [Chapter 09: Agent Anatomy](../09-agent-architecture/README.md#context-optimization)
-- **Temperature:** Why `Temperature = 0` is used for agents, see [Chapter 03: Tools](../03-tools-and-function-calling/README.md)
+- **Function Calling:** For more on how the model generates tool calls, see [Chapter 03: Tools](../03-tools-and-function-calling/README.md)
+- **Context window:** For how to manage message history, see [Chapter 09: Agent Anatomy](../09-agent-architecture/README.md) and [Chapter 13: Context Engineering](../13-context-engineering/README.md)
+- **Temperature:** For why temperature is a generation-quality setting while structure, guards, and evals provide reproducibility, see the "Temperature" section in this chapter and [Chapter 13: Context Engineering](../13-context-engineering/README.md)
 
 ## What's Next?
 
-After studying LLM physics, proceed to:
-- **[02. Prompting as Programming](../02-prompt-engineering/README.md)** — how to control model behavior through prompts
-
+After learning the physics of LLMs, move on to:
+- **[02. Prompting as Programming](../02-prompt-engineering/README.md)** — how to steer model behavior through prompts

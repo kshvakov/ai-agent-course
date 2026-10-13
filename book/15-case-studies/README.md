@@ -1,449 +1,272 @@
 # 15. Real-World Case Studies
 
-## Why This Chapter?
+## Why does this matter?
 
-This chapter walks through agent examples in different domains, with a concrete breakdown of how they operate.
+In this chapter we will look at agents from different domains — with a clear breakdown of how they work.
 
-Theory is useful, but real examples show how to apply it. Here you'll see how the pieces (SOP, CoT, Tools, Safety, RAG) work together in practice.
+Theory is useful, but real examples show how it all comes together into a working system. Here you can see how all the details (SOP, CoT, Tools, Safety, RAG) work together in practice.
 
-### Real-World Case Study
+The case studies use mechanics introduced in earlier chapters: the Confirm callback and `confirmed_by` ([ch. 05](../05-safety-and-hitl/README.md)), tool allowlists and guards ([ch. 05](../05-safety-and-hitl/README.md), [ch. 17](../17-security-and-governance/README.md)), the Config/Run pattern ([ch. 04](../04-autonomy-and-loops/README.md)), and budgets on tool results ([ch. 13](../13-context-engineering/README.md)). We will cover two cases in detail and the rest compactly.
 
-**Situation:** You want to create a DevOps agent, but don't know where to start.
+### A real-world case
 
-**Problem:** You know the theory, but don't understand how to put it all together: what System Prompt to use, what tools are needed, how to organize the work loop.
+**Situation:** You want to build a DevOps agent but don't know where to start.
 
-**Solution:** Case studies show the patterns that actually work. You can reuse those patterns for your own agent.
+**Problem:** You know the theory, but you don't understand how to put everything together: which System Prompt to use, which tools you need, how to organize the working loop.
+
+**Solution:** Real case studies show patterns that work. You can take them as a starting point and assemble your own agent faster and with more confidence.
 
 ## DevOps Agent
 
-**Task:** "We have database issues, investigate"
+**Task:** "We're having database problems, figure it out"
 
-### System Prompt
+### System prompt
 
 ```text
 You are a Senior DevOps Engineer with 10 years of experience.
 
-Your goal is to restore service functionality as quickly as possible.
+Your goal is to restore service health as quickly as possible.
 
-Constraints:
-- Never use commands like `rm -rf /`
-- Always ask for confirmation before deleting data
-- If unsure about an action — ask the user
+Boundaries:
+- You only call tools from the run's allowlist: commands that are not
+  on it will be rejected by the runtime with an error — don't try
+  to "work around" them
+- Restarting a service is a mutating action: the loop pauses the run
+  and asks the on-call engineer. If the call is denied — propose
+  an alternative and explain the risk
+- If you don't have enough data to decide — ask the on-call engineer
+  instead of guessing: a wrong region or limit creates a problem
+  someone will have to fix
 
-SOP for problem diagnosis:
+SOP for diagnosing issues:
 1. Check metrics (CPU, Memory, Connections)
 2. Read logs (last 50 lines)
 3. Analyze errors
-4. Form hypothesis
-5. Apply fix (if safe) or request confirmation
-6. Verify result
+4. Form a hypothesis
+5. Apply the fix — write tools run only after on-call approval
+6. Verify the result
 ```
 
-### Available Tools
+Note that the boundaries explain the **reason** rather than prohibiting in a commanding tone. The mechanics (run pausing, allowlist) are enforced by code anyway — the prompt merely helps the model build a plan around the real boundaries.
+
+### Available tools
+
+A neutral `ToolDef` from [Chapter 03](../03-tools-and-function-calling/README.md), SDK-agnostic:
 
 ```go
-tools := []openai.Tool{
+tools := []ToolDef{
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "check_db_metrics",
-            Description: "Check database metrics: CPU, memory, connections. Use this FIRST when investigating database issues.",
-        },
+        Name:        "check_db_metrics",
+        Description: "Check database metrics: CPU, memory, open connections. The natural starting point for investigating database issues.",
     },
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "read_db_logs",
-            Description: "Read the last N lines of database logs. Use this after checking metrics to find errors.",
-        },
+        Name:        "read_db_logs",
+        Description: "Read the last N lines of database logs. Use after checking metrics to find the error behind the numbers.",
     },
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "restart_db_service",
-            Description: "CRITICAL: Restart database service. Requires confirmation. Use this only if logs show it's safe.",
-        },
+        Name:        "restart_db_service",
+        Description: "Restart the database service: aborts in-flight transactions and drops open connections. Executed only after the on-call engineer approves the call via the Confirm mechanism (chapter 05).",
     },
 }
 ```
 
-### Execution Example
+`restart_db_service` is declared in the run's registry as a mutating tool — with the `Confirm: true` flag ([ch. 04](../04-autonomy-and-loops/README.md)). The description explains **what the tool does and what its risks are** — it doesn't demand "approval" by shouting: confirmation is enforced by code, and a line in the description neither strengthens nor weakens it.
 
-**Iteration 1:**
-- User: "We have database issues, investigate"
-- Agent: `check_db_metrics()` → CPU: 95%, Connections: 1000/100
+### Confirmation — code mechanics
 
-**Iteration 2:**
-- Agent: `read_db_logs(lines=50)` → "ERROR: Too many connections"
-
-**Iteration 3:**
-- Agent: Analyzes problem and proposes solution: "Detected connection limit exceeded. Recommend restarting service or increasing limit."
-
-**Iteration 4:**
-- Agent: Requests confirmation for `restart_db_service()`
-- User: "yes"
-- Agent: `restart_db_service()` → Success
-
-**Iteration 5:**
-- Agent: `check_db_metrics()` → CPU: 30%, Connections: 50/100
-- Agent: "Problem resolved. Database is running normally."
-
-## Customer Support Agent
-
-**Task:** "User complains about slow loading"
-
-### System Prompt
-
-```text
-You are a Customer Support Agent level Tier 2.
-
-Your goal is to solve user's problem quickly and politely.
-
-Constraints:
-- Always be polite
-- If problem is complex — escalate
-- Don't give technical details if user is not technical
-
-SOP for ticket processing:
-1. Read ticket completely (get_ticket)
-2. Gather context (software version, OS, browser)
-3. Search knowledge base (search_kb)
-4. If solution found — formulate response
-5. If not — escalate (escalate_ticket)
-```
-
-### Available Tools
+No "type yes" in the chat history. The loop intercepts the call **before** execution ([ch. 05](../05-safety-and-hitl/README.md)):
 
 ```go
-tools := []openai.Tool{
-    {
-        Function: &openai.FunctionDefinition{
-            Name:        "get_ticket",
-            Description: "Get ticket details including user info, description, and history. Use this FIRST.",
-        },
-    },
-    {
-        Function: &openai.FunctionDefinition{
-            Name:        "search_kb",
-            Description: "Search knowledge base for solutions to common problems. Use this after reading ticket.",
-        },
-    },
-    {
-        Function: &openai.FunctionDefinition{
-            Name:        "draft_reply",
-            Description: "Draft a reply message to the ticket. Use this when you have a solution.",
-        },
-    },
-    {
-        Function: &openai.FunctionDefinition{
-            Name:        "escalate_ticket",
-            Description: "Escalate ticket to Tier 3 or engineering. Use this for complex technical issues.",
-        },
-    },
+// Run registry: category and flags are set when the tool is declared.
+restartTool := Tool{
+    Def:     restartDef,
+    Confirm: true, // mutating action: loop pause + on-call decision
+}
+
+// Inside the loop, before every tool call is executed.
+if tool.Confirm {
+    d := cfg.Confirm(ctx, call) // ask the on-call engineer OUTSIDE the model (UI, pager)
+    if !d.Approved {
+        memory.Append(Message{Role: "tool", ToolCallID: call.ID,
+            Content: "denied by automatic policy: restart requires on-call confirmation"})
+        continue // the denial goes into history: the model sees it and changes its plan
+    }
+    out, err = tool.Exec(ctx, call.Arguments, d.ConfirmedBy) // who confirmed — injected by the runtime
 }
 ```
 
-### Execution Example
+`confirmed_by` is a mandatory tool argument: the identifier of the person from an authenticated session, injected by the runtime after an explicit decision. An empty `confirmed_by` or "confirmed by a bot" is a rejection at the tool code level. The model cannot forge this value: it is not in the prompt or the history.
 
-**Iteration 1:**
-- User: "User complains about slow loading"
-- Agent: `get_ticket(ticket_id="TICKET-12345")` → "User reports slow page load. Browser: Chrome, OS: Windows"
+### Sample run
 
-**Iteration 2:**
-- Agent: `search_kb(query="slow page load chrome")` → "Solution: Clear browser cache, check network connection"
+| It. | Agent action | Result | What matters here |
+|---|---|---|---|
+| 1 | `check_db_metrics()` | CPU 95%, connections 1000/100 | read-only — executes immediately, no human involved |
+| 2 | `read_db_logs(lines=50)` | "ERROR: Too many connections" | hypothesis: a connection leak |
+| 3 | `restart_db_service()` | **denied**: run paused, on-call engineer rejected it — "first show how many connections are being dropped" | the model called a mutating tool without evidence; Confirm fired before execution, and the denial returned into history as a tool result |
+| 4 | `read_db_logs(lines=200)`, text: restart plan and risk | on-call engineer approves | the model changed its plan after the denial — it doesn't ask again, it justifies |
+| 5 | `restart_db_service()` → `confirmed_by="oncall/i.ivanov"` | Success | confirmation was injected by the runtime, not the model |
+| 6 | `check_db_metrics()` | CPU 30%, connections 50/100 | verification: SOP complete |
 
-**Iteration 3:**
-- Agent: `draft_reply(ticket_id="TICKET-12345", message="Try clearing browser cache...")` → Success
+The lesson is in iteration 3: the model tried to apply a fix before finishing diagnostics. The prompt didn't stop it (and wasn't required to): the denial came from the Confirm callback, landed in history as a tool result, and the model correctly rebuilt its plan. That is exactly the difference between "a request in the prompt" and mechanics in code.
 
-**Iteration 4:**
-- Agent: "Reply sent to user. Recommended clearing browser cache."
-
-## Data Analytics Agent
-
-**Task:** "Why did sales drop in region X?"
-
-### System Prompt
-
-```text
-You are a Data Analyst with experience in SQL and BI tools.
-
-Your goal is to provide accurate data and analytics.
-
-Constraints:
-- Use ONLY read-only SQL (SELECT)
-- Always check data quality before analysis
-- If data is incorrect — report it
-
-SOP for analysis:
-1. Understand user's question
-2. Check table schema (describe_table)
-3. Formulate SQL query
-4. Execute query (sql_select)
-5. Analyze results
-6. Generate report
-```
-
-### Available Tools
-
-```go
-tools := []openai.Tool{
-    {
-        Function: &openai.FunctionDefinition{
-            Name:        "describe_table",
-            Description: "Get table schema including column names, types, and constraints. Use this FIRST before writing SQL queries.",
-        },
-    },
-    {
-        Function: &openai.FunctionDefinition{
-            Name:        "sql_select",
-            Description: "Execute a SELECT query on the database. ONLY SELECT queries allowed.",
-        },
-    },
-    {
-        Function: &openai.FunctionDefinition{
-            Name:        "check_data_quality",
-            Description: "Check for data quality issues: nulls, duplicates, outliers. Use this before analysis.",
-        },
-    },
-}
-```
-
-### Execution Example
-
-**Iteration 1:**
-- User: "Why did sales drop in region X?"
-- Agent: `describe_table(table_name="sales")` → "Columns: date, region, amount, product"
-
-**Iteration 2:**
-- Agent: `check_data_quality(table_name="sales")` → "No issues found"
-
-**Iteration 3:**
-- Agent: `sql_select(query="SELECT date, SUM(amount) FROM sales WHERE region='X' GROUP BY date ORDER BY date DESC LIMIT 30")` → Results: [data...]
-
-**Iteration 4:**
-- Agent: `sql_select(query="SELECT date, SUM(amount) FROM sales WHERE region='X' AND date >= NOW() - INTERVAL '60 days' GROUP BY date")` → Comparison data
-
-**Iteration 5:**
-- Agent: Analyzes data and generates report: "Sales in region X dropped 30% over last month. Main cause: decrease in product Y sales."
+> **How the real SDK does it.** `read_db_logs(lines=100000)` won't blow up the context: the loop has a per-tool-result budget (~128 KB, [ch. 13](../13-context-engineering/README.md)); whatever doesn't fit is truncated with a marker, and the full output goes into an artifact outside the context ([ch. 11](../11-state-management/README.md)). That's why the description promises "the last N lines" without qualifying the size: truncation is handled by the runtime, not by model discipline.
 
 ## Security Agent (SOC)
 
 **Task:** "Alert: suspicious activity on host 192.168.1.10"
 
-### System Prompt
+### System prompt
 
 ```text
-You are a Security Analyst in SOC (Security Operations Center).
+You are a Security Analyst in a SOC (Security Operations Center).
 
-Your goal is to quickly and accurately triage security alerts.
+Your goal is to triage security alerts quickly and accurately.
 
-Constraints:
-- Critical actions (host isolation) require confirmation
-- Always gather evidence before actions
-- Generate reports for audit
+Boundaries:
+- Host isolation is an action with irreversible business consequences:
+  the loop pauses the run, and the on-call analyst makes the decision.
+  Call the tool when the evidence is sufficient — the pause is
+  enforced by code
+- Gather evidence before acting: isolating based on an unverified
+  alert stops a working service and undermines trust in SOC automation
+- Generate reports for audit: every decision must be reproducible
 
 SOP for alert triage:
 1. Determine severity (Low/Medium/High/Critical)
 2. Gather evidence (logs, metrics, traffic)
 3. Analyze attack patterns
 4. Determine scope (affected systems)
-5. Make decision (False Positive / True Positive)
-6. If True Positive — containment (with confirmation!)
-7. Generate report for SOC
+5. Make a decision (False Positive / True Positive)
+6. If True Positive — containment (analyst approval via Confirm)
+7. Generate a report for the SOC
 ```
 
-### Available Tools
+### Available tools
 
 ```go
-tools := []openai.Tool{
+tools := []ToolDef{
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "query_siem",
-            Description: "Query security information and event management system for logs and alerts.",
-        },
+        Name:        "query_siem",
+        Description: "Query the SIEM for logs and alerts. The starting point of any triage: evidence before conclusions.",
     },
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "check_ip_reputation",
-            Description: "Check if an IP address is known malicious or suspicious.",
-        },
+        Name:        "check_ip_reputation",
+        Description: "Check if an IP address is known malicious or suspicious. Returns no data for internal IPs — absence of reputation is not evidence of innocence.",
     },
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "isolate_host",
-            Description: "CRITICAL: Isolate a host from the network. Requires explicit confirmation.",
-        },
+        Name:        "isolate_host",
+        Description: "Isolate a host from the network: cuts all its connections, including legitimate ones — a false positive stops a working service. Executed only after the analyst approves via the Confirm mechanism (chapter 05).",
     },
     {
-        Function: &openai.FunctionDefinition{
-            Name:        "generate_report",
-            Description: "Generate a security incident report for SOC and audit.",
-        },
+        Name:        "generate_report",
+        Description: "Generate a security incident report for SOC and audit, with evidence links and the decision trail.",
     },
 }
 ```
 
-### Execution Example
+### Host isolation: confirmation and a real boundary
 
-**Iteration 1:**
-- User: "Alert: suspicious activity on host 192.168.1.10"
-- Agent: `query_siem(query="host=192.168.1.10 AND time>now-1h")` → "Multiple failed login attempts, unusual network traffic"
+In a naive implementation, the agent would write "isolate?" into the chat, and a "yes" line from history would count as consent. That's a hole: not only the human gets into the history — the alert text, the SIEM output, the log contents. An injected text with "yes" in it would trigger isolation without an analyst.
 
-**Iteration 2:**
-- Agent: `check_ip_reputation(ip="192.168.1.10")` → "Internal IP, no external reputation data"
+The correct mechanics are the same as in the DevOps case: `isolate_host` is declared destructive, the loop pauses the run, the analyst confirms via their own channel, and the runtime injects `confirmed_by` from an authenticated session. A denial (nobody on the line) is "automatic policy": the model doesn't wait for a human, it changes its plan — gathers more evidence and escalates with a message.
 
-**Iteration 3:**
-- Agent: Analyzes data and determines: "High severity. Pattern: Brute-force attack. Scope: Single host."
+And the second pillar: the real boundary for isolation is not a line in the prompt but **process isolation and host permissions**: the agent process runs under an account that physically has no rights to touch other hosts; isolation is executed through a narrowly scoped API. Even a successful injection doesn't get past these boundaries. Full coverage is in [Chapter 17: Security and Governance](../17-security-and-governance/README.md).
 
-**Iteration 4:**
-- Agent: Requests confirmation for `isolate_host(host="192.168.1.10")`
-- User: "yes"
-- Agent: `isolate_host(host="192.168.1.10")` → Success
+### Sample run
 
-**Iteration 5:**
-- Agent: `generate_report(incident_id="INC-12345", details="...")` → Report generated
+| It. | Agent action | Result | What matters here |
+|---|---|---|---|
+| 1 | `query_siem(query="host=192.168.1.10 AND time>now-1h")` | "Multiple failed login attempts, unusual network traffic" | read-only, executes immediately |
+| 2 | `check_ip_reputation(ip="192.168.1.10")` | "Internal IP, no external reputation data" | the model doesn't conclude "no reputation means guilty": the tool description warns about this |
+| 3 | Conclusion: "High severity. Pattern: brute-force. Scope: single host" | — | the decision is stated **before** the action |
+| 4 | `isolate_host(host="192.168.1.10")` | run paused → analyst approves → `confirmed_by="soc/a.petrova"` → Success | confirmation outside the model; anything could have ended up in history — the code checks only `confirmed_by` |
+| 5 | `generate_report(incident_id="INC-12345")` | report with evidence | the decision is reproducible for audit |
 
-**Iteration 6:**
-- Agent: "Host isolated. Report generated. Incident: INC-12345."
+The lesson is in iteration 2: an empty reputation result is a classic trap. A model trained to "draw conclusions from everything" tends to treat the absence of data as a signal. The tool description closes this gap explicitly — an example of why descriptions are written with reasons.
 
-## Product Operations Agent
+> **How the real SDK does it.** The output of a SIEM query easily contains tokens and passwords that ended up in logs. Mature runtimes pass a tool result through a redaction filter before it enters history: secrets are masked both in the context and in the logs, and the full output remains in an access-restricted artifact. Redaction by default, not by a field list: everything that looks like a secret is filtered.
 
-**Task:** "Prepare release plan for feature X"
+## Other Domains: A Compact Overview
 
-### System Prompt
+The three domains below follow the same scheme (SOP + tools + boundaries in code) and introduce no new mechanics — hence the compact treatment:
 
-```text
-You are a Product Operations Manager.
+| Case | Tools | Specifics | Main trap |
+|---|---|---|---|
+| Customer Support | `get_ticket`, `search_kb`, `draft_reply`, `escalate_ticket` | tone and escalation; `draft_reply` prepares a draft, sending it to the user is a separate Confirm | ticket content is untrusted text: a user complaint may contain an injection, "confirmation" from within a ticket doesn't count |
+| Data Analytics | `describe_table`, `sql_select`, `check_data_quality` | read-only SQL only; the DB connection is opened under an account with SELECT privileges | "SELECT only" is enforced by the DB account, not a line in the prompt; without a result budget a large SELECT bloats the context ([ch. 13](../13-context-engineering/README.md)) |
+| Product Operations | `get_feature_spec`, `check_dependencies`, `create_release_plan`, `send_for_approval` | documents and approvals; `send_for_approval` — Confirm: the decision belongs to stakeholders | the agent prepares the plan but doesn't "approve" it itself: a forged approval in history is not a confirmation |
 
-Your goal is to prepare a complete feature release plan.
-
-Constraints:
-- Always check dependencies before release
-- Consider risks and rollback plan
-- Coordinate with stakeholders
-
-SOP for release preparation:
-1. Gather requirements and specification
-2. Check dependencies (other features, services)
-3. Identify risks and rollback plan
-4. Create documents (release notes, runbook)
-5. Send for approval
-```
-
-### Available Tools
-
-```go
-tools := []openai.Tool{
-    {
-        Function: &openai.FunctionDefinition{
-            Name:        "get_feature_spec",
-            Description: "Get feature specification and requirements.",
-        },
-    },
-    {
-        Function: &openai.FunctionDefinition{
-            Name:        "check_dependencies",
-            Description: "Check dependencies: other features, services, infrastructure.",
-        },
-    },
-    {
-        Function: &openai.FunctionDefinition{
-            Name:        "create_release_plan",
-            Description: "Create release plan document with timeline, risks, rollback plan.",
-        },
-    },
-    {
-        Function: &openai.FunctionDefinition{
-            Name:        "send_for_approval",
-            Description: "Send release plan for approval to stakeholders.",
-        },
-    },
-}
-```
-
-### Execution Example
-
-**Iteration 1:**
-- User: "Prepare release plan for feature X"
-- Agent: `get_feature_spec(feature_id="X")` → Specification details
-
-**Iteration 2:**
-- Agent: `check_dependencies(feature_id="X")` → "Depends on feature Y, requires service Z update"
-
-**Iteration 3:**
-- Agent: Analyzes dependencies and risks
-
-**Iteration 4:**
-- Agent: `create_release_plan(feature_id="X", timeline="...", risks="...", rollback="...")` → Plan created
-
-**Iteration 5:**
-- Agent: `send_for_approval(plan_id="PLAN-12345", stakeholders=["...])` → Sent
-
-**Iteration 6:**
-- Agent: "Release plan created and sent for approval. ID: PLAN-12345."
+The general takeaway from the table: whatever the agent does, the set of safety mechanics doesn't grow — allowlist, tool categories, Confirm + `confirmed_by`, budgets. Only the domain and the SOP change.
 
 ## Common Patterns
 
-In all case studies, common patterns are visible:
+All the case studies reveal common patterns:
 
-1. **SOP sets the process** — clear action algorithm
-2. **CoT helps follow the process** — model thinks step by step
-3. **Tools provide access to real data** — grounding through tools
-4. **Safety checks** — confirmation for critical actions
-5. **Verification** — check result after actions
+1. **SOP defines the process** — a clear algorithm of actions
+2. **CoT helps follow the process** — the model thinks step by step
+3. **Tools give access to real data** — grounding through tools
+4. **Dangerous actions are enforced by code** — Confirm callback + `confirmed_by` ([ch. 05](../05-safety-and-hitl/README.md)), not a request in the prompt
+5. **Boundaries are an allowlist** — the model can physically call only what's permitted ([ch. 05](../05-safety-and-hitl/README.md), [ch. 17](../17-security-and-governance/README.md))
+6. **Verification** — checking the result after the actions
+7. **Result budgets** — large outputs are truncated and moved into artifacts ([ch. 13](../13-context-engineering/README.md))
 
-## Mini-Exercises
+## Exercises
 
-### Exercise 1: Create System Prompt for Your Domain
+### Exercise 1: Create a system prompt for your domain
 
-Choose a domain (DevOps, Support, Data, Security, Product) and create a System Prompt following case study patterns:
+Pick a domain (DevOps, Support, Data, Security, Product) and create a System Prompt following the examples from the case studies:
 
 ```go
 systemPrompt := `
 // Your code here
-// Include: Role, Goal, Constraints, SOP
+// Include: Role, Goal, boundaries (with reasons, not ALL-CAPS prohibitions), SOP
 `
 ```
 
 **Expected result:**
-- System Prompt contains all necessary components
-- SOP clearly describes action process
-- Constraints explicitly stated
+- The System Prompt contains all the necessary components
+- The SOP clearly describes the process of actions
+- The boundaries explain why they exist and reference the code mechanics (Confirm, allowlist) instead of duplicating them
 
-### Exercise 2: Define Tools for Your Agent
+### Exercise 2: Define the tools for your agent
 
-Define a tool set for your agent:
+Define a set of tools for your agent:
 
 ```go
-tools := []openai.Tool{
+tools := []ToolDef{
     // Your code here
-    // Include: main tools, safety tools
+    // Include: read-only tools, mutating ones (Confirm), destructive ones (dry-run + Confirm)
 }
 ```
 
 **Expected result:**
-- Tools cover main domain tasks
-- Tool descriptions are clear and understandable
-- Critical tools require confirmation
+- The tools cover the main tasks of the domain
+- The descriptions explain what the tool does and what its risks are
+- Dangerous tools are declared with the `Confirm` flag and the `confirmed_by` argument
 
-## Completion Criteria / Checklist
+## Acceptance Criteria / Checklist
 
-**Completed:**
-- [x] Understand common patterns for creating agents
-- [x] Can create System Prompt for your domain
-- [x] Can define tool set for agent
-- [x] Understand how to apply SOP, CoT, Safety checks
+**Passed:**
+- [x] You understand the common patterns for building agents
+- [x] You can create a System Prompt for your domain
+- [x] You can define a set of tools with categories (read-only / mutating / destructive)
+- [x] You understand how to apply SOP, CoT, and confirmation via code mechanics
 
-**Not completed:**
-- [ ] Don't understand how to put all components together
-- [ ] System Prompt doesn't contain all necessary components
-- [ ] Tools don't cover main tasks
+**Not passed:**
+- [ ] You don't understand how to put all the components together
+- [ ] The System Prompt doesn't contain all the necessary components
+- [ ] Dangerous actions rely on a line in the prompt instead of the Confirm mechanism
 
-## Connection with Other Chapters
+## Relation to Other Chapters
 
-- **Prompting:** How to create System Prompt, see [Chapter 02: Prompting](../02-prompt-engineering/README.md)
-- **Tools:** How to define tools, see [Chapter 03: Tools](../03-tools-and-function-calling/README.md)
-- **Safety:** How to implement safety checks, see [Chapter 05: Safety](../05-safety-and-hitl/README.md)
+- **Prompting:** how to create a System Prompt — see [Chapter 02: Prompting](../02-prompt-engineering/README.md)
+- **Tools:** how to define tools — see [Chapter 03: Tools](../03-tools-and-function-calling/README.md)
+- **Loop and limits:** the Config/Run pattern and tool flags — see [Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md)
+- **Safety:** the Confirm callback and `confirmed_by` — see [Chapter 05: Safety](../05-safety-and-hitl/README.md)
+- **Boundaries and governance:** allowlist, process isolation, host permissions — see [Chapter 17: Security and Governance](../17-security-and-governance/README.md)
 
 ## What's Next?
 
-After studying case studies, proceed to:
-- **[16. Best Practices and Application Areas](../16-best-practices/README.md)** — best practices for creating and maintaining agents
-
+After studying the case studies, continue with:
+- **[16. Best Practices and Use Cases](../16-best-practices/README.md)** — best practices for building and maintaining agents

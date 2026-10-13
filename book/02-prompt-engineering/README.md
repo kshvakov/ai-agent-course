@@ -1,51 +1,51 @@
 # 02. Prompting as an Engineering Discipline
 
-## Why Is This Needed?
+## Why does this matter?
 
-A prompt is code for a neural network. Unlike regular code, it works by steering probabilities.
+A prompt is code for a neural network. The difference from ordinary code is that it works by steering probabilities.
 
-Without proper prompting, an agent will:
-- Perform actions randomly, without logic
+Without proper prompting an agent will:
+- Act randomly, without logic
 - Skip important analysis steps
 - Perform dangerous actions without confirmation
-- Respond in the wrong format
+- Reply in the wrong format
 
-In this chapter, we'll focus on prompts that reliably steer agent behavior.
+In this chapter we'll look at how to write prompts that actually control agent behavior.
 
-### Real-World Case Study
+### A real-world case
 
-**Situation:** You've created an agent for incident handling. A user writes: "Service is down, fix it"
+**Situation:** You built an incident-response agent. The user writes: "Service is down, fix it"
 
-**Problem:** The agent immediately restarts the service without checking logs. Or vice versa, it will analyze for a long time without applying a fix.
+**Problem:** The agent immediately restarts the service without checking the logs. Or the opposite: it spends a long time analyzing and never applies a fix.
 
-**Solution:** A good System Prompt with an SOP (Standard Operating Procedure) sets the order: status → logs → analysis → fix → verification.
+**Solution:** A proper System Prompt with an SOP (Standard Operating Procedure) defines the order of actions: status → logs → analysis → fix → verification.
 
 ## TL;DR: What to Remember
 
-- **System Prompt** — the agent behavior specification. Consists of: Role, Goal, Constraints, Format, SOP.
-- **In-Context Learning (ICL)**: Zero-shot (instruction-only) — compact, flexible, but model may misinterpret format. Few-shot (demonstration) — instruction + examples, more accurate for complex formats. In practice — combination.
-- **CoT (Chain-of-Thought)**: forces the model to think step by step. Critical for agents.
-- **SOP**: an action algorithm encoded in the prompt. It sets the process, and CoT helps follow it.
-- **Task Decomposition**: complex tasks are broken down into subtasks.
-- **Tools Schema** is passed as a separate field `tools[]`, not inside the System Prompt.
-- **Few-shot examples** must be consistent — one format, otherwise the model will get confused.
+- **The System Prompt** is a specification of agent behavior. It consists of: Role, Goal, Constraints, Format, SOP.
+- **In-Context Learning (ICL)**: Zero-shot (instruction-only) — compact and flexible, but the model may misinterpret the format. Few-shot (demonstration) — instruction plus examples, more accurate for complex formats. In practice — a combination.
+- **CoT (Chain-of-Thought)**: makes the model think step by step. Critical for agents.
+- **SOP**: an action algorithm encoded in the prompt. It defines the process; CoT helps the model follow it.
+- **Task Decomposition**: break complex tasks into subtasks.
+- **The Tools Schema** is passed in a separate `tools[]` field, not inside the System Prompt.
+- **Few-shot examples** must be consistent — one format, otherwise the model gets confused.
 
-## System Prompt Structure
+## Structure of the System Prompt
 
 A good System Prompt consists of five blocks:
 
 ```text
 1. Role (Persona)      — who you are
-2. Goal               — what needs to be achieved
-3. Constraints        — what cannot be done
-4. Format             — what format to respond in
-5. SOP                — action algorithm
+2. Goal                — what you need to achieve
+3. Constraints         — what you must not do
+4. Format              — how to format your reply
+5. SOP                 — the action algorithm
 ```
 
-### System Prompt Template
+### System prompt template
 
 ```text
-You are [Role] with [experience/qualification].
+You are [Role] with [experience/qualifications].
 
 Your goal is [Goal].
 
@@ -53,7 +53,7 @@ Constraints:
 - [Constraint 1]
 - [Constraint 2]
 
-Response format:
+Reply format:
 - [Format rule 1]
 - [Format rule 2]
 
@@ -63,54 +63,56 @@ SOP for [task type]:
 3. [Step 3]
 ```
 
-### Example for DevOps
+### A DevOps example
 
 ```text
-You are a Senior DevOps Engineer with 10 years of experience.
+You are a Senior DevOps Engineer. Your goal is to restore service
+health without breaking what still works.
 
-Your goal is to restore service functionality as quickly as possible.
+Invariants:
+- Destructive actions (restart, rollback, data deletion) — only after
+  confirmation: the system may actually be alive and the alert false,
+  and a restart would make things worse.
+- Do not run commands that wipe data outside the incident zone:
+  recovering from them costs more than the incident itself.
 
-Constraints:
-- Never use commands like `rm -rf /`
-- Always ask for confirmation before deleting data
-- If unsure about an action — ask the user
-
-Response format:
-- If you need to call a tool — use Function Calling
-- If you need to clarify — respond with text
-
-SOP for incidents:
-1. Check service status (check_http)
-2. If not 200 — read logs (read_logs)
-3. Analyze errors
-4. Apply fix (restart/rollback)
-5. Verify (check_http again)
+Usual incident investigation path (not a rigid order — if there is not
+enough data, gather more; the main rule is: never apply a fix before
+analysis):
+- check the service status (check_http)
+- if the status is not 200 — read the latest logs (read_logs)
+- use the logs to identify the likely cause (deploy, DB, resources)
+- apply the minimal fix (restart/rollback)
+- check the status again (check_http)
 ```
 
-### Example for Support
+> **Important: delimiter strings in a prompt are a hint to the model, not protection.**
+> The model can ignore them or interpret them differently. The real boundary is enforced by code: the tool allowlist, access rights, and mandatory confirmation of dangerous actions via a code mechanism (a Confirm callback or a required tool argument). The prompt explains to the model *why* the invariant exists — this lowers the chance of spontaneous violations, but it does not replace enforcement. How this is done — see [Chapter 05: Safety and HITL](../05-safety-and-hitl/README.md) and [Chapter 17: Security and Governance](../17-security-and-governance/README.md).
+
+### A support example
 
 ```text
 You are a Tier 2 Customer Support Agent.
 
-Your goal is to solve the user's problem quickly and politely.
+Your goal is to resolve the user's problem quickly and politely.
 
 Constraints:
-- Always be polite
+- Always stay polite
 - If the problem is complex — escalate
-- Don't give technical details if the user is not technical
+- Do not give technical details if the user is not technical
 
-Response format:
-- Use structured format: {"action": "...", "user_id": "..."}
+Reply format:
+- Use a structured format: {"action": "...", "user_id": "..."}
 
-SOP for ticket processing:
-1. Read the ticket completely (get_ticket)
-2. Gather context (software version, OS, browser)
-3. Search knowledge base (search_kb)
-4. If solution found — formulate response
+SOP for handling a ticket:
+1. Read the ticket in full (get_ticket)
+2. Collect context (software version, OS, browser)
+3. Search the knowledge base (search_kb)
+4. If a solution is found — compose the answer
 5. If not — escalate (escalate_ticket)
 ```
 
-### Example for Data Analytics
+### A data analytics example
 
 ```text
 You are a Data Analyst with experience in SQL and BI tools.
@@ -118,143 +120,162 @@ You are a Data Analyst with experience in SQL and BI tools.
 Your goal is to provide accurate data and analytics.
 
 Constraints:
-- Use ONLY read-only SQL (SELECT)
-- Always check data quality before analysis
-- If data is incorrect — report it
+- Work only with read-only SQL (SELECT): a mutating query can corrupt production data, and it cannot be restored from an analytics session
+- Check data quality before analysis: on dirty data your conclusions will mislead
+- If the data is wrong — say so instead of "fudging" conclusions
 
-Response format:
-- First show SQL query
-- Then results and analysis
+Reply format:
+- First show the SQL query
+- Then the results and the analysis
 
 SOP for analysis:
-1. Understand user's question
-2. Formulate SQL query
-3. Check table schema (describe_table)
-4. Execute query (sql_select)
-5. Analyze results
-6. Generate report
+1. Understand the user's question
+2. Formulate the SQL query
+3. Verify the table schema (describe_table)
+4. Run the query (sql_select)
+5. Analyze the results
+6. Generate the report
 ```
+
+### The system prompt is a cacheable prefix
+
+LLM APIs have a prompt cache: an unchanging prefix of the request is cached and is noticeably cheaper and faster. This gives us practical rules:
+
+- The system prompt must be **immutable** from request to request. Any change — a timestamp, a counter, a "personalized" insertion — breaks the cache and makes every request more expensive.
+- All dynamics (current time, tool results, new facts) go **at the end of the `messages` history** — via tool results and appended messages. Never mutate `messages[0]`.
+- `time.Now()` and other changing values in a system prompt are an anti-pattern.
+- Don't pile bulk knowledge into the prompt: large instructions live in skill files that the model reads itself as needed (progressive disclosure) — 10 skills take ~10 lines in the prompt, not 10 pages.
+
+More detail in [Chapter 12: Agent Memory](../12-agent-memory/README.md) and [Chapter 13: Context Engineering](../13-context-engineering/README.md).
 
 ## In-Context Learning (ICL): Zero-shot and Few-shot
 
-After defining the System Prompt structure, the next question is: **how do we best convey the desired behavior to the model?**
+Now that we've defined the System Prompt structure, the question arises: **what is the best way to convey the desired behavior to the model?**
 
-**In-Context Learning (ICL)** is the model's ability to adapt behavior based on examples *within the prompt*, without changing model weights.
+**In-Context Learning (ICL)** is the model's ability to adapt its behavior based on examples *inside the prompt*, without changing the model's weights.
 
 ICL works in two modes:
 
-### Zero-Shot (instruction only)
+### Zero-shot (instruction only)
 
-We provide the model with only **instruction**, without examples:
+We give the model only the **instruction**, no examples:
 
 ```text
-System Prompt: "You are a DevOps engineer. When the user asks to check logs, use the read_logs tool."
+System Prompt: "You are a DevOps engineer. When the user asks you to check logs, use the read_logs tool."
 
-User: "Check nginx logs"
-Assistant: [Model performs task based on instruction]
+User: "Check the nginx logs"
+Assistant: [The model performs the task based on the instruction]
 ```
 
 **When to use:**
 - Simple tasks where the model understands instructions well
-- Limited context (need to save tokens)
-- Model is already trained on similar tasks
+- Limited context (tokens need to be saved)
+- The model is already trained on similar tasks
 
-### Few-Shot (instruction + examples)
+### Few-shot (instruction + examples)
 
-We provide the model with **instruction + examples** of desired behavior:
+We give the model the **instruction plus examples** of the desired behavior:
 
 ```text
 System Prompt: "You are a DevOps engineer. Examples:
 
 Example 1:
-User: "Check nginx logs"
+User: "Check the nginx logs"
 Assistant: {"tool": "read_logs", "args": {"service": "nginx"}}
 
 Example 2:
-User: "Restart server web-01"
+User: "Restart the web-01 server"
 Assistant: {"tool": "restart", "args": {"name": "web-01"}}
 
-User: "Check server status"
+User: "Check the server status"
 Assistant: {"tool": "check_status", "args": {"hostname": "web-01"}}
 ```
 
-> **Note:** This is an educational demonstration of response format in prompt text. When actually using Function Calling (see [Chapter 03: Tools](../03-tools-and-function-calling/README.md)) the model returns a tool call in a separate `tool_calls` field, not as text in the response.
+> **Important: teaching the model the tool-call format via text in the prompt is a historical technique (recovery).**
+> The mainstream approach today is **native tool-calling**: the model is pre-trained on tool calls, and it is enough to pass the JSON Schema in a separate `tools[]` field (see [Chapter 03: Tools](../03-tools-and-function-calling/README.md)) — the call comes back in a separate `tool_calls` field, not as text. Few-shot with textual `{"tool": ...}` examples remains useful in two cases: non-standard *textual* reply formats (not tool calls) and recovery when the model or the environment does not support native tool-calling.
 
 **When to use:**
-- Complex response format (JSON, structured data)
-- High accuracy in following format needed
-- Model may misinterpret instruction
+- A complex reply format (JSON, structured data)
+- High format-compliance accuracy is required
+- The model may misinterpret the instruction
 
-### Terminology: Instruction vs Demonstration
+### Terminology: instruction vs demonstration
 
-The terms **Instruction-only** and **Demonstration** (or **Few-shot**) are alternative ways to describe the same ICL modes:
+The terms **Instruction-only** and **Demonstration** (or **Few-shot**) are alternative ways of describing the same two ICL modes:
 
-- **Instruction-only** = **Zero-shot**: We **describe** to the model what to do (compact, flexible, but model may misinterpret format)
-- **Demonstration/Few-shot** = **Few-shot**: We **show** the model examples of desired behavior (model accurately copies format, but takes more tokens)
+- **Instruction-only** = **Zero-shot**: we **describe** to the model what to do (compact, flexible, but the model may misinterpret the format)
+- **Demonstration/Few-shot** = **Few-shot**: we **show** the model examples of the desired behavior (the model copies the format precisely, but it takes more tokens)
 
-**Default rule:** Use a **combination** — instruction + 1-2 examples for complex formats or edge cases.
+**Default rule:** use a **combination** — instruction + 1–2 examples for complex formats or edge cases.
 
-### ICL Mode Selection Table
+### Table for choosing an ICL mode
 
-| Mode | What we pass to model | When to use | Example |
-|------|---------------------|-------------|---------|
-| **Zero-shot** (Instruction-only) | Only instruction | Simple tasks, model understands instructions well, limited context, token savings | "You are a DevOps engineer. Check logs via read_logs." |
-| **Few-shot** (Demonstration) | Instruction + examples | Complex response format (JSON, structured data), high accuracy in following format needed | Instruction + 2-3 response format examples |
+| Mode | What we give the model | When to use | Example |
+|-------|-------------------|-------------------|--------|
+| **Zero-shot** (Instruction-only) | Instruction only | Simple tasks, the model understands instructions well, limited context, saving tokens | "You are a DevOps engineer. Check logs via read_logs." |
+| **Few-shot** (Demonstration) | Instruction + examples | Complex reply format (JSON, structured data), high format-compliance accuracy required | Instruction + 2–3 examples of the reply format |
 
-### Practical Example: Few-Shot for Support
+### A practical example: Few-shot for support
 
 ```go
-// System Prompt with Few-Shot examples
+// System Prompt with Few-shot examples
 systemPrompt := `You are a Support agent.
 
-Response format examples:
+Examples of the reply format:
 
 Example 1:
-User: "My account is blocked"
+User: "My account is locked"
 Assistant: {"action": "check_account", "user_id": "extract_from_ticket"}
 
 Example 2:
-User: "Can't log into system"
+User: "I can't log in"
 Assistant: {"action": "check_login", "user_id": "extract_from_ticket"}`
 
-messages := []openai.ChatCompletionMessage{
+messages := []Message{
     {Role: "system", Content: systemPrompt},
     {Role: "user", Content: "Access problem"},
 }
 
-// Model processes examples in System Prompt and generates response in the same format:
+// Message — the neutral struct from Chapter 03:
+// type Message struct {
+//     Role       string
+//     Content    string
+//     ToolCalls  []ToolCall
+// }
+
+// The model sees the examples in the System Prompt and generates a reply in the same format:
 // {"action": "check_account", "user_id": "..."}
 ```
 
-### Anti-Example: Inconsistent Few-Shot Examples
+### Anti-example: inconsistent Few-shot examples
 
-**Bad:** Examples in different formats
+**Bad:** examples in different formats
 
 ```text
 Example 1:
-User: "Check logs"
+User: "Check the logs"
 Assistant: {"tool": "read_logs", "service": "nginx"}
 
 Example 2:
-User: "Restart server"
-Assistant: {"action": "restart", "target": "web-01"}  // Different format!
+User: "Restart the server"
+Assistant: {"action": "restart", "target": "web-01"}  // A different format!
 
 Example 3:
 User: "Status"
-Assistant: check_status("web-01")  // Another format!
+Assistant: check_status("web-01")  // Yet another format!
 ```
 
-**Problem:** The model receives three different formats and doesn't understand which to use. The result is unpredictable.
+**Problem:** The model sees three different formats and doesn't know which one to use. The result is unpredictable.
 
-**Good:** All examples in one format
+**Good:** all examples in one format
 
 ```text
 Example 1:
-User: "Check logs"
+User: "Check the logs"
 Assistant: {"tool": "read_logs", "args": {"service": "nginx"}}
 
 Example 2:
-User: "Restart server"
+User: "Restart the server"
 Assistant: {"tool": "restart", "args": {"name": "web-01"}}  // Same format
 
 Example 3:
@@ -262,707 +283,507 @@ User: "Status"
 Assistant: {"tool": "check_status", "args": {"hostname": "web-01"}}  // Same format
 ```
 
-**Result:** Model clearly understands the pattern and follows it.
+**Result:** The model clearly sees the pattern and follows it.
 
-> **Important: Few-shot sets not only format but also hidden hints.**
-> Examples in few-shot can not only show the response format but also **implicitly hint at the desired conclusion**. The model may "pick up" patterns from examples and shift responses toward what's shown in demonstrations, even if it doesn't match actual data or the task.
+> **Important: few-shot sets not only the format but also hidden hints.**
+> Few-shot examples can do more than show the reply format — they can **implicitly suggest the desired output**. The model may "pick up" a pattern from the examples and drift toward what the demonstrations show, even when that doesn't match the real data or the task.
 >
-> **Problem:** If correct answers in examples are always in position "A", or all examples lead to one type of solution, the model may adopt this positional or thematic bias.
+> **Problem:** If the correct answer is always in position "A" in the examples, or all examples lead to one type of solution, the model may adopt that positional or topical bias.
 >
-> **Solution:** Use diverse examples, shuffle positions of correct answers, include counterexamples. See section ["How not to hint at the answer"](#how-not-to-hint-at-the-answer) below.
+> **Solution:** Use diverse examples, shuffle the positions of correct answers, include counterexamples. See the section ["How to Avoid Suggesting the Answer to the Model"](#how-to-avoid-suggesting-the-answer-to-the-model) below.
 
-### Connection of ICL with Other Techniques
+### How ICL relates to other techniques
 
-- **ICL → CoT:** Demonstrations can set not only response format, but also **reasoning format**. For example, you can show examples with "Thought: ... Action: ... Observation: ...".
-- **CoT → SOP:** SOP is a **process** fixed by instruction and/or examples. CoT helps the model follow this process step by step.
+- **ICL → CoT:** Demonstrations can define not only the reply format but also the **format of reasoning**. For example, examples with "Thought: ... Action: ... Observation: ..." (the historical ReAct format — more in the CoT section below).
+- **CoT → SOP:** An SOP is a **process** fixed by instructions and/or examples. CoT helps the model follow this process step by step.
 
-See more:
+See also:
 - **[Lab 01: Basics](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab01-basics)** — working with context and memory
-- **[Lab 02: Tools](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab02-tools)** — response format via Function Calling
-- **[Lab 06: Incident (SOP)](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab06-incident)** — SOP as action algorithm
+- **[Lab 02: Tools](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab02-tools)** — reply format via Function Calling
+- **[Lab 06: Incident (SOP)](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab06-incident)** — an SOP as an action algorithm
 
-## End-to-End Example: What Exactly the Agent Sends to LLM
+## End-to-end Example: What Exactly the Agent Sends to the LLM
 
-> **For those who need to understand the protocol:** This section shows the technical structure of LLM API requests. If you're just starting, you can skip and return later.
+In brief — what lives where in a request to the LLM API:
 
-When developing an agent, it's important to understand **exactly where** different parts of the prompt are located and how they get into the LLM request.
+- **System Prompt** — the text in `messages[0]` with `role = "system"`: instructions (Role, Goal, Constraints), the SOP, and few-shot examples, if used.
+- **Tools Schema** — a separate `tools[]` field (NOT inside the prompt): JSON Schema descriptions of the tools. The model sees them together with the prompt.
+- **User Input** — `role = "user"` messages in the `messages` history: the current request plus previous user/assistant messages.
+- **Tool Results** — your runtime appends a `role = "tool"` message to the end of the history with a `tool_call_id` linking the result to the call.
 
-### LLM Request Structure
-
-```mermaid
-graph LR
-    A[SystemPrompt] --> D[ChatCompletionRequest]
-    B[ToolsSchema] --> D
-    C[UserInput] --> D
-    D --> E[LLM API]
-    E --> F{Response}
-    F -->|Text| G[assistant content]
-    F -->|Tool Call| H[tool_calls]
-    H --> I[Runtime executes]
-    I --> J[tool result]
-    J --> K[Adds to messages]
-    K --> D
-```
-
-### Where Is What Located?
-
-**1. System Prompt** — in field `Messages[0].Role = "system"`:
-- Instructions (Role, Goal, Constraints)
-- Few-shot examples (if used)
-- SOP (action algorithm)
-
-**2. Tools Schema** — in separate field `Tools` (NOT inside prompt!):
-- JSON Schema tool descriptions
-- Separate from prompt, but model sees them together
-
-**3. User Input** — in field `Messages[N].Role = "user"`:
-- Current user request
-- Conversation history (previous user/assistant messages)
-
-**4. Tool Results** — added by runtime to `Messages`:
-- After tool execution
-- `Role = "tool"`, `ToolCallID` links to call
-
-### Example 1: Text-only Response (without tools)
-
-**Request:**
+A compact request skeleton in the middle of a loop (one tool call has already happened). The shape matches the course's neutral Go structs (`Request`/`Message`/`ToolCall`, ch. 04); the exact wire format of the HTTP request (`"type": "function"` + the `function` wrapper) is in [Chapter 03](../03-tools-and-function-calling/README.md):
 
 ```json
 {
-  "model": "gpt-4o-mini",
+  "model": "glm-5.3",
   "messages": [
-    {
-      "role": "system",
-      "content": "You are a DevOps engineer.\n\nExamples:\nUser: \"How are you?\"\nAssistant: \"All good, how can I help?\""
-    },
-    {
-      "role": "user",
-      "content": "Hello!"
-    }
-  ]
-}
-```
-
-**Where is what located:**
-- **System Prompt** (instructions + few-shot examples) → `messages[0].content`
-- **User Input** → `messages[1].content`
-- **Tools** → absent
-
-**Response:**
-
-```json
-{
-  "choices": [{
-    "message": {
-      "role": "assistant",
-      "content": "Hello! How can I help?",
-      "tool_calls": null
-    }
-  }]
-}
-```
-
-### Example 2: Tool-call Response (with tools, 2 moves)
-
-**Move 1: Request with tool call**
-
-```json
-{
-  "model": "gpt-4o-mini",
-  "messages": [
-    {
-      "role": "system",
-      "content": "You are a DevOps engineer. Use tools to check services."
-    },
-    {
-      "role": "user",
-      "content": "Check nginx status"
-    }
+    { "role": "system", "content": "You are a DevOps engineer..." },
+    { "role": "user", "content": "Check the nginx status" },
+    { "role": "assistant", "content": "",
+      "tool_calls": [
+        { "id": "call_1", "name": "check_status", "arguments": "{\"service\": \"nginx\"}" }
+      ] },
+    { "role": "tool", "tool_call_id": "call_1", "content": "nginx is ONLINE" }
   ],
   "tools": [
-    {
-      "type": "function",
-      "function": {
-        "name": "check_status",
-        "description": "Check service status",
-        "parameters": {
-          "type": "object",
-          "properties": {
-            "service": {
-              "type": "string",
-              "description": "Service name"
-            }
-          },
-          "required": ["service"]
-        }
-      }
-    }
+    { "name": "check_status", "description": "Check service status",
+      "parameters": {
+        "type": "object",
+        "properties": { "service": { "type": "string" } },
+        "required": ["service"]
+      } }
   ]
 }
 ```
 
-**Where is what located:**
-- **System Prompt** → `messages[0].content`
-- **User Input** → `messages[1].content`
-- **Tools Schema** → separate field `tools[]` (NOT inside prompt!)
+The loop: the model returns `tool_calls` → your code (the runtime) validates the call, executes the tool and appends the result to the end of `messages` → a new request is sent with the extended history. No magic: the model simply sees the results of previous tools in its context and generates the next step based on them.
 
-**Response #1 (tool call):**
-
-```json
-{
-  "choices": [{
-    "message": {
-      "role": "assistant",
-      "content": null,
-      "tool_calls": [
-        {
-          "id": "call_abc123",
-          "type": "function",
-          "function": {
-            "name": "check_status",
-            "arguments": "{\"service\": \"nginx\"}"
-          }
-        }
-      ]
-    }
-  }]
-}
-```
-
-**Runtime executes tool:**
-- Parses `tool_calls[0].function.arguments` → `{"service": "nginx"}`
-- Calls `check_status("nginx")` → result: `"nginx is ONLINE"`
-
-**Move 2: Request with tool result**
-
-```json
-{
-  "model": "gpt-4o-mini",
-  "messages": [
-    {
-      "role": "system",
-      "content": "You are a DevOps engineer. Use tools to check services."
-    },
-    {
-      "role": "user",
-      "content": "Check nginx status"
-    },
-    {
-      "role": "assistant",
-      "content": null,
-      "tool_calls": [
-        {
-          "id": "call_abc123",
-          "type": "function",
-          "function": {
-            "name": "check_status",
-            "arguments": "{\"service\": \"nginx\"}"
-          }
-        }
-      ]
-    },
-    {
-      "role": "tool",
-      "content": "nginx is ONLINE",
-      "tool_call_id": "call_abc123"
-    }
-  ],
-  "tools": [...]
-}
-```
-
-**Response #2 (final answer):**
-
-```json
-{
-  "choices": [{
-    "message": {
-      "role": "assistant",
-      "content": "nginx is working normally, service ONLINE",
-      "tool_calls": null
-    }
-  }]
-}
-```
-
-**What happens:**
-- System Prompt contains instructions (may contain few-shot examples of tool selection)
-- **Tools Schema is passed as a separate field** `tools[]` (not inside prompt!)
-- User Input — current request
-- The model processes all three parts and **generates tool_call** (tool name + arguments)
-- **Runtime (your agent code)** validates tool_call, executes tool and adds result to `messages` with `role = "tool"`. Runtime is the code you write in Go to manage the agent loop (see [Chapter 00: Preface](../00-preface/README.md#runtime-execution-environment))
-- Second request includes tool result, model formulates final answer
-
-### Key Points
-
-1. **System Prompt** — this is text in `Messages[0].Content`. Can contain instructions, few-shot examples, SOP.
-
-2. **Tools Schema** — this is a separate field `Tools` in the request. **Not located inside prompt**, but the model receives it together with the prompt.
-
-3. **Few-shot examples** — located **inside System Prompt** (text). They show the model response format or tool selection.
-
-4. **User Input** — this is `Messages[N].Role = "user"`. Can be multiple messages (conversation history).
-
-5. **Tool Results** — added by runtime to `Messages` with `Role = "tool"` after tool execution.
-
-**Important:** Tools Schema and System Prompt are **different things**:
-- **System Prompt** — text for model (instructions, examples)
-- **Tools Schema** — structured tool descriptions (JSON Schema)
-
-See detailed protocol: **[Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md)**
+A full walkthrough of the tool-calling protocol — formats, argument validation, error handling — in **[Chapter 03: Tools and Function Calling](../03-tools-and-function-calling/README.md)**.
 
 ## Chain-of-Thought (CoT): Think Step by Step
 
-**Chain-of-Thought (CoT)** is the "Think step by step" technique. For agents, CoT is critical.
+**Chain-of-Thought (CoT)** is the "think step by step" technique. For agents, CoT is critical.
 
-### When Is CoT Needed?
+### When is CoT needed?
 
-**Bad:** "Fix server" (one step)  
-**Good:** "Analyze situation, form hypothesis, check it, propose solution" (chain)
+**Bad:** "Fix the server" (one step)  
+**Good:** "Analyze the situation, form a hypothesis, test it, propose a solution" (a chain)
 
 **CoT is needed for:**
-- Complex tasks requiring analysis
+- Complex tasks that require analysis
 - Tasks with multiple steps
-- Tasks where hypothesis needs to be checked before action
+- Tasks where a hypothesis must be tested before acting
 
 **CoT is not needed for:**
-- Simple single-step tasks
-- Tasks where response format is more important than process
+- Simple one-step tasks
+- Tasks where the reply format matters more than the process
 
-### How to Set CoT?
+### How do you set CoT?
 
-CoT can be set via **instruction** (Zero-shot) or via **examples** (Few-shot):
+CoT can be set via an **instruction** (Zero-shot) or via **examples** (Few-shot):
 
 **Zero-shot CoT:**
 ```text
 Think step by step:
 1. Analyze the situation
-2. Form hypothesis
-3. Check hypothesis
-4. Apply solution
+2. Form a hypothesis
+3. Test the hypothesis
+4. Apply the solution
 ```
 
-**Few-shot CoT:**
+**Few-shot CoT (the historical ReAct format):**
 ```text
-Reasoning example (this is an example of how agent works in a loop):
-Thought: User complains about slow performance. I'll start by checking metrics.
+Example of reasoning (this shows how the agent works in a loop):
+Thought: The user complains about slowness. I'll start by checking the metrics.
 Action: get_cpu_metrics()
 Observation: CPU 95%, process: ffmpeg
-Thought: ffmpeg is consuming resources. I'll check what this process is.
+Thought: ffmpeg is eating resources. I'll check what this process is.
 Action: get_process_info(pid=12345)
 ```
 
-The model processes the reasoning format example and follows it. In practice, this happens in a loop: each `Observation` is added by Runtime (your code) to history, and the model receives it on the next iteration.
+The model sees an example of the reasoning format and follows it. In practice this happens in a loop: each `Observation` is appended to the history by the runtime (your code), and the model sees it on the next iteration.
 
-### CoT and Agent Loop
+> **Context: where this format comes from.**
+> "Thought / Action / Observation" is the ReAct text protocol (2022): back then models could not call tools natively, and the whole agent loop had to be expressed as text in the prompt. Today a separate textual format is unnecessary: "Thought" is simply the `content` of the model's reply alongside `tool_calls`, and "Observation" is a `role = "tool"` message. Knowing ReAct is useful as the origin of the agent loop and as a recovery technique when the model or the environment does not support native tool-calling — but not as the primary protocol.
 
-The **"Thought-Action-Observation"** format is a formalization of the **Agent Loop** (iterative agent process).
+### CoT and the agent loop
 
-**How it works:**
+The **"Thought-Action-Observation"** format is a formalization of the **Agent Loop** (the agent's iterative process) proposed in the ReAct paper. Back then the whole loop lived in text; today the same loop is expressed through native API fields.
 
-1. **Thought** — model analyzes situation and thinks what to do next
-2. **Action** — model selects tool and parameters (generates `tool_call`)
-3. **Observation** — Runtime (your code) executes tool and adds result to history (`role = "tool"`)
-4. **Loop repeats:** model receives Observation in context, thinks again (Thought), selects next Action
+**How it works (mapped to the ReAct format):**
 
-**Iteration example:**
+1. **Thought** — the `content` of the model's reply: a brief analysis of the situation and the plan for the next step, written by the model alongside `tool_calls`
+2. **Action** — the `tool_calls`: the model picks a tool and its parameters (generates a `tool_call`)
+3. **Observation** — the runtime (your code) executes the tool and appends the result to the history (`role = "tool"`)
+4. **The loop repeats:** the model sees the Observation in its context, thinks again (Thought), and picks the next Action
+
+**Example of an iteration:**
 
 ```
 Iteration 1:
-  Thought: "Need to check CPU metrics"
+  Thought: "I need to check CPU metrics"
   Action: get_cpu_metrics()
-  Observation: "CPU 95%, process: ffmpeg"  ← runtime added to history
+  Observation: "CPU 95%, process: ffmpeg"  ← added to history by the runtime
 
-Iteration 2 (model receives Observation in context):
-  Thought: "ffmpeg is consuming resources. I'll check process details"
+Iteration 2 (the model sees the Observation in context):
+  Thought: "ffmpeg is eating resources. Let me check the process details"
   Action: get_process_info(pid=12345)
-  Observation: "This is video conversion"  ← runtime added to history
+  Observation: "It's a video conversion"  ← added to history by the runtime
 
 Iteration 3:
-  Thought: "Legitimate process, but blocking system. I'll suggest limiting priority"
-  Action: [final answer to user]
+  Thought: "Legitimate process, but it's choking the system. I'll suggest throttling its priority"
+  Action: [final answer to the user]
 ```
 
-**Important:** This isn't "magic" — the model simply processes results of previous tools in context (`messages[]`) and generates the next step based on this context.
+**Important:** There is no magic here — the model simply sees the results of previous tool calls in its context (`messages[]`) and generates the next step based on that context. (The notation above is an educational pseudo-notation for ReAct; in a real model response the same steps appear as `content` + `tool_calls`.)
 
-> **Important: CoT can be post-hoc (after the fact).**
-> The chain of reasoning (CoT) that the model generates **does not necessarily reflect the actual inference process**. The model may first "solve" the task (based on probabilistic mechanism) and then generate a "nice explanation" for that solution.
+> **Important: CoT can be post-hoc.**
+> The chain of thought (CoT) a model generates does **not necessarily reflect its actual inference process**. The model may first "solve" the task (via its probabilistic mechanism) and only then produce a "nice explanation" of that solution.
 >
-> **Problem:** A nice CoT is not proof of correctness. The model may confidently rationalize an incorrect conclusion.
+> **The problem:** Polished CoT is not proof that the answer is correct. The model can confidently rationalize a wrong conclusion.
 >
-> **Solution:** Don't rely on CoT as the sole source of truth. Verify answers through tools, evals, and runtime validation. For critical decisions, use Human-in-the-Loop regardless of explanation quality.
+> **The solution:** Don't rely on CoT as the sole source of truth. Verify answers with tools, evals, and runtime validation. For critical decisions, use Human-in-the-Loop regardless of how good the explanation sounds.
 
-See more: **[Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md)** — how ReAct Loop and iterative agent process work.
+See also: **[Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md)** — how the ReAct loop and the agent's iterative process work.
 
-### CoT Examples in Different Domains
+### CoT examples in different domains
+
+Below are educational reasoning trajectories in ReAct notation. Read them as an illustration of the agent's train of thought; in a real loop with native tool calling, the same steps are `content` (the reasoning) and `tool_calls` (the action) in the model's responses.
 
 #### DevOps
 ```
-Thought: User complains about slow performance. I'll start by checking metrics.
+Thought: The user complains about slowness. I'll start by checking metrics.
 Action: get_cpu_metrics()
 Observation: CPU 95%, process: ffmpeg
-Thought: ffmpeg is consuming resources. I'll check what this process is.
+Thought: ffmpeg is eating resources. Let me check what this process is.
 Action: get_process_info(pid=12345)
-Observation: This is video conversion started by user
-Thought: This is a legitimate process, but it's blocking the system. I'll suggest user limit priority.
+Observation: It's a video conversion started by the user
+Thought: This is a legitimate process, but it's blocking the system. I'll suggest throttling its priority.
 ```
 
 #### Security
 ```
-Thought: Received alert about suspicious activity. I'll start with triage.
+Thought: A suspicious-activity alert came in. I'll start with triage.
 Action: query_siem(query="host=192.168.1.10 AND time>now-1h")
-Observation: Multiple failed login attempts
-Thought: This looks like brute-force. I'll check the source.
+Observation: Many failed login attempts
+Thought: This looks like brute force. Let me check the source.
 Action: get_source_ip()
-Observation: IP from unfamiliar country
-Thought: High risk. I'll isolate host, but first request confirmation.
+Observation: IP from an unfamiliar country
+Thought: High risk. I'll isolate the host, but first I'll request confirmation.
 ```
 
-#### Data Analytics
+#### Data analytics
 ```
-Thought: User asks about sales. Need to understand what data is available.
+Thought: The user is asking about sales. I need to see what data is available.
 Action: describe_table("sales")
-Observation: Table contains fields: date, region, amount
-Thought: Now I'll formulate SQL query to get sales for the last month.
+Observation: The table contains fields: date, region, amount
+Thought: Now I'll write an SQL query for last month's sales.
 Action: sql_select("SELECT region, SUM(amount) FROM sales WHERE date > NOW() - INTERVAL '1 month' GROUP BY region")
 Observation: Results: Region A: 100k, Region B: 150k
-Thought: I'll analyze results and formulate conclusions.
+Thought: I'll analyze the results and draw conclusions.
 ```
 
-## SOP and Task Decomposition: Agent Process
+## SOP and Task Decomposition: The Agent's Process
 
-**SOP (Standard Operating Procedure)** — is an action algorithm encoded in the prompt. Sets the process, CoT helps follow it step by step.
+An **SOP (Standard Operating Procedure)** is an algorithm of actions encoded in a prompt. It defines the process; CoT helps the model follow it step by step.
 
-### Connection: Goal → Constraints → SOP → CoT
+### The chain: goal → constraints → SOP → CoT
 
-- **Goal/Constraints** set boundaries (what needs to be achieved, what cannot be done)
-- **SOP** sets the process (what steps to perform)
-- **CoT** helps go step by step (think at each stage)
+- **Goal/Constraints** set the frame (what to achieve, what must not be done)
+- **SOP** sets the process (which steps to perform)
+- **CoT** helps follow the steps (thinking at each stage)
 
-### Why Is This Needed?
+### Why is this necessary?
 
-Without SOP, an agent may "wander": immediately restart, then read logs, then restart again.
+Without an SOP, the agent can "flail": restart immediately, then read logs, then restart again.
 
-**Why SOP is important: directing model attention**
+**Why an SOP matters: it directs the model's attention**
 
-Without SOP, the model receives: `User: Fix it`. Its probabilistic mechanism may output: `Call: restart_service`. This is the most "popular" action.
+Without an SOP, the model sees: `User: Fix it`. Its probabilistic mechanism may output: `Call: restart_service`. That's the most "popular" action.
 
-With SOP, the model is forced to generate text:
-- "Step 1: I need to check HTTP status." → This increases probability of calling `check_http`
-- "HTTP is 502. Step 2: I need to check logs." → This increases probability of calling `read_logs`
+With an SOP, the model is forced to generate text like:
+- "Step 1: I need to check the HTTP status." → This raises the probability of calling `check_http`
+- "HTTP is 502. Step 2: I need to check logs." → This raises the probability of calling `read_logs`
 
-We **direct model attention** along the needed path through explicit step indication in the prompt.
+We **steer the model's attention** down the right channel by explicitly spelling out the steps in the prompt.
 
-**Chain-of-Thought in action:**
-
-Notice the System Prompt with SOP:
-`"Think step by step following this SOP: 1. Check HTTP... 2. Check Logs..."`
-
-Why is this needed?
-
-Without this prompt, the model sees: `User: Fix it`.  
-Its probabilistic mechanism may output: `Call: restart_service`. This is the most "popular" action.
-
-With this prompt, the model is forced to generate text:
-- "Step 1: I need to check HTTP status." → This increases probability of calling `check_http`
-- "HTTP is 502. Step 2: I need to check logs." → This increases probability of calling `read_logs`
-
-We **direct model attention** along the needed path.
-
-### Example SOP for Incident (DevOps)
+### Example SOP for incidents (DevOps)
 
 ```text
-SOP for service failure:
-1. Check Status: Check HTTP response code
-2. Check Logs: If 500/502 — read last 20 log lines
-3. Analyze: Find keywords:
+SOP for a service outage:
+1. Check Status: Check the HTTP response code
+2. Check Logs: If 500/502 — read the last 20 lines of logs
+3. Analyze: Look for keywords:
    - "Syntax error" → Rollback
    - "Connection refused" → Check Database
    - "Out of memory" → Restart
-4. Action: Apply fix according to analysis
-5. Verify: Check HTTP status again
+4. Action: Apply the fix according to your analysis
+5. Verify: Check the HTTP status again
 ```
 
-### Example SOP for Support
+### Example SOP for support
 
 ```text
-SOP for ticket processing:
-1. Read: Read ticket completely
+SOP for handling a ticket:
+1. Read: Read the ticket in full
 2. Context: Gather context (version, OS, browser)
-3. Search: Search knowledge base for similar cases
+3. Search: Look for similar cases in the knowledge base
 4. Decide:
-   - If solution found → Draft reply
-   - If complex problem → Escalate
-5. Respond: Send response to user
+   - If a solution is found → Draft reply
+   - If it's a complex issue → Escalate
+5. Respond: Send the answer to the user
 ```
 
-### Example SOP for Security
+### Example SOP for security
 
 ```text
 SOP for alert triage:
-1. Severity: Determine criticality (Low/Medium/High/Critical)
+1. Severity: Determine the criticality (Low/Medium/High/Critical)
 2. Evidence: Gather evidence (logs, metrics, network traffic)
 3. Triage:
    - If False Positive → Close alert
    - If True Positive → Containment (with confirmation!)
-4. Report: Generate report for SOC
+4. Report: Generate a report for the SOC
 ```
 
-### Task Structuring (Task Decomposition)
+### Structuring tasks (task decomposition)
 
-Complex tasks need to be broken down into subtasks.
+Complex tasks should be broken into subtasks.
 
 **Without decomposition:**
 ```
-User: "Figure out database problem"
-Assistant: [May try to do everything at once and get confused]
+User: "Sort out the database problem"
+Assistant: [May try to do everything at once and get lost]
 ```
 
 **With decomposition:**
 ```
-User: "Figure out database problem"
+User: "Sort out the database problem"
 Assistant:
 1. Check DB availability (ping_db)
 2. Check metrics (cpu, memory, connections)
-3. Read logs (read_db_logs)
-4. Analyze errors
-5. Propose solution
+3. Read the logs (read_db_logs)
+4. Analyze the errors
+5. Propose a solution
 ```
 
 ## Common Prompting Mistakes
 
-### Mistake 1: Too Generic Prompt
+### Mistake 1: A prompt that is too generic
 
-**Symptom:** Model doesn't understand what to do, responds with generic phrases.
+**Symptom:** The model doesn't understand what to do and answers in generalities.
 
-**Cause:** Prompt doesn't set specific role, goal, and action process.
+**Cause:** The prompt doesn't define a specific role, goal, or process.
 
 **Solution:**
 ```text
-// BAD
-You are an assistant.
+// BAD:
+You are a helpful assistant.
 
-// GOOD
+// GOOD:
 You are a Senior DevOps Engineer with 10 years of experience.
-Your goal is to restore service functionality.
-Follow SOP: 1. Check Status 2. Check Logs 3. Analyze 4. Fix 5. Verify
+Your goal is to restore services to a working state.
+Follow the SOP: 1. Check Status 2. Check Logs 3. Analyze 4. Fix 5. Verify
 ```
 
-### Mistake 2: Missing CoT
+### Mistake 2: No CoT
 
-**Symptom:** Model tries to do everything at once, skips analysis steps.
+**Symptom:** The model tries to do everything at once and skips analysis steps.
 
-**Cause:** Prompt doesn't set reasoning format (Chain-of-Thought), model doesn't "think" step by step.
+**Cause:** The prompt doesn't specify a reasoning format (Chain-of-Thought), so the model doesn't "think" step by step.
 
 **Solution:**
 ```text
-// BAD
-Fix server.
+// BAD:
+Fix the server.
 
-// GOOD
+// GOOD:
 Think step by step:
 1. Analyze the situation
-2. Form hypothesis
-3. Check hypothesis
-4. Apply solution
+2. Form a hypothesis
+3. Test the hypothesis
+4. Apply the fix
 ```
 
-### Mistake 3: Missing Constraints
+### Mistake 3: No constraints
 
-**Symptom:** Model may perform dangerous actions without confirmation.
+**Symptom:** The model may perform dangerous actions without confirmation.
 
-**Cause:** Prompt doesn't set constraints on agent actions.
+**Cause:** The prompt doesn't constrain the agent's actions — so the model follows the "fix it fast" principle.
 
 **Solution:**
 ```text
-// BAD
-You are a DevOps engineer. Do what's needed.
+// BAD:
+You are a DevOps engineer. Do whatever is needed.
 
-// GOOD
-You are a DevOps engineer.
+// GOOD:
+You are a DevOps engineer. Your goal is to restore the service without creating new damage.
 Constraints:
-- Never delete data without confirmation
-- Always check logs before action
+- Delete data only after confirmation: the system may still be alive
+  and the alert may be false, and deleted data cannot be rolled back
+- Gather facts (status, logs) before any action: acting without a diagnosis
+  usually hurts more than it helps
 ```
 
-### Mistake 4: Suggested Answer (Anchoring Bias)
+Remember: these lines are hints to the model that reduce the probability of a mistake. The guarantee comes from code: a tool allowlist and confirmation of dangerous actions as a runtime mechanism (ch. 05).
 
-**Symptom:** Model shifts answer toward what's explicitly suggested in the prompt or user request, even if incorrect.
+### Mistake 4: A suggested answer (anchoring bias)
 
-**Cause:** Prompt or request contains explicit hints about the desired answer ("I think the correct answer is A", "most likely this is X"). Models trained on maximizing human preferences (RLHF) may "flatter" and agree.
+**Symptom:** The model biases its answer toward whatever is explicitly suggested in the prompt or the user's request, even if it's wrong.
+
+**Cause:** The prompt or request contains explicit hints about the desired answer ("I think the correct answer is A", "it's probably X"). A model trained to maximize human preferences (RLHF) may "flatter" and agree.
 
 **Solution:**
 ```text
-// BAD
-User: "I think the problem is in the database. Check logs."
-System Prompt: "User thinks the problem is in DB. Check logs."
+// BAD:
+User: "I think the problem is in the database. Check the logs."
+System Prompt: "The user believes the problem is in the DB. Check the logs."
 
-// GOOD
-User: "I think the problem is in the database. Check logs."
-System Prompt: "Check logs and analyze all possible causes. 
-                Analyze data objectively, don't limit yourself to user assumptions."
+// GOOD:
+User: "I think the problem is in the database. Check the logs."
+System Prompt: "Check the logs and analyze all possible causes. Don't limit yourself to the user's assumptions."
 ```
 
-**Practice:** Separate facts (data, logs, metrics) from user preferences/hypotheses. Don't include preferences in context as facts.
+**Practice:** Separate facts (data, logs, metrics) from the user's preferences and hypotheses. Don't put preferences into the context as facts.
 
-### Mistake 5: Bias in few-shot ("answer always A")
+### Mistake 5: Few-shot bias ("the answer is always a")
 
-**Symptom:** Model adopts positional pattern from examples: if correct answers in few-shot are always in position "A", model starts choosing "A" more often than it should.
+**Symptom:** The model picks up a positional pattern from the examples: if the correct answer in few-shot examples is always in position "A", the model starts choosing "A" more often than it should.
 
-**Cause:** Few-shot examples aren't diverse; correct answers are always in one position or follow one pattern.
+**Cause:** The few-shot examples lack variety; correct answers always sit in the same position or follow the same pattern.
 
 **Solution:**
 ```text
-// BAD
+// BAD:
 Example 1: Question → Answer A (correct)
 Example 2: Question → Answer A (correct)
 Example 3: Question → Answer A (correct)
 
-// GOOD
+// GOOD:
 Example 1: Question → Answer A (correct)
 Example 2: Question → Answer B (correct)
 Example 3: Question → Answer C (correct)
-// Or shuffle positions, add counterexamples
+// Or shuffle the positions and add counterexamples
 ```
 
-**Practice:** Shuffle positions of correct answers, include diverse examples, add counterexamples (incorrect answers with explanation of why they're wrong).
+**Practice:** Shuffle the positions of correct answers, include varied examples, and add counterexamples (wrong answers with an explanation of why they are wrong).
 
-### Mistake 6: Blind Trust in CoT
+### Mistake 6: Blind faith in CoT
 
-**Symptom:** Developer relies on model's "nice explanation" as proof of answer correctness without verifying the answer itself.
+**Symptom:** The developer takes the model's "nice explanation" as proof that the answer is correct, without checking the answer itself.
 
-**Cause:** CoT looks logical and convincing but may be post-hoc rationalization of incorrect conclusion.
+**Cause:** The CoT looks logical and convincing, but may be a post-hoc rationalization of a wrong conclusion.
 
 **Solution:**
 ```text
-// BAD
-Model: "Thought: Problem is in DB. Action: restart_database()"
-Developer: "Great, logical!" → Executes action without verification
+// BAD:
+Model: "Thought: The problem is in the DB. Action: restart_database()"
+Developer: "Great, that's logical!" → Executes the action without checking
 
-// GOOD
-Model: "Thought: Problem is in DB. Action: restart_database()"
-Developer: Verifies via tools (check_db_status, read_logs), 
-           validates via evals, requests confirmation for critical actions
+// GOOD:
+Model: "Thought: The problem is in the DB. Action: restart_database()"
+Developer: Verifies with tools (check_db_status, read_logs),
+           validates with evals, requests confirmation for critical actions
 ```
 
-**Practice:** CoT is a tool for improving model reasoning, but not a source of truth. Always verify answers through tools and evals, especially for critical actions.
+**Practice:** CoT is a tool for improving the model's reasoning, not a source of truth. Always verify answers with tools and evals, especially for critical actions.
 
-## How Not to Hint at the Answer
+## How to Avoid Suggesting the Answer to the Model
 
-Few-shot and CoT can inadvertently "hint" at the desired conclusion. Here's a checklist to avoid this:
+Few-shot and CoT can inadvertently "suggest" the desired conclusion to the model. Here is a checklist for avoiding this:
 
-### Checklist: Neutral Formulations
+### Checklist: Neutral wording
 
 **Good:**
-- Use neutral request formulations
-- Separate facts from user preferences
-- Don't include assumptions as facts in context
+- Use neutral wording in requests
+- Separate facts from the user's preferences
+- Don't include assumptions as facts in the context
 
 **Bad:**
-- "I think the correct answer is A, check it"
-- "User thinks X, use this as fact"
-- "Most likely problem is Y, check only Y"
+- "I think the correct answer is A, verify it"
+- "The user believes X; treat it as a fact"
+- "The problem is most likely Y; check only Y"
 
-### Checklist: Diverse Few-Shot Examples
+### Checklist: Variety in Few-shot examples
 
 **Good:**
-- Shuffle positions of correct answers (A, B, C, D)
+- Shuffle the positions of correct answers (A, B, C, D)
 - Include diverse task types
-- Add counterexamples (incorrect answers with explanation)
+- Add counterexamples (wrong answers with an explanation)
 
 **Bad:**
 - All correct answers in position "A"
-- All examples of one type
+- All examples of the same type
 - Only positive examples
 
-### Checklist: Separating Preferences and Facts
+### Checklist: Separating preferences from facts
 
 **Good:**
 ```text
 Facts (include in context):
-- Logs show error 500
+- Logs show a 500 error
 - CPU metrics: 95%
 
-Preferences/hypotheses (separate, not as facts):
-- User assumes problem is in DB
-- Hypothesis: problem is in network
+Preferences/hypotheses (separately, not as facts):
+- The user suspects a DB problem
+- Hypothesis: the problem is in the network
 ```
 
 **Bad:**
 ```text
 Facts:
-- Problem is in database (this is an assumption, not a fact!)
-- Logs show error 500
+- The problem is in the database (this is an assumption, not a fact!)
+- Logs show a 500 error
 ```
 
-### Checklist: Verification Through Tools
+### Checklist: Verification via tools
 
 **Good:**
-- Verify answers through tools (read_logs, check_status)
-- Use evals to check robustness to hints
-- Don't rely only on CoT as proof
+- Verify answers with tools (read_logs, check_status)
+- Use evals to check resistance to leading hints
+- Don't rely on CoT alone as proof
 
 **Bad:**
-- Accept model answer only because CoT looks logical
-- Don't verify answers with tools
-- No evals on robustness to anchoring
+- Accepting the model's answer just because the CoT looks logical
+- Not checking answers with tools
+- No evals for anchoring resistance
 
-### Example: Anti-Prompt and Fixed Version
+### Example: An Anti-Prompt and a fixed version
 
-**Bad (hints at answer):**
+**Bad (suggests the answer):**
 ```text
-You are a DevOps engineer. User thinks the problem is in the database.
-Check logs and confirm that the problem is in the DB.
+You are a DevOps engineer. The user believes the problem is in the database.
+Check the logs and confirm that the problem is in the DB.
 ```
 
 **Problems:**
-- Includes user assumption as fact
-- Hints at desired conclusion ("confirm that problem is in DB")
-- Model may agree even if problem isn't in DB
+- Includes the user's assumption as a fact
+- Suggests the desired conclusion ("confirm that the problem is in the DB")
+- The model may agree even if the problem is not in the DB
 
 **Good (neutral):**
 ```text
-You are a DevOps engineer. User reported a problem.
-Check logs, metrics, and all possible causes. 
-Analyze data objectively, don't limit yourself to assumptions.
+You are a DevOps engineer. The user reported an issue.
+Check the logs, metrics, and all possible causes.
+Analyze the data objectively, without limiting yourself to assumptions.
 ```
 
 **Improvements:**
-- Doesn't include assumption as fact
-- Doesn't hint at desired conclusion
+- Doesn't include the assumption as a fact
+- Doesn't suggest the desired conclusion
 - Requires objective analysis of all causes
 
-## Completion Criteria / Checklist
+## Acceptance Criteria / Checklist
 
-**Completed:**
-- [x] Role (Persona) clearly defined
+**Passed:**
+- [x] Role (Persona) is clearly defined
 - [x] Goal is specific and measurable
-- [x] Constraints explicitly stated
-- [x] Response format (Format) described
-- [x] SOP (if applicable) detailed
-- [x] CoT included for complex tasks
-- [x] Few-Shot examples added (if complex format needed)
-- [x] Few-Shot examples consistent (one format)
-- [x] Few-Shot examples diverse (no positional bias)
-- [x] Prompt doesn't hint at desired answer (neutral formulations)
-- [x] User preferences separated from facts
-- [x] Answers verified through tools and evals, not only through CoT
+- [x] Constraints are stated explicitly
+- [x] Response format is described
+- [x] SOP (if applicable) is spelled out in detail
+- [x] CoT is enabled for complex tasks
+- [x] Few-shot examples are added (if a complex format is needed)
+- [x] Few-shot examples are consistent (one format)
+- [x] Few-shot examples are varied (no positional bias)
+- [x] The prompt doesn't suggest the desired answer (neutral wording)
+- [x] The user's preferences are separated from facts
+- [x] Answers are verified with tools and evals, not just via CoT
 
-**Not completed:**
-- [ ] Prompt too generic (no specific role and goal)
-- [ ] Missing CoT for complex tasks
+**Not passed:**
+- [ ] The prompt is too generic (no specific role or goal)
+- [ ] No CoT for complex tasks
 - [ ] No constraints on dangerous actions
-- [ ] Few-Shot examples in different formats
-- [ ] Few-Shot examples have positional bias (all answers in position "A")
-- [ ] Prompt hints at desired answer ("confirm that X")
-- [ ] User preferences included as facts
-- [ ] Blind trust in CoT without verification through tools
+- [ ] Few-shot examples use different formats
+- [ ] Few-shot examples have positional bias (all answers in position "A")
+- [ ] The prompt suggests the desired answer ("confirm that X")
+- [ ] The user's preferences are included as facts
+- [ ] Blind faith in CoT without verification via tools
 
-## Mini-Exercises
+## Exercises
 
-### Exercise 1: Create System Prompt
+### Exercise 1: Write a system prompt
 
-Create a System Prompt for an agent that processes support tickets:
+Write a System Prompt for an agent that handles support tickets:
 
 ```go
 systemPrompt := `
@@ -972,14 +793,14 @@ systemPrompt := `
 
 **Expected result:**
 - Role: Support Agent
-- Goal: solve user's problem
+- Goal: resolve the user's issue
 - Constraints: politeness, escalation of complex cases
-- Format: structured JSON with fields `action` and `user_id`
+- Format: structured JSON with `action` and `user_id` fields
 - SOP: Read → Context → Search → Decide → Respond
 
 ### Exercise 2: Add CoT
 
-Improve the prompt from exercise 1 by adding Chain-of-Thought:
+Improve the prompt from Exercise 1 by adding Chain-of-Thought:
 
 ```go
 cotPrompt := `
@@ -988,49 +809,48 @@ cotPrompt := `
 ```
 
 **Expected result:**
-- Added reasoning format: "Thought: ... Action: ... Observation: ..."
-- Few-shot examples with CoT (if using few-shot)
-- Or instruction "Think step by step" (if zero-shot)
+- A reasoning format has been added: the model first analyzes and formulates a hypothesis, then acts
+- In native tool calling, the reasoning lives in the `content` of the response next to `tool_calls` — a separate text format (Thought/Action/Observation) is not needed
+- Or an instruction to "Think step by step" (if zero-shot)
 
-## For the Curious
+## For the curious
 
-> This section explains the mechanics of few-shot and CoT at the model level. Skip it if you only care about practical usage.
+> This section explains the mechanics of how few-shot prompting and CoT work at the model level. Feel free to skip it if you only care about the practice.
 
-### Why Does Few-Shot Work?
+### Why Few-shot works
 
-### Self-Attention Mechanism
+### The self-attention mechanism
 
-The **Self-Attention** mechanism in the transformer allows the model to identify connections between tokens in context. When the model processes examples:
+The **self-attention** mechanism in a transformer lets the model "see" connections between tokens in the context. When the model sees examples:
 
-1. **Intuitively:** Model "adjusts" to the pattern it processes in context
-2. **Mechanically:** Vector representation of tokens shifts toward the needed format, because previous tokens (examples) set this context
-3. **Practically:** Result quality strongly depends on example quality and their consistency
+1. **Intuitively:** the model "adapts" to the pattern it sees in the context
+2. **Mechanically:** the vector representations of tokens shift toward the expected format, because the preceding tokens (the examples) have set that context
+3. **Practically:** the quality of the result depends heavily on the quality of the examples and their consistency
 
-### Why Does CoT Work?
+### Why CoT works
 
-Imagine a task: "What is 23 * 41 + 12?"
+Imagine the task: "What is 23 * 41 + 12?"
 
 **Without CoT:**
-- Model must output answer "955" immediately
-- This requires enormous computational power in one step
-- Error probability is high (model may "guess" incorrectly)
+- The model has to produce the answer "955" immediately
+- That requires an enormous amount of computation in a single step
+- The probability of error is high (the model may "guess" wrong)
 
 **With CoT:**
-- Model generates: "23 * 40 = 920... 23 * 1 = 23... sum 943... plus 12... answer 955"
-- By generating intermediate tokens ("920", "943"), the model **offloads computations to context**
-- Next token is predicted based on *expanded* context containing intermediate results
-- This turns a complex task into a series of simple tasks
+- The model generates: "23 * 40 = 920... 23 * 1 = 23... sum 943... plus 12... answer 955"
+- By generating intermediate tokens ("920", "943"), the model **offloads computation into the context**
+- The next token is predicted from the *extended* context, which now contains the intermediate results
+- This turns a hard problem into a series of easy ones
 
-**For agents, CoT is critical**, because agents solve complex multi-step tasks where each step depends on the previous one.
+**For agents, CoT is critical**, because agents solve complex multi-step problems where each step depends on the previous one.
 
-## Connection to Other Chapters
+## Relation to Other Chapters
 
-- **LLM Physics:** Understanding probabilistic nature of LLM helps create effective prompts, see [Chapter 01: LLM Physics](../01-llm-fundamentals/README.md)
-- **Tools:** How prompt affects tool selection, see [Chapter 03: Tools](../03-tools-and-function-calling/README.md)
-- **Autonomy:** How SOP and CoT work in agent loop, see [Chapter 04: Autonomy](../04-autonomy-and-loops/README.md)
+- **LLM physics:** understanding the probabilistic nature of LLMs helps you write effective prompts — see [Chapter 01: LLM Physics](../01-llm-fundamentals/README.md)
+- **Tools:** how the prompt affects tool selection — see [Chapter 03: Tools](../03-tools-and-function-calling/README.md)
+- **Autonomy:** how SOPs and CoT work in the agent loop — see [Chapter 04: Autonomy](../04-autonomy-and-loops/README.md)
 
 ## What's Next?
 
-After studying prompting, proceed to:
-- **[03. Tools and Function Calling](../03-tools-and-function-calling/README.md)** — how agent interacts with the real world
-
+Once you've finished with prompting, move on to:
+- **[03. Tools and Function Calling](../03-tools-and-function-calling/README.md)** — how the agent interacts with the real world

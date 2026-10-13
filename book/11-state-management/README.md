@@ -1,56 +1,47 @@
 # 11. State Management
 
-## Why This Chapter?
+## Why does this matter?
 
-An agent runs a long task (say, a deployment), and then the server reboots. The task is gone. The user waits, but nothing happens. Without state management, you can't:
-- Resume execution after failure
-- Guarantee idempotency (repeated call doesn't create duplicates)
+An agent is running a long task (say, deploying an application), and the server reboots. The task is lost, the user waits, nothing happens. Without state management you cannot:
+- Resume execution after a failure
+- Guarantee idempotency (a repeated call creates no duplicates)
 - Handle errors with retry
-- Set deadlines for long tasks
+- Set deadlines for long-running tasks
 
-State management is what makes long-lived agents reliable. Without it, tasks that take minutes or hours fall apart.
+State Management is what makes long-lived agents reliable. Without it, tasks that take minutes or hours fall apart quickly.
 
-### Real-World Case Study
+### A real-world case
 
-**Situation:** Agent deploys an application. The process takes 10 minutes. On the 8th minute, the server reboots.
+**Situation:** An agent is deploying an application. The process takes 10 minutes. On minute 8 the server reboots.
 
-**Problem:** Task is lost. User doesn't know what happened. On restart, agent starts from the beginning, creating duplicates.
+**Problem:** The task is lost. The user has no idea what happened. When run again, the agent starts from scratch, creating duplicates.
 
-**Solution:** Persist state in a DB, make operations idempotent, add retry with backoff, and enforce deadlines. Now the agent can resume from where it stopped, and repeated calls won't create duplicates.
+**Solution:** Persisting state to a database, idempotent operations, retry with backoff, and deadlines. Now the agent resumes where it stopped, and repeated calls create no duplicates.
 
-> **Junior employee model.** For an agent, idempotency and checkpoints automate the habit of "don't press the button a second time before you're sure the first press didn't go through". Retry with backoff = "wait and try again carefully, not hammer like a robot". A human has this brake built in (it's psychologically painful to repeat a destructive action), an agent doesn't — so we put it in code. See [Preface → Mental Model](../00-preface/README.md#mental-model-an-agent-is-a-new-employee) and [Ch. 17: Security and Governance](../17-security-and-governance/README.md).
+> **Junior employee model.** Idempotency and checkpoints for an agent automate the habit of "not pressing the button a second time until you've confirmed the first press didn't work." Retry with backoff = "wait and repeat carefully, not hammer away like a robot." Humans have this brake built in (repeating a destructive action feels psychologically painful); an agent doesn't — so we put it in code. See [Preface → Mental model](../00-preface/README.md#mental-model-an-agent-is-a-new-employee) and [Ch. 17: Security and Governance](../17-security-and-governance/README.md).
 
-## Theory in Simple Terms
+## The theory in plain words
 
-### What Is State Management?
+### What is state management?
 
-State Management is about saving agent state between restarts. This allows:
-- Resume execution after failure
+State management is persisting the agent's state across restarts. It lets you:
+- Resume execution after a failure
 - Track task progress
 - Guarantee idempotency
 
-### What Is Idempotency?
+### What is idempotency?
 
-Idempotency is a property of an operation: a repeated call gives the same result as the first. For example, "create file" isn't idempotent (creates duplicates), but "create file if it doesn't exist" is idempotent.
+Idempotency is a property of an operation: calling it again yields the same result as the first call. For example, "create a file" is not idempotent (it creates a duplicate), while "create the file if it doesn't exist" is idempotent.
 
-### Connection with Planning
+### How it relates to planning
 
-State Management is closely related to [Planning](../10-planning-and-workflows/README.md), but focuses on execution reliability, not task decomposition. Planning creates a plan, State Management guarantees its reliable execution.
+State management is closely related to [Planning](../10-planning-and-workflows/README.md), but focuses on reliable execution rather than task decomposition. Planning creates the plan; state management guarantees it is executed reliably.
 
-## How It Works (Step by Step)
+## How it works (step by step)
 
-### Step 0: Agent state as a contract (AgentState)
+### Step 0: Agent run state and artifacts outside the context
 
-In the examples below we store a task state (`Task`). For production agents it's often helpful to also define a canonical **agent run** state. This makes long-running loops easier to operate.
-
-What you get:
-
-- resume after restarts,
-- revise the plan when new facts arrive,
-- enforce HITL based on policy,
-- keep the context small by using artifacts.
-
-A minimal shape (simplified):
+In the examples below we store the state of a "task" (`Task`). In a production agent a separate **agent run** contract is useful: goal, constraints (HITL policy), budget, and plan. Simplified:
 
 ```json
 {
@@ -58,25 +49,29 @@ A minimal shape (simplified):
   "constraints": {
     "human_in_the_loop": { "required_for_risk_levels": ["write_local", "external_action"] }
   },
-  "budget": {
-    "max_steps": 20,
-    "max_wall_time_ms": 300000,
-    "max_llm_tokens": 200000,
-    "max_artifact_bytes_in_context": 8000
-  },
-  "plan": ["Check current status", "Collect config", "Apply changes", "Verify again"],
-  "known_facts": [{ "key": "service", "value": "X", "source": "user" }],
-  "open_questions": ["Which namespace should we deploy to?"],
-  "artifacts": [{ "artifact_id": "log_123", "type": "tool_result.logs", "summary": "nginx error log", "bytes": 48231 }],
-  "risk_flags": ["budget_pressure"]
+  "budget": { "max_steps": 20, "max_wall_time_ms": 300000, "max_llm_tokens": 200000 },
+  "plan": ["Check current status", "Collect config", "Apply changes", "Verify again"]
 }
 ```
 
-To update this state between steps, use a **StatePatch**: "append facts", "replace plan", "add open questions". This also supports a clean split of responsibilities: one component normalizes observations, another selects the next action.
+Important: this is **not** part of the LLM context. The state is persisted in the database, separate from the message history, and enters the context only explicitly — as regular messages.
 
-### Step 1: Task Structure with State
+**Artifacts — outside the context.** Dumps, logs, and long command output are stored in a file or database; only a path/ID and a short excerpt go into the history:
 
-Create a structure to store task state:
+```go
+type Artifact struct {
+    ID      string // "art_123"
+    Path    string // /var/agent/artifacts/art_123.log
+    Summary string // "nginx error log, 48 KB; excerpt — first 20 lines"
+    Bytes   int64
+}
+```
+
+A legitimate limit worth setting is a budget on the size of a **single tool result** (~128 KB in production): exceeding it → truncate or move it to an artifact. But "filtering relevant state" by scoring inside the context is an anti-pattern: which part of the history to keep is decided by condensation ([Chapter 13](../13-context-engineering/README.md)), not by manual fact scoring.
+
+### Step 1: A task structure with state
+
+Create a structure to store the task state:
 
 ```go
 type TaskState string
@@ -99,29 +94,28 @@ type Task struct {
 }
 ```
 
-### Step 2: Operation Idempotency
+### Step 2: Idempotent operations
 
-Check if the task was already executed:
+Check whether the task has already been executed:
 
 ```go
-func executeTask(id string) error {
-    // Load task from DB
-    task, exists := getTask(id)
+func executeTask(ctx context.Context, store *TaskStore, id string) error {
+    // Load the task from the store
+    task, exists := store.Get(id)
     if !exists {
         return fmt.Errorf("task not found: %s", id)
     }
     
     // Check idempotency
     if task.State == TaskCompleted {
-        return nil // Already executed, do nothing
+        return nil // Already done, nothing to do
     }
     
-    // Set state to "running"
+    // Set the state to "running"
     task.State = TaskRunning
-    task.UpdatedAt = time.Now()
-    saveTask(task)
+    store.Save(task)
     
-    // Execute task...
+    // Execute the task...
     result, err := doWork(task.UserInput)
     
     if err != nil {
@@ -132,54 +126,38 @@ func executeTask(id string) error {
         task.Result = result
     }
     
-    task.UpdatedAt = time.Now()
-    saveTask(task)
+    store.Save(task)
     
     return err
 }
 ```
 
-### Step 3: Retry with Exponential Backoff
+### Step 3: Retry with exponential backoff
 
-Retry call on error with increasing delay:
+Transient errors (network, API rate limits) are retried by the LLM client itself — exponential backoff with jitter; error classification and implementation are shown in [Chapter 04](../04-autonomy-and-loops/README.md). Here the contract is enough:
 
 ```go
-func executeWithRetry(fn func() error, maxRetries int) error {
-    var lastErr error
-    
-    for i := 0; i < maxRetries; i++ {
-        err := fn()
-        if err == nil {
-            return nil
-        }
-        
-        lastErr = err
-        
-        // Don't backoff after last attempt
-        if i < maxRetries-1 {
-            backoff := time.Duration(1<<i) * time.Second // 1s, 2s, 4s, 8s...
-            time.Sleep(backoff)
-        }
-    }
-    
-    return fmt.Errorf("failed after %d retries: %v", maxRetries, lastErr)
-}
+// executeWithRetry retries fn on a transient error.
+// Terminal errors (iteration limit, deadline) are returned immediately — they are not retried.
+func executeWithRetry(ctx context.Context, fn func() error, maxRetries int) error
 ```
+
+Planning and retries do not cancel boundaries: the run deadline and the iteration limit are terminal — exceeding them stops the run with a message to the human (see the FSM below).
 
 ### Step 4: Deadlines
 
-Set timeout for entire agent run and for each step:
+Set a timeout for the whole agent run and for each step:
 
 ```go
-func runAgentWithDeadline(ctx context.Context, client *openai.Client, userInput string) (string, error) {
-    // Deadline for entire agent run (5 minutes)
+func runAgentWithDeadline(ctx context.Context, agent *Agent, userInput string) (string, error) {
+    // Deadline for the whole agent run (5 minutes)
     ctx, cancel := context.WithDeadline(ctx, time.Now().Add(5*time.Minute))
     defer cancel()
     
     // ... agent loop ...
     
     for i := 0; i < maxIterations; i++ {
-        // Check deadline before each iteration
+        // Check the deadline before each iteration
         select {
         case <-ctx.Done():
             return "", fmt.Errorf("deadline exceeded")
@@ -191,90 +169,57 @@ func runAgentWithDeadline(ctx context.Context, client *openai.Client, userInput 
 }
 ```
 
-### Step 5: State Persistence
+### Step 5: Persisting state
 
-Save task state to DB (or file for simplicity):
+Save the task state after every meaningful change. In the examples below it lives in process memory; in production — SQLite or any other database (see the [Store](#store-database-backed-storage) section below):
 
 ```go
-// Simple file-based implementation
-var tasks = make(map[string]*Task)
-var tasksMutex sync.RWMutex
-
-func saveTask(task *Task) {
-    tasksMutex.Lock()
-    defer tasksMutex.Unlock()
-    
-    task.UpdatedAt = time.Now()
-    tasks[task.ID] = task
-    
-    // Save to file (for simplicity)
-    data, _ := json.Marshal(tasks)
-    os.WriteFile("tasks.json", data, 0644)
+type TaskStore struct {
+    mu    sync.RWMutex
+    tasks map[string]*Task
 }
 
-func getTask(id string) (*Task, bool) {
-    tasksMutex.RLock()
-    defer tasksMutex.RUnlock()
-    
-    task, exists := tasks[id]
+func (s *TaskStore) Save(task *Task) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    task.UpdatedAt = time.Now()
+    s.tasks[task.ID] = task
+}
+
+func (s *TaskStore) Get(id string) (*Task, bool) {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+    task, exists := s.tasks[id]
     return task, exists
 }
 ```
 
-### Working Memory as Part of State
+### Memory: linear history + condense
 
-Agent state is more than just `AgentState`. In practice there is also **Working Memory**: the current task, the plan, files read so far, recent actions. This data lives in RAM and is lost between sessions.
+There is no separate "working memory" layer in an agent — that is a relic of older frameworks. An agent's memory is the **linear message history**: the current task, the plan, files read, and recent actions are already in it. When the context overflows, condensation kicks in: older messages are condensed into a brief summary while recent ones stay as is.
 
-**Problem:** The agent re-reads files, loses the plan, and starts from scratch after a restart.
+Persistence is about saving the history itself (checkpoints, see below): after a restart the agent loads the history and continues, without re-reading files or losing the plan. How condense and long-term memory work — [Chapters 12](../12-agent-memory/README.md) and [13](../13-context-engineering/README.md).
 
-**Solution:** Working Memory is passed as a parameter to `Run()` and survives between REPL cycles:
+### Step 6: Resuming execution
 
-```go
-// Working Memory survives between Run calls
-wm := workmem.New()
-
-for {
-    userInput := readInput()
-    result, err := agent.Run(ctx, userInput, wm) // WM is passed explicitly
-    if err != nil {
-        break
-    }
-    fmt.Println(result)
-}
-```
-
-For persistence between sessions — Export/Import:
+Continue executing the task after a failure:
 
 ```go
-// On session end
-snapshot := wm.Export()
-saveToFile("session.json", snapshot)
-
-// On restore
-snapshot := loadFromFile("session.json")
-wm.Restore(snapshot)
-```
-
-### Step 6: Resume Execution
-
-Continue task execution after failure:
-
-```go
-func resumeTask(taskID string) error {
-    task, exists := getTask(taskID)
+func resumeTask(ctx context.Context, store *TaskStore, taskID string) error {
+    task, exists := store.Get(taskID)
     if !exists {
         return fmt.Errorf("task not found: %s", taskID)
     }
     
-    // If task already completed, do nothing
+    // If the task is already completed, do nothing
     if task.State == TaskCompleted {
         return nil
     }
     
-    // If task failed, can retry
+    // If the task failed, it can be retried
     if task.State == TaskFailed {
         task.State = TaskPending
-        saveTask(task)
+        store.Save(task)
     }
     
     // Continue execution
@@ -282,65 +227,64 @@ func resumeTask(taskID string) error {
 }
 ```
 
-## Where to Integrate This in Our Code
+## Where to plug this into our code
 
-### Integration Point 1: Agent Loop
+### Integration point 1: Agent loop
 
-In [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab04-autonomy/main.go) add state persistence:
+> **Note:** the labs are not yet revised (still on the old stack) — use them as a pointer; the canonical material is in this chapter.
+
+In [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab04-autonomy/main.go), add state saving:
 
 ```go
-// At start of agent run:
-taskID := generateTaskID()
+store := &TaskStore{tasks: map[string]*Task{}}
+
+// At the start of the agent run:
 task := &Task{
-    ID:        taskID,
+    ID:        generateTaskID(),
     UserInput: userInput,
     State:     TaskRunning,
     CreatedAt: time.Now(),
 }
-saveTask(task)
-
-// In loop save progress:
-task.State = TaskRunning
-saveTask(task)
+store.Save(task)
 
 // After completion:
 task.State = TaskCompleted
 task.Result = finalAnswer
-saveTask(task)
+store.Save(task)
 ```
 
-### Integration Point 2: Tool Execution
+### Integration point 2: Tool execution
 
-In [`labs/lab02-tools/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab02-tools/main.go) add retry for tools:
+> **Note:** the labs are not yet revised (still on the old stack) — use them as a pointer; the canonical material is in this chapter.
+
+In [`labs/lab02-tools/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab02-tools/main.go), add retry for tools:
 
 ```go
-func executeToolWithRetry(toolCall openai.ToolCall) (string, error) {
-    return executeWithRetry(func() error {
-        result, err := executeTool(toolCall)
-        if err != nil {
-            return err
-        }
-        return nil
+func executeToolWithRetry(ctx context.Context, toolCall ToolCall) (string, error) {
+    var result string
+    err := executeWithRetry(ctx, func() error {
+        var err error
+        result, err = executeTool(toolCall)
+        return err
     }, 3)
+    return result, err
 }
 ```
 
-## Mini Code Example
+## Mini code example
 
-Complete example with workflow and state management based on [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab04-autonomy/main.go):
+> **Note:** this lab is not yet revised (still on the old stack) — use it as a pointer; the canonical material is in this chapter.
+
+A complete example with a workflow and state management, based on [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab04-autonomy/main.go). The LLM client is neutral (`llm.Client`): retrying transient errors already happens inside the client; here we only manage state and boundaries:
 
 ```go
 package main
 
 import (
     "context"
-    "encoding/json"
     "fmt"
-    "os"
     "sync"
     "time"
-
-    "github.com/sashabaranov/go-openai"
 )
 
 type TaskState string
@@ -362,199 +306,101 @@ type Task struct {
     UpdatedAt time.Time `json:"updated_at"`
 }
 
-var tasks = make(map[string]*Task)
-var tasksMutex sync.RWMutex
-
-func generateTaskID() string {
-    return fmt.Sprintf("task-%d", time.Now().UnixNano())
+type TaskStore struct {
+    mu    sync.RWMutex
+    tasks map[string]*Task
 }
 
-func saveTask(task *Task) {
-    tasksMutex.Lock()
-    defer tasksMutex.Unlock()
-    
+func (s *TaskStore) Save(task *Task) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
     task.UpdatedAt = time.Now()
-    tasks[task.ID] = task
-    
-    data, _ := json.Marshal(tasks)
-    os.WriteFile("tasks.json", data, 0644)
+    s.tasks[task.ID] = task
 }
 
-func getTask(id string) (*Task, bool) {
-    tasksMutex.RLock()
-    defer tasksMutex.RUnlock()
-    
-    task, exists := tasks[id]
+func (s *TaskStore) Get(id string) (*Task, bool) {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+    task, exists := s.tasks[id]
     return task, exists
 }
 
-func executeWithRetry(fn func() error, maxRetries int) error {
-    var lastErr error
-    
-    for i := 0; i < maxRetries; i++ {
-        err := fn()
-        if err == nil {
-            return nil
-        }
-        
-        lastErr = err
-        
-        if i < maxRetries-1 {
-            backoff := time.Duration(1<<i) * time.Second
-            fmt.Printf("Retry %d/%d after %v...\n", i+1, maxRetries, backoff)
-            time.Sleep(backoff)
-        }
-    }
-    
-    return fmt.Errorf("failed after %d retries: %v", maxRetries, lastErr)
+var tools = map[string]func() string{
+    "check_disk": func() string { return "Disk usage: 95%, large folder: /var/log" },
+    "clean_logs": func() string { return "Logs cleaned, freed 20 GB" },
 }
 
-func checkDisk() string { return "Disk Usage: 95% (CRITICAL). Large folder: /var/log" }
-func cleanLogs() string { return "Logs cleaned. Freed 20GB." }
-
 func main() {
-    token := os.Getenv("OPENAI_API_KEY")
-    baseURL := os.Getenv("OPENAI_BASE_URL")
-    if token == "" {
-        token = "dummy"
-    }
-
-    config := openai.DefaultConfig(token)
-    if baseURL != "" {
-        config.BaseURL = baseURL
-    }
-    client := openai.NewClientWithConfig(config)
-
+    // Deadline for the whole agent run — a terminal boundary
     ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(5*time.Minute))
     defer cancel()
 
-    userInput := "I'm out of disk space. Fix it."
+    userInput := "I'm out of disk space. Deal with it."
 
-    // Create task
-    taskID := generateTaskID()
+    store := &TaskStore{tasks: map[string]*Task{}}
     task := &Task{
-        ID:        taskID,
+        ID:        fmt.Sprintf("task-%d", time.Now().UnixNano()),
         UserInput: userInput,
         State:     TaskRunning,
         CreatedAt: time.Now(),
     }
-    saveTask(task)
+    store.Save(task)
 
-    tools := []openai.Tool{
-        {
-            Type: openai.ToolTypeFunction,
-            Function: &openai.FunctionDefinition{
-                Name:        "check_disk",
-                Description: "Check current disk usage",
-            },
-        },
-        {
-            Type: openai.ToolTypeFunction,
-            Function: &openai.FunctionDefinition{
-                Name:        "clean_logs",
-                Description: "Delete old logs to free space",
-            },
-        },
-    }
+    agent := NewAgent(llm.ClientFromEnv())
 
-    messages := []openai.ChatCompletionMessage{
-        {Role: openai.ChatMessageRoleSystem, Content: "You are an autonomous DevOps agent."},
-        {Role: openai.ChatMessageRoleUser, Content: userInput},
-    }
-
-    fmt.Printf("Starting Agent Loop (task_id: %s)...\n", taskID)
-
-    for i := 0; i < 5; i++ {
-        // Check deadline
+    const maxIterations = 5
+    for i := 0; i < maxIterations; i++ {
         select {
         case <-ctx.Done():
-            task.State = TaskFailed
-            task.Error = "deadline exceeded"
-            saveTask(task)
-            fmt.Println("Deadline exceeded")
+            task.State, task.Error = TaskFailed, "deadline exceeded"
+            store.Save(task)
             return
         default:
         }
 
-        req := openai.ChatCompletionRequest{
-            Model:    "gpt-4o-mini",
-            Messages: messages,
-            Tools:    tools,
-        }
-
-        resp, err := client.CreateChatCompletion(ctx, req)
+        // One iteration: LLM call + executing tool calls
+        reply, err := agent.Step(ctx, userInput)
         if err != nil {
-            task.State = TaskFailed
-            task.Error = err.Error()
-            saveTask(task)
-            panic(fmt.Sprintf("API Error: %v", err))
+            task.State, task.Error = TaskFailed, err.Error()
+            store.Save(task)
+            return
         }
 
-        msg := resp.Choices[0].Message
-        messages = append(messages, msg)
-
-        if len(msg.ToolCalls) == 0 {
-            task.State = TaskCompleted
-            task.Result = msg.Content
-            saveTask(task)
-            fmt.Println("AI:", msg.Content)
-            break
-        }
-
-        for _, toolCall := range msg.ToolCalls {
-            fmt.Printf("Executing tool: %s\n", toolCall.Function.Name)
-
-            var result string
-            err := executeWithRetry(func() error {
-                if toolCall.Function.Name == "check_disk" {
-                    result = checkDisk()
-                } else if toolCall.Function.Name == "clean_logs" {
-                    result = cleanLogs()
-                }
-                return nil
-            }, 3)
-
-            if err != nil {
-                task.State = TaskFailed
-                task.Error = err.Error()
-                saveTask(task)
-                fmt.Printf("Tool execution failed: %v\n", err)
-                continue
-            }
-
-            fmt.Println("Tool Output:", result)
-
-            messages = append(messages, openai.ChatCompletionMessage{
-                Role:       openai.ChatMessageRoleTool,
-                Content:    result,
-                ToolCallID: toolCall.ID,
-            })
+        if reply.Done { // the model answered with text — the task is complete
+            task.State, task.Result = TaskCompleted, reply.Text
+            store.Save(task)
+            fmt.Println("AI:", reply.Text)
+            return
         }
     }
+
+    // The iteration limit is a terminal error too
+    task.State, task.Error = TaskFailed, "iteration limit exceeded"
+    store.Save(task)
 }
 ```
 
-## Store: Database-Backed Storage
+Note that the deadline and the iteration limit finish the task with the `failed` status and a message to the human — no "maybe it'll work on the sixth try" logic.
 
-The examples above use a `tasks.json` file to store state. This works for learning, but file storage is unreliable in production.
+## Store: Database-backed Storage
 
-### Why a File Isn't Production-Ready
+In the examples above the state lives in process memory. For learning purposes this works, but not in production.
 
-File storage has three problems:
+### Why process memory is not production
 
-1. **No atomicity.** If the process crashes during a write, the file gets corrupted.
-2. **No concurrent access.** Two agents can't safely write to the same file.
-3. **No queries.** To find all incomplete tasks, you have to read the entire file.
+1. **Reboot = loss.** The state dies with the process.
+2. **No concurrent access.** Two agent instances cannot safely work on the same tasks.
+3. **No queries.** Finding all unfinished tasks requires scanning everything.
 
-Databases solve all three problems. PostgreSQL is a solid choice for production. SQLite works well for local development.
+A database solves all three problems. PostgreSQL is a reliable production choice. SQLite is a good option for local development and a single instance.
 
-### StateStore: Storage Interface
+### StateStore: the storage interface
 
-Separate the interface from the implementation. This lets you swap the store in tests and change it without rewriting agent logic.
+We separate the interface from the implementation. This lets you swap the storage in tests and change it without rewriting the agent's logic.
 
 ```go
-// StateStore defines the contract for agent state storage.
-// Implementations can use PostgreSQL, SQLite, or in-memory storage.
+// StateStore is the storage contract for agent state.
+// An implementation may use PostgreSQL, SQLite or an in-memory store.
 type StateStore interface {
     Save(ctx context.Context, task *Task) error
     Get(ctx context.Context, id string) (*Task, error)
@@ -562,7 +408,7 @@ type StateStore interface {
 }
 ```
 
-### PostgreSQL Implementation
+### PostgreSQL implementation
 
 ```go
 type PgStateStore struct {
@@ -578,7 +424,7 @@ func NewPgStateStore(dsn string) (*PgStateStore, error) {
 }
 
 func (s *PgStateStore) Save(ctx context.Context, task *Task) error {
-    // UPSERT: insert a new task or update an existing one
+    // UPSERT: insert a new task or update the existing one
     query := `
         INSERT INTO agent_tasks (id, user_input, state, result, error, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $5, $6, now())
@@ -637,9 +483,9 @@ func (s *PgStateStore) ListByState(ctx context.Context, state TaskState) ([]*Tas
 }
 ```
 
-### Transactions for Atomic Updates
+### Transactions for atomic updates
 
-When the agent executes a step, state must update atomically. If the step fails, the state must remain unchanged.
+Whenever the agent performs a step, the state must be updated atomically. If the step fails, the state must not change.
 
 ```go
 func (s *PgStateStore) ExecuteStep(ctx context.Context, taskID string, stepFn func(*Task) error) error {
@@ -650,7 +496,7 @@ func (s *PgStateStore) ExecuteStep(ctx context.Context, taskID string, stepFn fu
     defer tx.Rollback()
 
     // SELECT ... FOR UPDATE locks the row for the duration of the step.
-    // Another agent won't be able to modify this task concurrently.
+    // Another agent cannot modify this task in parallel.
     task := &Task{}
     err = tx.QueryRowContext(ctx,
         `SELECT id, user_input, state, result, error, created_at, updated_at
@@ -664,12 +510,12 @@ func (s *PgStateStore) ExecuteStep(ctx context.Context, taskID string, stepFn fu
         return fmt.Errorf("lock task: %w", err)
     }
 
-    // Execute step business logic
+    // Run the business logic of the step
     if err := stepFn(task); err != nil {
         return fmt.Errorf("step failed: %w", err)
     }
 
-    // Save updated state inside the transaction
+    // Save the updated state inside the transaction
     _, err = tx.ExecContext(ctx,
         `UPDATE agent_tasks SET state=$1, result=$2, error=$3, updated_at=now() WHERE id=$4`,
         task.State, task.Result, task.Error, task.ID,
@@ -682,139 +528,39 @@ func (s *PgStateStore) ExecuteStep(ctx context.Context, taskID string, stepFn fu
 }
 ```
 
-The step either completes fully or rolls back. There is no "half-done" state.
+Either the step completes fully or it rolls back. There is no intermediate "half-done" state.
 
 ## MCP for State
 
-Model Context Protocol (MCP) lets you store and share agent state through standardized resources. For more on MCP, see [Chapter 18: Tool Protocols and Tool Servers](../18-tool-protocols-and-servers/README.md).
+The Model Context Protocol (MCP) lets you expose agent state externally as standardized resources: one agent writes progress, another reads it by URI and continues the work — without a custom API for every store. This makes sense in [multi-agent systems](../07-multi-agent/README.md), where several agents share one state; for a single agent, the `StateStore` from this chapter is enough. MCP is covered in detail in [Chapter 18: Tool Protocols and Tool Servers](../18-tool-protocols-and-servers/README.md).
 
-### Why MCP for State?
+## Artifacts Outside the Context (Instead of "Dynamic State Selection")
 
-An MCP server acts as a single source of truth for state. Any agent or tool accesses it by URI. This solves two problems:
+An agent accumulates artifacts: logs, command output, intermediate data. Over time their volume exceeds the LLM's context window. Send everything and the model loses focus; send nothing and it cannot make a decision.
 
-1. **Shared access.** Multiple agents read and update the same state.
-2. **Standard protocol.** No need to write a custom API for each store.
+**Anti-pattern — "Dynamic Context":** manually scoring known facts and artifacts ("priority 1: artifacts of the current step, priority 2: recent facts") and assembling a context slice from them on every step. This is hidden logic that bypasses the model: it cannot be tested, it conflicts with condensing, and it silently breaks when the context window changes.
 
-### State Resource
+**An approach that works:**
 
-Agent state is represented as an MCP resource with a URI:
+- Large artifacts are stored **outside** the history — in a file or a database; what goes into the context is a path/ID plus a short excerpt (see `Artifact` in "Step 0").
+- The budget is placed on the size of a **single tool result** (~128 KB in production): exceeding it → truncate or move it into an artifact.
+- What stays in the history on context overflow is decided by condensing, not manual scoring ([Chapter 13](../13-context-engineering/README.md)).
 
-```
-state://agents/{agent_id}/tasks/{task_id}
-```
-
-One agent writes progress, another reads it and continues the work.
-
-### Example: Reading Shared State
-
-```go
-// MCPStateResource represents agent state as an MCP resource.
-type MCPStateResource struct {
-    URI       string    `json:"uri"`
-    AgentID   string    `json:"agent_id"`
-    TaskID    string    `json:"task_id"`
-    State     TaskState `json:"state"`
-    Plan      []string  `json:"plan,omitempty"`
-    Artifacts []string  `json:"artifacts,omitempty"`
-}
-
-// readSharedState reads another agent's state via MCP.
-// Agent A wrote progress, agent B reads it and continues.
-func readSharedState(
-    ctx context.Context,
-    mcpClient *mcp.Client,
-    agentID, taskID string,
-) (*MCPStateResource, error) {
-    uri := fmt.Sprintf("state://agents/%s/tasks/%s", agentID, taskID)
-
-    resource, err := mcpClient.ReadResource(ctx, uri)
-    if err != nil {
-        return nil, fmt.Errorf("read MCP resource %s: %w", uri, err)
-    }
-
-    var state MCPStateResource
-    if err := json.Unmarshal(resource.Content, &state); err != nil {
-        return nil, fmt.Errorf("decode state: %w", err)
-    }
-    return &state, nil
-}
-```
-
-This approach is useful in [multi-agent systems](../07-multi-agent/README.md), where multiple agents work on the same task.
-
-## Dynamic Context: Selecting Relevant State
-
-### Problem: Not Everything Fits in the Context
-
-The agent accumulates artifacts: logs, command outputs, intermediate data. Over time their volume exceeds the LLM context window. Send everything and the model loses focus. Send nothing and the model can't make decisions.
-
-The solution is to select only the relevant state for the current step.
-
-### Filtering by Relevance
-
-The strategy is simple: first take data from the current step, then fill the remainder with the most recent facts.
-
-```go
-// ContextSlice is a slice of state that fits inside the context window.
-type ContextSlice struct {
-    Goal          string     `json:"goal"`
-    CurrentStep   string     `json:"current_step"`
-    Facts         []Fact     `json:"facts"`
-    Artifacts     []Artifact `json:"artifacts"`
-    OpenQuestions []string   `json:"open_questions"`
-}
-
-// filterRelevantState selects only what the current step needs
-// from the full state.
-// maxBytes caps the size to avoid overflowing the context window.
-func filterRelevantState(state *AgentState, currentStep string, maxBytes int) *ContextSlice {
-    slice := &ContextSlice{
-        Goal:          state.Goal,
-        CurrentStep:   currentStep,
-        OpenQuestions: state.OpenQuestions,
-    }
-
-    usedBytes := 0
-
-    // Priority 1: artifacts for the current step
-    for _, a := range state.Artifacts {
-        if a.Step == currentStep && usedBytes+a.Bytes <= maxBytes {
-            slice.Artifacts = append(slice.Artifacts, a)
-            usedBytes += a.Bytes
-        }
-    }
-
-    // Priority 2: most recent facts (fresh data is more likely relevant)
-    for i := len(state.KnownFacts) - 1; i >= 0; i-- {
-        factSize := len(state.KnownFacts[i].Value)
-        if usedBytes+factSize > maxBytes {
-            break
-        }
-        slice.Facts = append(slice.Facts, state.KnownFacts[i])
-        usedBytes += factSize
-    }
-
-    return slice
-}
-```
-
-### When You Need This
-
-Filtering becomes critical when the agent runs for more than 5-10 steps. For short tasks you can skip it. For more on context management, see [Chapter 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md).
+For context size and cost management, see [Chapter 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md).
 
 ## Advanced Checkpoint Strategies
 
-The basic Checkpoint implementation (structure, save/load, agent loop integration) is covered in [Chapter 09: Agent Architecture](../09-agent-architecture/README.md). Here we look at advanced strategies for production.
+The basic Checkpoint implementation (the structure, saving/loading, integration with the agent loop) is described in [Chapter 09: Anatomy of an Agent](../09-agent-architecture/README.md#checkpoint-and-resume). Here we look at advanced strategies for production.
 
-### When to Save: Checkpoint Granularity
+### When to save: checkpoint granularity
 
-A checkpoint is a snapshot of state you can return to. Save frequency is a trade-off between reliability and performance:
+A checkpoint is a state snapshot you can return to. How often you save is a trade-off between reliability and performance:
 
-| Strategy | When to save | Pros | Cons |
-|----------|-------------|------|------|
+| Strategy | When we save | Pro | Con |
+|-----------|----------------|------|-------|
 | `every_step` | After every tool call | Minimal progress loss | Many DB writes |
-| `every_iteration` | After every loop iteration | Balance of reliability and I/O | Lose intermediate steps |
-| `on_state_change` | Only on state transition | Minimal I/O | Lose progress within a state |
+| `every_iteration` | After every iteration of the loop | Balance between reliability and I/O | Intermediate steps are lost |
+| `on_state_change` | Only on state change | Minimal I/O | Progress within a state is lost |
 
 ### CheckpointManager
 
@@ -830,7 +576,7 @@ const (
 type CheckpointManager struct {
     store    StateStore
     strategy CheckpointStrategy
-    maxAge   time.Duration // Maximum checkpoint age
+    maxAge   time.Duration // Maximum age of a checkpoint
     maxCount int           // How many checkpoints to keep per task
 }
 
@@ -847,12 +593,12 @@ func (cm *CheckpointManager) MaybeSave(
 }
 ```
 
-### Validation Before Resume
+### Validation before resuming
 
-You can't blindly resume a task from a checkpoint. The checkpoint may be stale, and the state may be invalid.
+You cannot blindly resume a task from a checkpoint. A checkpoint may be stale, and its state may be invalid.
 
 ```go
-// ValidateAndResume loads a checkpoint and verifies it's usable.
+// ValidateAndResume loads a checkpoint and checks whether it is usable.
 func (cm *CheckpointManager) ValidateAndResume(ctx context.Context, taskID string) (*Task, error) {
     task, err := cm.store.Get(ctx, taskID)
     if err != nil {
@@ -862,30 +608,30 @@ func (cm *CheckpointManager) ValidateAndResume(ctx context.Context, taskID strin
         return nil, fmt.Errorf("checkpoint not found: %s", taskID)
     }
 
-    // Check 1: checkpoint is not expired
+    // Check 1: the checkpoint has not expired
     age := time.Since(task.UpdatedAt)
     if age > cm.maxAge {
         return nil, fmt.Errorf("checkpoint expired: age %v exceeds max %v", age, cm.maxAge)
     }
 
-    // Check 2: state allows resumption
+    // Check 2: the state allows resuming
     switch task.State {
     case TaskCompleted:
-        return task, nil // Already done, no re-execution needed
+        return task, nil // Already completed, no need to run again
     case TaskRunning, TaskFailed:
-        return task, nil // Can resume
+        return task, nil // Can be resumed
     default:
         return nil, fmt.Errorf("cannot resume from state: %s", task.State)
     }
 }
 ```
 
-### Checkpoint Rotation
+### Checkpoint rotation
 
-Checkpoints accumulate. Without cleanup they waste storage and complicate recovery. Rotation keeps only the last N checkpoints and deletes expired ones.
+Checkpoints accumulate. Without cleanup they take up space and make recovery harder. Rotation keeps only the last N checkpoints and deletes expired ones.
 
 ```go
-// Cleanup removes expired checkpoints, keeping the last maxCount.
+// Cleanup deletes expired checkpoints, keeping the last maxCount ones.
 func (cm *CheckpointManager) Cleanup(ctx context.Context, taskID string) (int64, error) {
     result, err := cm.store.(*PgStateStore).db.ExecContext(ctx,
         `DELETE FROM agent_checkpoints
@@ -906,25 +652,62 @@ func (cm *CheckpointManager) Cleanup(ctx context.Context, taskID string) (int64,
 }
 ```
 
-Good practice: run rotation after every successful save or on a schedule.
+A good practice is to run rotation after every successful save or on a schedule.
 
-## Common Errors
+## The FSM of an Autonomous Run
 
-### Error 1: No Idempotency
+Production bots that live in a chat or a tracker for hours do not spin the agent loop forever. A task (an issue, a ticket, a message) goes through a finite state machine:
 
-**Symptom:** Repeated call creates duplicates (e.g., creates two files instead of one).
+| State | What happens |
+|-----------|----------------|
+| `queued` | The task is queued, waiting for a worker |
+| `working` | The agent loop is running: model, tools, plan steps |
+| `waiting` | The run is suspended: waiting for an external response or a human |
+| `paused` | A sticky pause set by a human command; survives a restart |
+| `asleep` | The run has finished (report sent or skipped), the task is "listening" to the thread |
+| `done` / `failed` / `cancelled` | Terminal states — there is no way out of them |
 
-**Cause:** Operations don't check if they were already executed.
+```mermaid
+stateDiagram-v2
+    [*] --> queued
+    queued --> working: worker picked up the task
+    working --> waiting: external response/human needed
+    waiting --> working: response received
+    working --> paused: human command
+    paused --> working: human resumed
+    working --> asleep: run finished (report/skip)
+    waiting --> asleep: run finished (skip)
+    asleep --> working: a mention in the thread wakes it up
+    working --> done
+    working --> failed: terminal error
+    working --> cancelled
+```
 
-**Solution:**
+The key rules:
+
+- **"Freedom inside the run, boundaries on the outside."** Inside the run (`working`) the agent is free: it builds the plan itself, calls tools, revises steps. On the outside there are hard boundaries: a **run deadline (~1 hour)** and an **iteration limit**. Exceeding either is a terminal error: the run ends with status `failed` and a message to the human — not "one more attempt".
+- **`waiting` ≠ `paused`.** `waiting` — the agent itself is waiting for a response (an HTTP callback, a human confirmation) and will continue automatically. `paused` — a stop command from a human; only a human can lift the pause.
+- **`asleep` — the task listens to the thread.** The run is finished, the report has been sent (or marked skip), but the task keeps watching the chat: a new message in which the task is **mentioned** wakes it up — a new `working` run begins. Without a mention the task sleeps and spends no tokens.
+- **Ack after persist.** An incoming event is acknowledged to the delivery layer **only after** the state and the history have been successfully persisted to the DB. If the process dies before the persist, the event is not acknowledged and will be delivered again — which is why operations must be idempotent (see above). An undelivered response arrives on the next run — the task does not lose it while in `waiting`/`asleep`.
+- The FSM state is stored in the same `StateStore` as the tasks and survives process restarts.
+
+## Common Mistakes
+
+### Mistake 1: No idempotency
+
+**Symptom:** A repeated call creates duplicates (for example, creates two files instead of one).
+
+**Cause:** Operations do not check whether they have already been performed.
+
+**Fix:**
 ```go
-// BAD
+// BAD:
 func createFile(filename string) error {
     os.WriteFile(filename, []byte("data"), 0644)
     return nil
 }
 
-// GOOD
+// GOOD:
 func createFileIfNotExists(filename string) error {
     if _, err := os.Stat(filename); err == nil {
         return nil // Already exists
@@ -933,143 +716,137 @@ func createFileIfNotExists(filename string) error {
 }
 ```
 
-### Error 2: No Retry on Errors
+### Mistake 2: No retry on errors
 
-**Symptom:** Agent fails on first temporary error (network error, timeout).
+**Symptom:** The agent fails on the first transient error (network error, timeout).
 
 **Cause:** No retries on errors.
 
-**Solution:**
+**Fix:**
 ```go
-// BAD
+// BAD:
 result, err := executeTool(toolCall)
 if err != nil {
-    return "", err // Immediately return error
+    return "", err // Return the error immediately
 }
 
-// GOOD
+// GOOD:
 err := executeWithRetry(func() error {
     result, err := executeTool(toolCall)
     return err
 }, 3)
 ```
 
-### Error 3: No Deadlines
+### Mistake 3: No deadlines
 
-**Symptom:** Agent hangs forever, user waits.
+**Symptom:** The agent hangs forever while the user waits.
 
 **Cause:** No timeout for operations.
 
-**Solution:**
+**Fix:**
 ```go
-// BAD
-resp, _ := client.CreateChatCompletion(ctx, req)
+// BAD:
+resp, _ := agent.Step(ctx, input)
 // May hang forever
 
-// GOOD
+// GOOD:
 ctx, cancel := context.WithDeadline(ctx, time.Now().Add(5*time.Minute))
 defer cancel()
-resp, err := client.CreateChatCompletion(ctx, req)
+resp, err := agent.Step(ctx, input)
 ```
 
-### Error 4: State Not Persisted
+### Mistake 4: State is not persisted
 
-**Symptom:** After restart, agent starts from beginning, losing progress.
+**Symptom:** After a restart the agent starts from scratch, losing progress.
 
-**Cause:** State stored only in memory.
+**Cause:** State is kept only in memory.
 
-**Solution:**
+**Fix:**
 ```go
-// BAD
-var taskState = "running" // Only in memory
+// BAD:
+var taskState = "running" // In memory only
 
-// GOOD
+// GOOD:
 task.State = TaskRunning
-saveTask(task) // Save to DB/file
+store.Save(task) // Persist to the DB
 ```
 
-### Error 5: Losing Working Memory Between Sessions
+### Mistake 5: History lost between sessions
 
-**Symptom:** The agent re-reads files it already read in the previous session. The task plan is lost. Progress is not saved.
+**Symptom:** The agent re-reads files it already read in a previous session. The task plan is lost. Progress is not preserved.
 
-**Cause:** Working Memory (current task, plan, files, actions) lives only in RAM. On restart it is lost.
+**Cause:** The message history lives only in RAM and is lost on restart.
 
-**Solution:**
+**Fix:** Persist the history itself — the linear message history together with the condensate, not some invented "working memory" layer:
+
 ```go
-// BAD: Working Memory is recreated every session
-func handleSession(ctx context.Context) {
-    wm := workmem.New() // everything is lost
-    agent.Run(ctx, msg, wm)
-}
-
-// GOOD: Export/Import between sessions
+// GOOD: history + condensate are saved and restored
 func handleSession(ctx context.Context, sessionID string) {
-    wm := workmem.New()
-    if snap, err := loadSnapshot(sessionID); err == nil {
-        wm.Restore(snap) // restored plan, files, task
-    }
-    defer saveSnapshot(sessionID, wm.Export())
-    agent.Run(ctx, msg, wm)
+    history := loadHistory(sessionID) // from the DB
+    defer saveHistory(sessionID, history)
+    agent.Run(ctx, history)
 }
 ```
 
-## Mini-Exercises
+## Exercises
 
-### Exercise 1: Implement Retry with Backoff
+### Exercise 1: Implement retry with backoff
 
-Implement a retry execution function:
+Implement an execution function with retry:
 
 ```go
 func executeWithRetry(fn func() error, maxRetries int) error {
     // Your code here
-    // Retry call with exponential backoff
+    // Retry the call with exponential backoff
 }
 ```
 
 **Expected result:**
-- Function retries call on error
-- Uses exponential backoff (1s, 2s, 4s...)
-- Function returns error after retries exhausted
+- The function retries the call on error
+- Exponential backoff is used (1s, 2s, 4s...)
+- The function returns an error after the retries are exhausted
 
-### Exercise 2: Implement Idempotency
+### Exercise 2: Implement idempotency
 
-Create a function that checks if task was already executed:
+Create a function that checks whether a task has already been executed:
 
 ```go
 func executeTaskIfNotDone(taskID string) error {
     // Your code here
-    // Check task state before execution
+    // Check the task state before executing
 }
 ```
 
 **Expected result:**
-- If task already completed, function returns nil without execution
-- If task not completed, function executes it and saves state
+- If the task is already done, the function returns nil without executing it
+- If the task is not done, the function executes it and saves the state
 
-## Completion Criteria / Checklist
+## Acceptance Criteria / Checklist
 
-**Completed (production ready):**
-- [x] Operation idempotency implemented (repeated call doesn't create duplicates)
-- [x] Retries with exponential backoff implemented
-- [x] Deadlines set for agent run and individual operations
-- [x] Task state persisted between restarts
-- [x] Can resume task execution after failure
+**Done (production-ready):**
+- [x] Operations are idempotent (a repeated call creates no duplicates)
+- [x] Retries with exponential backoff are implemented
+- [x] Deadlines are set for the agent run and for individual operations
+- [x] Task state persists across restarts
+- [x] Task execution can be resumed after a failure
+- [x] You understand the FSM of an autonomous run: working/waiting/paused/asleep, ack-after-persist
 
-**Not completed:**
+**Not done:**
 - [ ] No idempotency
 - [ ] No retry on errors
 - [ ] No deadlines
-- [ ] State not persisted
+- [ ] State is not persisted
+- [ ] History is lost between sessions (no history checkpoints)
 
-## Connection with Other Chapters
+## Relation to Other Chapters
 
-- **[Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md)** — Basic agent loop
-- **[Chapter 10: Planning and Workflow Patterns](../10-planning-and-workflows/README.md)** — State Management guarantees reliable plan execution
+- **[Chapter 04: Autonomy and Loops](../04-autonomy-and-loops/README.md)** — The basic agent loop
+- **[Chapter 10: Planning and Workflow Patterns](../10-planning-and-workflows/README.md)** — State management ensures reliable plan execution
 - **[Chapter 19: Observability and Tracing](../19-observability-and-tracing/README.md)** — Logging task state
-- **[Chapter 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md)** — Cost control for long tasks
+- **[Chapter 20: Cost & Latency Engineering](../20-cost-latency-engineering/README.md)** — Controlling the cost of long-running tasks
 
 ## What's Next?
 
-After understanding state management, proceed to:
-- **[12. Agent Memory Systems](../12-agent-memory/README.md)** — Learn how agents remember and retrieve information
+Once you understand state management, move on to:
+- **[12. Agent Memory Systems](../12-agent-memory/README.md)** — Learn how agents store and retrieve information
 
