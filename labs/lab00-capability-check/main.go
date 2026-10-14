@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/kshvakov/agent/llm"
 )
 
 type TestResult struct {
@@ -17,33 +17,39 @@ type TestResult struct {
 }
 
 func main() {
-	token := os.Getenv("OPENAI_API_KEY")
-	if token == "" { token = "dummy" }
-	config := openai.DefaultConfig(token)
-	if baseURL := os.Getenv("OPENAI_BASE_URL"); baseURL != "" { config.BaseURL = baseURL }
-	client := openai.NewClientWithConfig(config)
+	cfg, err := llm.LoadConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	client := llm.NewOpenAI(
+		llm.WithAPIKey(cfg.APIKey),
+		llm.WithBaseURL(cfg.BaseURL),
+		llm.WithModel(cfg.Model),
+	)
 	ctx := context.Background()
 
 	fmt.Println("🔬 Starting Model Capability Analysis...")
-	fmt.Printf("Endpoint: %s\n", config.BaseURL)
+	fmt.Printf("Endpoint: %s\n", cfg.BaseURL)
+	fmt.Printf("Model: %s\n", cfg.Model)
 
 	results := []TestResult{}
 
 	// TEST 1: Basic Sanity
-	results = append(results, runTest(ctx, client, "1. Basic Sanity", 
-		"Say exactly 'Hello World'", 
+	results = append(results, runTest(ctx, client, cfg.Model, "1. Basic Sanity",
+		"Say exactly 'Hello World'",
 		func(response string) bool { return strings.Contains(strings.ToLower(response), "hello world") },
 	))
 
 	// TEST 2: Instruction Following (Constraints)
-	results = append(results, runTest(ctx, client, "2. Instruction Following", 
-		"Reply with the word 'Apple' and nothing else. No punctuation.", 
+	results = append(results, runTest(ctx, client, cfg.Model, "2. Instruction Following",
+		"Reply with the word 'Apple' and nothing else. No punctuation.",
 		func(response string) bool { return strings.TrimSpace(response) == "Apple" },
 	))
 
 	// TEST 3: JSON Generation
-	results = append(results, runTest(ctx, client, "3. JSON Generation", 
-		"Generate a JSON object with field 'status' set to 'ok'. Do not use markdown blocks.", 
+	results = append(results, runTest(ctx, client, cfg.Model, "3. JSON Generation",
+		"Generate a JSON object with field 'status' set to 'ok'. Do not use markdown blocks.",
 		func(response string) bool {
 			var js map[string]any
 			// Try to find JSON if wrapped in markdown
@@ -53,15 +59,15 @@ func main() {
 	))
 
 	// TEST 4: Function Calling
-	results = append(results, runToolTest(ctx, client))
+	results = append(results, runToolTest(ctx, client, cfg.Model))
 
 	// REPORT
 	fmt.Println("\n📋 FINAL REPORT:")
 	allPassed := true
 	for _, r := range results {
 		icon := "✅"
-		if !r.Passed { 
-			icon = "❌" 
+		if !r.Passed {
+			icon = "❌"
 			allPassed = false
 		}
 		fmt.Printf("%s %s\n   Details: %s\n", icon, r.Name, r.Details)
@@ -74,14 +80,14 @@ func main() {
 	}
 }
 
-func runTest(ctx context.Context, client *openai.Client, name, prompt string, validator func(string) bool) TestResult {
+func runTest(ctx context.Context, client llm.Client, model, name, prompt string, validator func(string) bool) TestResult {
 	fmt.Printf("Running %s...\n", name)
-	resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model: "gpt-4o-mini",
-		Messages: []openai.ChatCompletionMessage{{Role: openai.ChatMessageRoleUser, Content: prompt}},
+	resp, err := client.Complete(ctx, llm.Request{
+		Model:       model,
+		Messages:    []llm.Message{{Role: "user", Content: prompt}},
 		Temperature: 0,
 	})
-	
+
 	if err != nil {
 		return TestResult{name, false, fmt.Sprintf("API Error: %v", err)}
 	}
@@ -89,27 +95,24 @@ func runTest(ctx context.Context, client *openai.Client, name, prompt string, va
 	content := resp.Choices[0].Message.Content
 	passed := validator(content)
 	details := fmt.Sprintf("Input: '%s' | Output: '%s'", prompt, content)
-	
+
 	return TestResult{name, passed, details}
 }
 
-func runToolTest(ctx context.Context, client *openai.Client) TestResult {
+func runToolTest(ctx context.Context, client llm.Client, model string) TestResult {
 	fmt.Println("Running 4. Function Calling...")
-	tools := []openai.Tool{
+	tools := []llm.ToolDef{
 		{
-			Type: openai.ToolTypeFunction,
-			Function: &openai.FunctionDefinition{
-				Name: "test_tool",
-				Description: "Call this tool to pass the test",
-				Parameters: json.RawMessage(`{"type": "object", "properties": {"foo": {"type": "string"}}}`),
-			},
+			Name:        "get_time",
+			Description: "Get the current time",
+			Parameters:  json.RawMessage(`{"type": "object", "properties": {}}`),
 		},
 	}
 
-	resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model: "gpt-4o-mini",
-		Messages: []openai.ChatCompletionMessage{{Role: openai.ChatMessageRoleUser, Content: "Call the test_tool please."}},
-		Tools: tools,
+	resp, err := client.Complete(ctx, llm.Request{
+		Model:    model,
+		Messages: []llm.Message{{Role: "user", Content: "Call the get_time tool please."}},
+		Tools:    tools,
 	})
 
 	if err != nil {
@@ -122,4 +125,3 @@ func runToolTest(ctx context.Context, client *openai.Client) TestResult {
 
 	return TestResult{"4. Function Calling", false, fmt.Sprintf("Model responded with text instead of tool: '%s'", resp.Choices[0].Message.Content)}
 }
-

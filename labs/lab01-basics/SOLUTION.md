@@ -6,14 +6,19 @@ In this lab we learned the basics of interacting with an LLM: sending requests, 
 ## 📝 Solution Breakdown
 
 ### 1. Client Initialization (Local & Cloud)
-We added a check for `OPENAI_BASE_URL`. This allows switching between cloud (OpenAI) and local server (LM Studio, Ollama, vLLM) without rewriting code.
+`llm.LoadConfig()` reads `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` (exported or sourced from `.env`). This allows switching between cloud and a local server (LM Studio, Ollama, vLLM) without rewriting code.
 
 ```go
-config := openai.DefaultConfig(token)
-if baseURL != "" {
-    config.BaseURL = baseURL
+cfg, err := llm.LoadConfig()
+if err != nil {
+    fmt.Fprintln(os.Stderr, err)
+    os.Exit(1)
 }
-client := openai.NewClientWithConfig(config)
+client := llm.NewOpenAI(
+    llm.WithAPIKey(cfg.APIKey),
+    llm.WithBaseURL(cfg.BaseURL),
+    llm.WithModel(cfg.Model),
+)
 ```
 
 ### 2. Memory Management (Context Loop)
@@ -31,31 +36,26 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/kshvakov/agent/llm"
 )
 
 func main() {
-	// Client configuration
-	token := os.Getenv("OPENAI_API_KEY")
-	baseURL := os.Getenv("OPENAI_BASE_URL")
-
-	if token == "" {
-		token = "local-token"
-		fmt.Println("No API Key provided. Assuming local model usage.")
+	// Client configuration: LLM_API_KEY / LLM_BASE_URL / LLM_MODEL from the environment (or a sourced .env)
+	cfg, err := llm.LoadConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-
-	config := openai.DefaultConfig(token)
-	if baseURL != "" {
-		config.BaseURL = baseURL
-		fmt.Printf("Connected to: %s\n", baseURL)
-	}
-
-	client := openai.NewClientWithConfig(config)
+	client := llm.NewOpenAI(
+		llm.WithAPIKey(cfg.APIKey),
+		llm.WithBaseURL(cfg.BaseURL),
+		llm.WithModel(cfg.Model),
+	)
 
 	// Memory initialization
-	messages := []openai.ChatCompletionMessage{
+	messages := []llm.Message{
 		{
-			Role:    openai.ChatMessageRoleSystem,
+			Role:    "system",
 			Content: "You are an experienced Linux administrator. Answer briefly and to the point.",
 		},
 	}
@@ -77,17 +77,15 @@ func main() {
 			continue
 		}
 
-		messages = append(messages, openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleUser,
+		messages = append(messages, llm.Message{
+			Role:    "user",
 			Content: input,
 		})
 
-		req := openai.ChatCompletionRequest{
-			Model:    "gpt-4o-mini", // Or "local-model", name is often ignored by local servers
+		resp, err := client.Complete(ctx, llm.Request{
+			Model:    cfg.Model, // From LLM_MODEL (default glm-5.3)
 			Messages: messages,
-		}
-
-		resp, err := client.CreateChatCompletion(ctx, req)
+		})
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			continue
@@ -96,8 +94,8 @@ func main() {
 		answer := resp.Choices[0].Message.Content
 		fmt.Println("AI:", answer)
 
-		messages = append(messages, openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleAssistant,
+		messages = append(messages, llm.Message{
+			Role:    "assistant",
 			Content: answer,
 		})
 	}

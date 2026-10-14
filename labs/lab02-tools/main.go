@@ -2,9 +2,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/kshvakov/agent/llm"
 )
 
 // Our "real" function
@@ -17,36 +18,53 @@ func runGetServerStatus(ip string) string {
 }
 
 func main() {
-	// 1. Client setup
-	token := os.Getenv("OPENAI_API_KEY")
-	baseURL := os.Getenv("OPENAI_BASE_URL")
-	if token == "" {
-		token = "dummy"
+	// 1. Client setup: LLM_API_KEY / LLM_BASE_URL / LLM_MODEL from the environment (or a sourced .env)
+	cfg, err := llm.LoadConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-	config := openai.DefaultConfig(token)
-	if baseURL != "" {
-		config.BaseURL = baseURL
-	}
-	client := openai.NewClientWithConfig(config)
+	client := llm.NewOpenAI(
+		llm.WithAPIKey(cfg.APIKey),
+		llm.WithBaseURL(cfg.BaseURL),
+		llm.WithModel(cfg.Model),
+	)
+
+	ctx := context.Background()
+
+	fmt.Printf("Client ready, endpoint: %s\n", cfg.BaseURL)
+	_ = client // TODO: use client.Complete(ctx, req) in step 4
 
 	// 2. Describe the tool
-	// tools := []openai.Tool{ ... }
+	// tools := []llm.ToolDef{
+	//     {
+	//         Name:        "get_server_status",
+	//         Description: "Get the status of a server by IP address",
+	//         Parameters: json.RawMessage(`{
+	//             "type": "object",
+	//             "properties": {
+	//                 "ip": {
+	//                     "type": "string",
+	//                     "description": "IP address of the server"
+	//                 }
+	//             },
+	//             "required": ["ip"]
+	//         }`),
+	//     },
+	// }
 
 	// 3. Form the request
-	// req := openai.ChatCompletionRequest{
-	//     Model: "gpt-4o-mini", // Or your local model name
-	//     Messages: []openai.ChatCompletionMessage{
-	//         {Role: openai.ChatMessageRoleUser, Content: "Is server 192.168.1.10 online?"},
+	// req := llm.Request{
+	//     Model: cfg.Model,
+	//     Messages: []llm.Message{
+	//         {Role: "user", Content: "Is server 192.168.1.10 online?"},
 	//     },
 	//     Tools: tools,
 	// }
 
-	ctx := context.Background()
-	_ = ctx
-	_ = client
-	_ = runGetServerStatus
+	_ = ctx // TODO: pass ctx to the API call
 
 	// 4. Execute request and check ToolCalls
-	// resp, _ := client.CreateChatCompletion(ctx, req)
+	// resp, err := client.Complete(ctx, req)
 	// if len(resp.Choices[0].Message.ToolCalls) > 0 { ... }
 }

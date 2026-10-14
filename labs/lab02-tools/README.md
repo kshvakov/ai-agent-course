@@ -26,7 +26,7 @@ Process:
 ## Task
 We have a stub function `GetServerStatus(ip string)`.
 
-1.  **Setup:** Initialize client with `NewClientWithConfig` (as in Lab 01) to work locally.
-2.  **Definition:** Describe function `get_server_status` in `openai.Tool`.
+1.  **Setup:** Load the connection settings with `llm.LoadConfig()` and create a client with `llm.NewOpenAI(...)` (as in Lab 01) to work locally.
+2.  **Definition:** Describe function `get_server_status` as an `llm.ToolDef` (name, description, JSON Schema parameters).
 3.  **Request:** Send request: "Check status of server 192.168.1.10".
 4.  **Handling:** Check `msg.ToolCalls`. If not empty — print function name and arguments.

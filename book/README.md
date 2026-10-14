@@ -192,7 +192,7 @@ After studying chapters 1–16, move on to:
 | [19–21, 23–25. Production Part](./25-production-readiness-index/README.md) | — (labs for production topics are planned; the theory is self-sufficient) |
 | [22. Prompt and Program Management](./22-prompt-program-management/README.md) | [Lab 01](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab01-basics) (Basics) — in part |
 
-> **Note:** the lab code is not yet revised (still on the old stack — the old client and old models) and will be updated in a separate pass. The examples in the chapters are revised and more reliable; work through the labs cross-checking against the canonical material in the chapters.
+> **Note:** labs 00–04 are revised to the neutral client; labs 05–13 are still on the old stack (the old client and old models) and will be updated in a separate pass. The examples in the chapters are canonical; work through the labs cross-checking against the canonical material in the chapters.
 
 ---
 

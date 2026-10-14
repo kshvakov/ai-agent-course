@@ -2,68 +2,77 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/kshvakov/agent/llm"
 )
+
+// maxIterations limits the agent loop to avoid infinite cycles.
+const maxIterations = 10
 
 // Mock Tools
 func checkDisk() string { return "Disk Usage: 95% (CRITICAL). Large folder: /var/log" }
 func cleanLogs() string { return "Logs cleaned. Freed 20GB." }
 
 func main() {
-	// 1. Client setup (Local-First)
-	token := os.Getenv("OPENAI_API_KEY")
-	baseURL := os.Getenv("OPENAI_BASE_URL")
-	if token == "" {
-		token = "dummy"
+	// 1. Client setup: LLM_API_KEY / LLM_BASE_URL / LLM_MODEL from the environment (or a sourced .env)
+	cfg, err := llm.LoadConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-
-	config := openai.DefaultConfig(token)
-	if baseURL != "" {
-		config.BaseURL = baseURL
-	}
-	client := openai.NewClientWithConfig(config)
+	client := llm.NewOpenAI(
+		llm.WithAPIKey(cfg.APIKey),
+		llm.WithBaseURL(cfg.BaseURL),
+		llm.WithModel(cfg.Model),
+	)
 
 	ctx := context.Background()
 
 	// 2. Define tools
-	tools := []openai.Tool{
+	tools := []llm.ToolDef{
 		{
-			Type: openai.ToolTypeFunction,
-			Function: &openai.FunctionDefinition{
-				Name:        "check_disk",
-				Description: "Check current disk usage",
-			},
+			Name:        "check_disk",
+			Description: "Check current disk usage",
+			Parameters:  json.RawMessage(`{"type": "object", "properties": {}}`),
 		},
 		{
-			Type: openai.ToolTypeFunction,
-			Function: &openai.FunctionDefinition{
-				Name:        "clean_logs",
-				Description: "Delete old logs to free space",
-			},
+			Name:        "clean_logs",
+			Description: "Delete old logs to free space",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"older_than_days": {
+						"type": "integer",
+						"description": "Only delete logs older than this many days (optional)"
+					}
+				}
+			}`),
 		},
 	}
 
-	messages := []openai.ChatCompletionMessage{
-		{Role: openai.ChatMessageRoleSystem, Content: "You are an autonomous DevOps agent."},
-		{Role: openai.ChatMessageRoleUser, Content: "I'm out of disk space. Fix it."},
+	messages := []llm.Message{
+		{Role: "system", Content: "You are an autonomous DevOps agent."},
+		{Role: "user", Content: "I'm out of disk space. Fix it."},
 	}
 
 	fmt.Println("Starting Agent Loop...")
 
 	// 3. THE LOOP
-	for i := 0; i < 5; i++ {
-		req := openai.ChatCompletionRequest{
-			Model:    "gpt-4o-mini",
-			Messages: messages,
-			Tools:    tools,
+	for i := 0; i < maxIterations; i++ {
+		req := llm.Request{
+			Model:       cfg.Model,
+			Messages:    messages,
+			Tools:       tools,
+			Temperature: 0.2, // low temperature for stable agent behavior
 		}
 
-		resp, err := client.CreateChatCompletion(ctx, req)
+		resp, err := client.Complete(ctx, req)
 		if err != nil {
-			panic(fmt.Sprintf("API Error: %v", err))
+			fmt.Fprintf(os.Stderr, "API Error: %v\n", err)
+			os.Exit(1)
 		}
 
 		msg := resp.Choices[0].Message
@@ -77,19 +86,23 @@ func main() {
 
 		// 5. Execute tools
 		for _, toolCall := range msg.ToolCalls {
-			fmt.Printf("Executing tool: %s\n", toolCall.Function.Name)
+			fmt.Printf("Executing tool: %s\n", toolCall.Name)
 
 			var result string
-			if toolCall.Function.Name == "check_disk" {
+			switch toolCall.Name {
+			case "check_disk":
 				result = checkDisk()
-			} else if toolCall.Function.Name == "clean_logs" {
+			case "clean_logs":
 				result = cleanLogs()
+			default:
+				// Allowlist semantics: an unknown tool is reported back to the model
+				result = fmt.Sprintf("Error: unknown tool %s", toolCall.Name)
 			}
 
 			fmt.Println("Tool Output:", result)
 
-			messages = append(messages, openai.ChatCompletionMessage{
-				Role:       openai.ChatMessageRoleTool,
+			messages = append(messages, llm.Message{
+				Role:       "tool",
 				Content:    result,
 				ToolCallID: toolCall.ID,
 			})

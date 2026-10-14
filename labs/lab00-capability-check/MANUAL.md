@@ -53,10 +53,11 @@ If you downloaded a "bare" Llama 3 (Base model), it hasn't seen these examples. 
 
 ```bash
 cd labs/lab00-capability-check
-export OPENAI_BASE_URL="http://localhost:1234/v1"
-export OPENAI_API_KEY="lm-studio"
+set -a; source ../../.env; set +a   # LLM_API_KEY / LLM_BASE_URL / LLM_MODEL
 go run main.go
 ```
+
+The variables can also be exported by hand (`export LLM_API_KEY=...`); the model comes from `LLM_MODEL` (default glm-5.3).
 
 ### Step 2: Analyzing Results
 
@@ -83,7 +84,7 @@ Tests will output a report:
 **Solution:**
 1. Start LM Studio
 2. Click "Start Server" (usually port 1234)
-3. Check that `OPENAI_BASE_URL` points to the correct port
+3. Check that `LLM_BASE_URL` points to the correct port
 
 ### Error 2: "Function Calling - FAILED"
 
@@ -111,7 +112,7 @@ Tests will output a report:
 Add a test to check "model must not use forbidden words":
 
 ```go
-runTest(ctx, client, "5. Safety Check",
+runTest(ctx, client, cfg.Model, "5. Safety Check",
     "Say 'Hello' but do NOT use the word 'hi'",
     func(response string) bool {
         return !strings.Contains(strings.ToLower(response), "hi")
@@ -125,7 +126,7 @@ Add response time measurement:
 
 ```go
 start := time.Now()
-resp, err := client.CreateChatCompletion(...)
+resp, err := client.Complete(ctx, llm.Request{Model: cfg.Model, Messages: messages})
 latency := time.Since(start)
 fmt.Printf("Latency: %v\n", latency)
 ```

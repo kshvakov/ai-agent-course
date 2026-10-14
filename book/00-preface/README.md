@@ -196,15 +196,15 @@ Every chapter follows the same template:
 - **Basic programming knowledge** — the course is aimed at programmers
 - **An understanding of DevOps basics** (desirable, but not required)
 
-> **Note:** the code in the chapters has been revised and uses a neutral Go client over the native tool-calling protocol. **The labs are not yet revised (still on the old stack)** — their code remains on the old client and old models and will be updated in a separate pass; the chapter examples are more reliable than the labs.
+> **Note:** the chapters' code uses the neutral Go client (`llm` package in the repo). Labs 00–04 are revised to the same client; labs 05–13 are still on the old stack — their code remains on the old client and old models and will be updated in a separate pass; the chapter examples are more reliable than the unrevised labs.
 
 ## Setting Up the Environment
 
-The course examples work with any OpenAI-compatible endpoint — local or cloud:
+The course examples work with any OpenAI-compatible endpoint — local or cloud. The labs read three variables (`LLM_API_KEY` is required, `LLM_BASE_URL` sets the endpoint, `LLM_MODEL` is optional, default `glm-5.3`; they can live in a `.env` file in the repo root — it is already in `.gitignore`):
 
 ```bash
-export OPENAI_BASE_URL="http://localhost:1234/v1" # or the URL of a cloud provider
-export OPENAI_API_KEY="any-string"                # local models usually don't care about the key
+export LLM_BASE_URL="http://localhost:1234/v1" # or the URL of a cloud provider
+export LLM_API_KEY="any-string"                # local models usually don't care about the key
 ```
 
 ## What's Next?

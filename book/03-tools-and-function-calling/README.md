@@ -568,7 +568,7 @@ graph TB
 
 **Note:** For a Go implementation, see the examples in [Lab 02: Tools](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab02-tools) and [Lab 04: Autonomy](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab04-autonomy).
 
-> **Note:** this lab is not yet revised (still on the old stack) — use it as a pointer; the canonical material is in this chapter.
+> **Note:** labs 02 and 04 are revised to the neutral client; the canonical material remains in this chapter.
 
 ### Key takeaways for the developer
 

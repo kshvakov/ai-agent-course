@@ -64,7 +64,7 @@ func checkTokenBudget(budget TokenBudget) error {
 
 ### Step 2: Iteration limits
 
-Cap the number of ReAct loop iterations — the canon of the loop and limits is in [chapter 04](../04-autonomy-and-loops/README.md); the [`lab04-autonomy`](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab04-autonomy) lab is not yet revised (still on the old stack) and will be updated in a separate pass. The examples use the neutral client from chapter 04: `client.Complete(ctx, Request{...})`:
+Cap the number of ReAct loop iterations — the canon of the loop and limits is in [chapter 04](../04-autonomy-and-loops/README.md); the [`lab04-autonomy`](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab04-autonomy) lab is revised to the same neutral client. The examples use the neutral client from chapter 04: `client.Complete(ctx, Request{...})`:
 
 ```go
 func runAgent(ctx context.Context, client Client, userInput string) (string, error) {
@@ -223,7 +223,7 @@ func runAgentWithTimeout(ctx context.Context, client Client, userInput string) (
 
 ### Integration point 1: Agent loop
 
-In your runtime from chapter 04, add the budget check and the iteration limit (the lab04-autonomy lab is not yet revised, still on the old stack, and will be updated in a separate pass):
+In your runtime from chapter 04, add the budget check and the iteration limit (the revised lab04-autonomy uses the same loop shape):
 
 ```go
 const MaxIterations = 10
@@ -591,7 +591,7 @@ A short summary (detailed breakdowns below):
 
 ### Exercise 1: Implement the token budget check
 
-Add the budget check to your runtime from chapter 04 (the lab04-autonomy lab is not yet revised, still on the old stack):
+Add the budget check to your runtime from chapter 04 (the revised lab04-autonomy uses the same client):
 
 ```go
 func checkTokenBudget(used int, limit int) error {

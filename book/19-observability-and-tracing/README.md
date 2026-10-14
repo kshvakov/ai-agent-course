@@ -100,7 +100,7 @@ func generateRunID() string {
 
 ### Step 3: Logging in the agent loop
 
-Insert logging into the agent loop (the canon for the loop is [chapter 04](../04-autonomy-and-loops/README.md); the [`lab04-autonomy`](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab04-autonomy) lab is not yet revised and will be updated in a separate pass). The examples use the neutral client from chapter 04: `client.Complete(ctx, Request{...})` returns a response with `resp.Choices[0].Message` and `resp.Usage` (`PromptTokens` / `CompletionTokens` / `CacheReadTokens` from the provider):
+Insert logging into the agent loop (the canon for the loop is [chapter 04](../04-autonomy-and-loops/README.md); the [`lab04-autonomy`](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab04-autonomy) lab is revised to the same neutral client). The examples use the neutral client from chapter 04: `client.Complete(ctx, Request{...})` returns a response with `resp.Choices[0].Message` and `resp.Usage` (`PromptTokens` / `CompletionTokens` / `CacheReadTokens` from the provider):
 
 ```go
 func runAgent(ctx context.Context, client Client, userInput string) (string, error) {
@@ -220,7 +220,7 @@ func logAgentRunError(runID string, err error) {
 
 ### Step 5: Logging tool execution
 
-In the tool execution function, add logging (the canon for tools is [chapter 03](../03-tools-and-function-calling/README.md); the lab02-tools lab is not yet revised):
+In the tool execution function, add logging (the canon for tools is [chapter 03](../03-tools-and-function-calling/README.md); the revised lab02-tools uses the same client):
 
 ```go
 func executeToolWithLogging(runID string, toolCall ToolCall) (string, error) {
@@ -260,7 +260,7 @@ func executeToolWithLogging(runID string, toolCall ToolCall) (string, error) {
 
 ### Integration point 1: Agent loop
 
-In your runtime from chapter 04 (the lab04-autonomy lab is not yet revised) — add logging to the agent loop:
+In your runtime from chapter 04 (the revised lab04-autonomy uses the same loop shape) — add logging to the agent loop:
 
 ```go
 // At the start of main():
@@ -280,7 +280,7 @@ log.Printf("TOOL_EXECUTED: run_id=%s tool=%s result=%s", runID, toolCall.Name, r
 
 ### Integration point 2: Tool execution
 
-In your runtime, add logging when tools execute (the lab02-tools lab is not yet revised):
+In your runtime, add logging when tools execute (the revised lab02-tools uses the same client):
 
 ```go
 // In the tool execution function:
@@ -1044,7 +1044,7 @@ log.Printf("TOKENS_USED: run_id=%s prompt=%d completion=%d cache_read=%d",
 
 ### Exercise 1: Implement structured logging
 
-Add structured logging to your runtime from chapter 04 (the lab04-autonomy lab is not yet revised — use it as a pointer; the canonical material is in this chapter):
+Add structured logging to your runtime from chapter 04 (the revised lab04-autonomy uses the same loop shape; the canonical material is in this chapter):
 
 ```go
 func logAgentRun(runID string, userInput string, toolCalls []ToolCall, result string) {

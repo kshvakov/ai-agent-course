@@ -153,10 +153,16 @@ The course consists of a preparatory stage (Lab 00) and 12 main laboratory assig
 
 ## Environment Setup
 
+The labs 00–04 use the neutral `llm` package, configured via environment variables. They can be exported by hand or live in a `.env` file in the repo root (already in `.gitignore` — source it before running: `set -a; source .env; set +a`). Labs 05–13 are still on the old stack (`OPENAI_API_KEY` / `OPENAI_BASE_URL`) and will be updated in a separate pass — see the note in [book/README.md](book/README.md):
+
+*   `LLM_API_KEY` — required (local models accept any non-empty string);
+*   `LLM_BASE_URL` — provider endpoint, e.g. LM Studio;
+*   `LLM_MODEL` — optional, defaults to `glm-5.3`.
+
 To work with a local model (e.g., in LM Studio):
 ```bash
-export OPENAI_BASE_URL="http://localhost:1234/v1"
-export OPENAI_API_KEY="any-string" # Local models usually don't need a key, but it shouldn't be empty
+export LLM_BASE_URL="http://localhost:1234/v1"
+export LLM_API_KEY="any-string" # Local models usually don't need a key, but it shouldn't be empty
 ```
 
 ## Project Structure

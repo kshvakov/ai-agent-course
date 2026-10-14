@@ -6,30 +6,26 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/kshvakov/agent/llm"
 )
 
 func main() {
-	// 1. Client setup (OpenAI or Local LLM)
-	token := os.Getenv("OPENAI_API_KEY")
-	baseURL := os.Getenv("OPENAI_BASE_URL")
-
-	if token == "" {
-		token = "dummy-token" // For local models, token is often not important
-		fmt.Println("Warning: OPENAI_API_KEY is not set. Using dummy token.")
+	// 1. Client setup: LLM_API_KEY / LLM_BASE_URL / LLM_MODEL from the environment (or a sourced .env)
+	cfg, err := llm.LoadConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-
-	config := openai.DefaultConfig(token)
-	if baseURL != "" {
-		config.BaseURL = baseURL
-		fmt.Printf("Using Custom Base URL: %s\n", baseURL)
-	}
-
-	// client := openai.NewClientWithConfig(config)
-	// _ = client // TODO: remove this
+	client := llm.NewOpenAI(
+		llm.WithAPIKey(cfg.APIKey),
+		llm.WithBaseURL(cfg.BaseURL),
+		llm.WithModel(cfg.Model),
+	)
+	_ = client // TODO: use client.Complete(ctx, req) in step 4
 
 	// 2. Initialize message history
-	// messages := ...
+	var messages []llm.Message // TODO: Initialize message history (start with a system prompt)
+	_ = messages
 
 	reader := bufio.NewReader(os.Stdin)
 	ctx := context.Background()
@@ -47,17 +43,20 @@ func main() {
 			break
 		}
 
-		// 3. Add User message to history
+		// 3. Add user message to history
+		// messages = append(messages, llm.Message{Role: "user", Content: input})
 
 		// 4. Call API
-		// req := openai.ChatCompletionRequest{
-		//     // For local models, model name is often ignored, but it's better to specify something
-		//     Model: "gpt-4o-mini",
-		//     Messages: messages,
+		// req := llm.Request{
+		//     Model:    cfg.Model,
+		//     Messages: messages, // All history!
 		// }
-		// resp, err := client.CreateChatCompletion(ctx, req)
+		// resp, err := client.Complete(ctx, req)
 
-		// 5. Handle response & Add Assistant message to history
+		// 5. Handle response & add assistant message to history
+		// answer := resp.Choices[0].Message.Content
+		// fmt.Println("AI:", answer)
+		// messages = append(messages, llm.Message{Role: "assistant", Content: answer})
 		_ = ctx
 	}
 }

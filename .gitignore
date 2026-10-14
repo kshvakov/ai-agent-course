@@ -48,4 +48,8 @@ dist/
 
 # Python bytecode
 __pycache__/
+
 *.pyc
+
+# Go binaries built by `go build ./...` into repo root
+/lab[0-9][0-9]-[a-z-]*

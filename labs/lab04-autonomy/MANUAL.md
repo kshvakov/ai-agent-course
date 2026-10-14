@@ -57,20 +57,24 @@ After executing a tool, **don't ask the user** what to do next. Send the result 
 ### Step 1: Tool Definition
 
 ```go
-tools := []openai.Tool{
+tools := []llm.ToolDef{
     {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "check_disk",
-            Description: "Check current disk usage",
-        },
+        Name:        "check_disk",
+        Description: "Check current disk usage",
+        Parameters:  json.RawMessage(`{"type": "object", "properties": {}}`),
     },
     {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "clean_logs",
-            Description: "Delete old logs to free space",
-        },
+        Name:        "clean_logs",
+        Description: "Delete old logs to free space",
+        Parameters: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "older_than_days": {
+                    "type": "integer",
+                    "description": "Only delete logs older than this many days (optional)"
+                }
+            }
+        }`),
     },
 }
 ```
@@ -78,13 +82,13 @@ tools := []openai.Tool{
 ### Step 2: Initial History
 
 ```go
-messages := []openai.ChatCompletionMessage{
+messages := []llm.Message{
     {
-        Role:    openai.ChatMessageRoleSystem,
+        Role:    "system",
         Content: "You are an autonomous DevOps agent.",
     },
     {
-        Role:    openai.ChatMessageRoleUser,
+        Role:    "user",
         Content: "I'm out of space. Fix it.",
     },
 }
@@ -95,10 +99,11 @@ messages := []openai.ChatCompletionMessage{
 ```go
 for i := 0; i < maxIterations; i++ {
     // 1. Send request
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    "gpt-4o-mini",
-        Messages: messages,
-        Tools:    tools,
+    resp, err := client.Complete(ctx, llm.Request{
+        Model:       cfg.Model, // From LLM_MODEL (default glm-5.3)
+        Messages:    messages,
+        Tools:       tools,
+        Temperature: 0.2, // Low temperature for stable agent behavior
     })
     
     msg := resp.Choices[0].Message
@@ -113,11 +118,11 @@ for i := 0; i < maxIterations; i++ {
     
     // 3. Execute tools
     for _, toolCall := range msg.ToolCalls {
-        result := executeTool(toolCall.Function.Name, toolCall.Function.Arguments)
+        result := executeTool(toolCall.Name, toolCall.Arguments)
         
         // 4. Add result to history
-        messages = append(messages, openai.ChatCompletionMessage{
-            Role:       openai.ChatMessageRoleTool,
+        messages = append(messages, llm.Message{
+            Role:       "tool",
             Content:    result,
             ToolCallID: toolCall.ID,
         })
@@ -155,8 +160,8 @@ Action: check_disk()  // And again!
 **Solution:**
 ```go
 // MUST add result!
-messages = append(messages, openai.ChatCompletionMessage{
-    Role:       openai.ChatMessageRoleTool,
+messages = append(messages, llm.Message{
+    Role:       "tool",
     Content:    result,
     ToolCallID: toolCall.ID,  // Important for linking!
 })
@@ -179,7 +184,7 @@ messages = append(messages, openai.ChatCompletionMessage{
 Implement a check that the last 3 actions are the same:
 
 ```go
-func isStuck(history []ChatCompletionMessage) bool {
+func isStuck(history []llm.Message) bool {
     if len(history) < 3 {
         return false
     }

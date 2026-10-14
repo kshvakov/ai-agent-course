@@ -33,7 +33,7 @@ A message consists of:
 **Example:**
 
 ```go
-messages := []ChatCompletionMessage{
+messages := []llm.Message{
     {Role: "system", Content: "You are an experienced Linux administrator"},
     {Role: "user", Content: "How to check service status?"},
     {Role: "assistant", Content: "Use command systemctl status nginx"},
@@ -48,19 +48,24 @@ The model processes the entire history and understands context ("it" = nginx).
 ### Step 1: Client Initialization
 
 ```go
-config := openai.DefaultConfig(token)
-if baseURL != "" {
-    config.BaseURL = baseURL  // For local models
+cfg, err := llm.LoadConfig() // LLM_API_KEY / LLM_BASE_URL / LLM_MODEL from the environment (or a sourced .env)
+if err != nil {
+    fmt.Fprintln(os.Stderr, err)
+    os.Exit(1)
 }
-client := openai.NewClientWithConfig(config)
+client := llm.NewOpenAI(
+    llm.WithAPIKey(cfg.APIKey),
+    llm.WithBaseURL(cfg.BaseURL), // For local models
+    llm.WithModel(cfg.Model),
+)
 ```
 
 ### Step 2: Creating History
 
 ```go
-messages := []openai.ChatCompletionMessage{
+messages := []llm.Message{
     {
-        Role:    openai.ChatMessageRoleSystem,
+        Role:    "system",
         Content: "You are an experienced Linux administrator. Answer briefly and to the point.",
     },
 }
@@ -76,14 +81,14 @@ for {
     input := readUserInput()
     
     // 2. Add to history
-    messages = append(messages, openai.ChatCompletionMessage{
-        Role:    openai.ChatMessageRoleUser,
+    messages = append(messages, llm.Message{
+        Role:    "user",
         Content: input,
     })
     
     // 3. Send ALL history to API
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    "gpt-4o-mini",
+    resp, err := client.Complete(ctx, llm.Request{
+        Model:    cfg.Model, // From LLM_MODEL (default glm-5.3)
         Messages: messages,  // All history!
     })
     
@@ -91,8 +96,8 @@ for {
     answer := resp.Choices[0].Message.Content
     
     // 5. Save response to history
-    messages = append(messages, openai.ChatCompletionMessage{
-        Role:    openai.ChatMessageRoleAssistant,
+    messages = append(messages, llm.Message{
+        Role:    "assistant",
         Content: answer,
     })
 }
@@ -110,13 +115,13 @@ for {
 ```go
 // BAD
 messages = append(messages, userMessage)
-resp := client.CreateChatCompletion(...)
+resp, _ := client.Complete(ctx, req)
 answer := resp.Choices[0].Message.Content
 // History not updated!
 
 // GOOD
 messages = append(messages, userMessage)
-resp := client.CreateChatCompletion(...)
+resp, _ := client.Complete(ctx, req)
 messages = append(messages, resp.Choices[0].Message)  // Save response!
 ```
 
@@ -129,7 +134,7 @@ messages = append(messages, resp.Choices[0].Message)  // Save response!
 **Solution:**
 ```go
 // System Prompt must be FIRST message
-messages := []openai.ChatCompletionMessage{
+messages := []llm.Message{
     {Role: "system", Content: "You are a DevOps engineer"},  // First!
     {Role: "user", Content: "..."},
 }
@@ -147,7 +152,7 @@ messages := []openai.ChatCompletionMessage{
 if len(messages) > maxHistoryLength {
     // Keep System Prompt + last N-1 messages
     messages = append(
-        []openai.ChatCompletionMessage{messages[0]},  // System
+        []llm.Message{messages[0]},  // System
         messages[len(messages)-maxHistoryLength+1:]...,  // Last
     )
 }
@@ -169,8 +174,6 @@ Observe how response style changes.
 Count how many tokens are used in history:
 
 ```go
-import "github.com/sashabaranov/go-openai"
-
 // Rough estimate (1 token ≈ 4 characters)
 tokenCount := 0
 for _, msg := range messages {

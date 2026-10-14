@@ -231,7 +231,7 @@ func resumeTask(ctx context.Context, store *TaskStore, taskID string) error {
 
 ### Integration point 1: Agent loop
 
-> **Note:** the labs are not yet revised (still on the old stack) — use them as a pointer; the canonical material is in this chapter.
+> **Note:** lab04 is revised to the neutral client; the canonical material remains in this chapter.
 
 In [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab04-autonomy/main.go), add state saving:
 
@@ -255,7 +255,7 @@ store.Save(task)
 
 ### Integration point 2: Tool execution
 
-> **Note:** the labs are not yet revised (still on the old stack) — use them as a pointer; the canonical material is in this chapter.
+> **Note:** lab02 is revised to the neutral client; the canonical material remains in this chapter.
 
 In [`labs/lab02-tools/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab02-tools/main.go), add retry for tools:
 
@@ -273,7 +273,7 @@ func executeToolWithRetry(ctx context.Context, toolCall ToolCall) (string, error
 
 ## Mini code example
 
-> **Note:** this lab is not yet revised (still on the old stack) — use it as a pointer; the canonical material is in this chapter.
+> **Note:** lab04 is revised to the neutral client; the canonical material remains in this chapter.
 
 A complete example with a workflow and state management, based on [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab04-autonomy/main.go). The LLM client is neutral (`llm.Client`): retrying transient errors already happens inside the client; here we only manage state and boundaries:
 

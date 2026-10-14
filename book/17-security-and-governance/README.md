@@ -337,7 +337,7 @@ func logAudit(log AuditLog) {
 
 ### Integration point 1: Tool execution
 
-In your own runtime, add an access check and category-based mechanics (the canon is the steps above; the lab02-tools lab is not yet revised):
+In your own runtime, add an access check and category-based mechanics (the canon is the steps above; the revised lab02-tools uses the same client):
 
 ```go
 func executeTool(call ToolCall, userRole UserRole) (string, error) {
