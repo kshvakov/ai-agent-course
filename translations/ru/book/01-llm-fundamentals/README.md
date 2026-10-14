@@ -435,7 +435,7 @@ req := Request{
 3. **Качество следования инструкциям:** Модель должна строго следовать System Prompt.
     - Проверяется через capability benchmark (см. [Приложение: Capability Benchmark](../appendix/README.md#capability-benchmark-characterization))
 
-4. **Совместимость chat-шаблона (для локальных рантаймов):** Роли сообщений (system, user, assistant, tool) должны соответствовать chat-шаблону модели, иначе tool-протокол не заработает. Подробнее см. [Ошибка 3: LM Studio — неверный Prompt Template](#ошибка-3-lm-studio--неверный-prompt-template-ошибка-ролей) в разделе "Типовые ошибки". У облачных провайдеров с native tool calling этой проблемы нет.
+4. **Совместимость chat-шаблона (для локальных рантаймов):** Роли сообщений (system, user, assistant, tool) должны соответствовать chat-шаблону модели, иначе tool-протокол не заработает. Подробнее см. [Ошибка 3: LM Studio — неверный Prompt Template](#ошибка-3-lm-studio-неверный-prompt-template-ошибка-ролей) в разделе "Типовые ошибки". У облачных провайдеров с native tool calling этой проблемы нет.
 
 ### Как проверить модель?
 

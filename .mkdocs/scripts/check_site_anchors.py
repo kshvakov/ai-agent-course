@@ -5,10 +5,10 @@ Exact fragment comparison: no slash normalization, so a plugin artifact
 like href="...#anchor/" is reported as broken. Run AFTER
 fix_anchor_slashes.py.
 
-By default the ru/ subtree is excluded: the pre-existing RU translation
-has ~78 broken fragment links (default mkdocs slugify strips Cyrillic,
-so RU headings get ids like _1.._N while RU links target Cyrillic
-slugs). Pass --include-ru to check it too.
+The ru/ subtree is included: RU headings use unicode slugify
+(markdown.extensions.toc.slugify_unicode, configured in mkdocs.yml),
+so Cyrillic slugs are stable and resolvable. --include-ru is kept for
+compatibility and is now a no-op (both scopes check the same pages).
 """
 import re
 import sys
@@ -22,7 +22,6 @@ NAME = re.compile(r'name="([^"]+)"')
 
 def main() -> int:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    include_ru = "--include-ru" in sys.argv
     root = Path(args[0]) if args else Path("build/site")
     if not root.is_dir():
         print(f"error: {root} is not a directory (run mkdocs build first)")
@@ -30,7 +29,7 @@ def main() -> int:
 
     def scoped(page: Path) -> bool:
         rel = page.relative_to(root).as_posix()
-        return include_ru or not rel.startswith("ru/")
+        return True  # ru/ uses unicode slugs now; the whole site is checked
 
     # id/name per page, keyed by posix path relative to site root
     anchors: dict[str, set[str]] = {}
@@ -66,8 +65,7 @@ def main() -> int:
         for page, href in sorted(set(broken)):
             print(f"  {page}: {href}")
         return 1
-    scope = "site (including ru/)" if include_ru else "EN pages (ru/ excluded: known pre-existing RU slugify issue)"
-    print(f"OK: all fragment links resolve to existing ids in {root} [{scope}]")
+    print(f"OK: all fragment links resolve to existing ids in {root} [site, ru/ included]")
     return 0
 
 

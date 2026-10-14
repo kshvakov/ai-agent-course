@@ -163,6 +163,10 @@ markdown_extensions:
   - toc:
       permalink: true
       toc_depth: 3
+      # Unicode slugify: the default strips all Cyrillic, degrading RU
+      # heading ids to _1/_2/... — breaks every RU fragment link.
+      slugify: !!python/name:markdown.extensions.toc.slugify_unicode
+      separator: '-'
 
 # Use directory URLs (clean URLs)
 use_directory_urls: true

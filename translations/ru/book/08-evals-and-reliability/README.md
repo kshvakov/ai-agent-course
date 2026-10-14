@@ -656,7 +656,7 @@ if newMetrics.PassRate < baselineMetrics.PassRate {
 
 **Причина:** Evals покрывают только функциональные тесты, но не проверяют устойчивость к anchoring bias и biased few-shot.
 
-**Решение:** включайте bias/robustness evals в набор — полный разбор с примерами кода выше, в разделе «[Bias / Robustness Evals](#5-bias--robustness-evals-тесты-на-устойчивость-к-подсказкам)». Краткая сводка:
+**Решение:** включайте bias/robustness evals в набор — полный разбор с примерами кода выше, в разделе «[Bias / Robustness Evals](#5-bias-robustness-evals-тесты-на-устойчивость-к-подсказкам)». Краткая сводка:
 
 | Тест | Что ловит |
 |------|-----------|
