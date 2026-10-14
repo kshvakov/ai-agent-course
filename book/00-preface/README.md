@@ -196,7 +196,7 @@ Every chapter follows the same template:
 - **Basic programming knowledge** — the course is aimed at programmers
 - **An understanding of DevOps basics** (desirable, but not required)
 
-> **Note:** the chapters' code uses the neutral Go client (`llm` package in the repo). Labs 00–04 are revised to the same client; labs 05–13 are still on the old stack — their code remains on the old client and old models and will be updated in a separate pass; the chapter examples are more reliable than the unrevised labs.
+> **Note:** the chapters' code and the labs with an LLM client (00–02, 04–11, 13) use the neutral Go client (`llm` package in the repo); labs 03 and 12 have no LLM client by design. The chapter examples are canonical; work through the labs cross-checking against the canonical material in the chapters.
 
 ## Setting Up the Environment
 

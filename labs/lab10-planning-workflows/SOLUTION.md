@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/kshvakov/agent/llm"
 )
 
 type Step struct {
@@ -44,7 +44,7 @@ type StepExecutor interface {
 	Execute(step *Step) (string, error)
 }
 
-func createPlan(ctx context.Context, client *openai.Client, task string) (*Plan, error) {
+func createPlan(ctx context.Context, client llm.Client, model, task string) (*Plan, error) {
 	prompt := fmt.Sprintf(`Break down the task into steps with dependencies.
 Task: %s
 
@@ -58,9 +58,9 @@ Return plan in JSON format:
 
 JSON only, no additional text.`, task)
 
-	resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model: "gpt-4o-mini",
-		Messages: []openai.ChatCompletionMessage{
+	resp, err := client.Complete(ctx, llm.Request{
+		Model: model, // From LLM_MODEL (default glm-5.3)
+		Messages: []llm.Message{
 			{Role: "user", Content: prompt},
 		},
 		Temperature: 0,
@@ -219,32 +219,34 @@ func (e *MockExecutor) Execute(step *Step) (string, error) {
 }
 
 func main() {
-	token := os.Getenv("OPENAI_API_KEY")
-	baseURL := os.Getenv("OPENAI_BASE_URL")
-	if token == "" {
-		token = "dummy"
+	// Client setup: LLM_API_KEY / LLM_BASE_URL / LLM_MODEL from the environment (or a sourced .env)
+	cfg, err := llm.LoadConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-
-	config := openai.DefaultConfig(token)
-	if baseURL != "" {
-		config.BaseURL = baseURL
-	}
-	client := openai.NewClientWithConfig(config)
+	client := llm.NewOpenAI(
+		llm.WithAPIKey(cfg.APIKey),
+		llm.WithBaseURL(cfg.BaseURL),
+		llm.WithModel(cfg.Model),
+	)
 
 	ctx := context.Background()
 
 	task := "Deploy new version of service"
 
-	plan, err := createPlan(ctx, client, task)
+	plan, err := createPlan(ctx, client, cfg.Model, task)
 	if err != nil {
-		panic(err)
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 
 	fmt.Printf("Plan created with %d steps\n", len(plan.Steps))
 
 	executor := &MockExecutor{}
 	if err := executePlanWithRetries(ctx, plan, executor, 3); err != nil {
-		panic(err)
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 
 	fmt.Println("Plan executed successfully!")

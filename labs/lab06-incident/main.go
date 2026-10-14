@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/kshvakov/agent/llm"
 )
 
 // --- Environment Mock (System State) ---
@@ -53,27 +53,28 @@ func rollback() string {
 // --- Main Agent ---
 
 func main() {
-	// Config
-	token := os.Getenv("OPENAI_API_KEY")
-	if token == "" {
-		token = "dummy"
+	// 1. Client setup: LLM_API_KEY / LLM_BASE_URL / LLM_MODEL from the environment (or a sourced .env)
+	cfg, err := llm.LoadConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-	config := openai.DefaultConfig(token)
-	if baseURL := os.Getenv("OPENAI_BASE_URL"); baseURL != "" {
-		config.BaseURL = baseURL
-	}
-	client := openai.NewClientWithConfig(config)
+	client := llm.NewOpenAI(
+		llm.WithAPIKey(cfg.APIKey),
+		llm.WithBaseURL(cfg.BaseURL),
+		llm.WithModel(cfg.Model),
+	)
 
 	ctx := context.Background()
 
 	fmt.Println("🚨 ALERT: Payment Service is DOWN (502).")
 	fmt.Println("--- Agent Taking Over ---")
 
-	tools := []openai.Tool{
-		{Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{Name: "check_http", Description: "Check service HTTP status"}},
-		{Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{Name: "read_logs", Description: "Read service logs. Do this if HTTP is 500/502."}},
-		{Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{Name: "restart_service", Description: "Restart the service. Use ONLY if logs show transient error."}},
-		{Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{Name: "rollback_deploy", Description: "Rollback to previous version. Use if logs show Config/Syntax error."}},
+	tools := []llm.ToolDef{
+		{Name: "check_http", Description: "Check service HTTP status"},
+		{Name: "read_logs", Description: "Read service logs. Do this if HTTP is 500/502."},
+		{Name: "restart_service", Description: "Restart the service. Use ONLY if logs show transient error."},
+		{Name: "rollback_deploy", Description: "Rollback to previous version. Use if logs show Config/Syntax error."},
 	}
 
 	// TODO: Add SOP (Standard Operating Procedure) to System Prompt
@@ -94,9 +95,9 @@ Follow this Standard Operating Procedure (SOP) strictly:
 
 ALWAYS Think step by step. Output your thought process before calling a tool.`
 
-	messages := []openai.ChatCompletionMessage{
-		{Role: openai.ChatMessageRoleSystem, Content: sopPrompt},
-		{Role: openai.ChatMessageRoleUser, Content: "Payment Service is down (502). Fix it."},
+	messages := []llm.Message{
+		{Role: "system", Content: sopPrompt},
+		{Role: "user", Content: "Payment Service is down (502). Fix it."},
 	}
 
 	// TODO: Implement agent loop that strictly follows SOP
@@ -109,16 +110,17 @@ ALWAYS Think step by step. Output your thought process before calling a tool.`
 
 	// The Loop
 	for i := 0; i < 15; i++ {
-		req := openai.ChatCompletionRequest{
-			Model:       "gpt-4o-mini",
+		req := llm.Request{
+			Model:       cfg.Model,
 			Messages:    messages,
 			Tools:       tools,
 			Temperature: 0, // Deterministic behavior
 		}
 
-		resp, err := client.CreateChatCompletion(ctx, req)
+		resp, err := client.Complete(ctx, req)
 		if err != nil {
-			panic(err)
+			fmt.Fprintf(os.Stderr, "API Error: %v\n", err)
+			os.Exit(1)
 		}
 
 		msg := resp.Choices[0].Message
@@ -132,10 +134,10 @@ ALWAYS Think step by step. Output your thought process before calling a tool.`
 		fmt.Printf("\n🧠 Thought: %s\n", msg.Content) // Print Chain of Thought
 
 		for _, toolCall := range msg.ToolCalls {
-			fmt.Printf("🔧 Call: %s\n", toolCall.Function.Name)
+			fmt.Printf("🔧 Call: %s\n", toolCall.Name)
 
 			var result string
-			switch toolCall.Function.Name {
+			switch toolCall.Name {
 			case "check_http":
 				result = checkHttp()
 			case "read_logs":
@@ -148,8 +150,8 @@ ALWAYS Think step by step. Output your thought process before calling a tool.`
 
 			fmt.Printf("📦 Result: %s\n", result)
 
-			messages = append(messages, openai.ChatCompletionMessage{
-				Role:       openai.ChatMessageRoleTool,
+			messages = append(messages, llm.Message{
+				Role:       "tool",
 				Content:    result,
 				ToolCallID: toolCall.ID,
 			})

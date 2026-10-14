@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/kshvakov/agent/llm"
 )
 
 // --- Mock Tools ---
@@ -22,52 +22,49 @@ func sendEmail(to, subject, body string) string {
 }
 
 func main() {
-	// 1. Config for Local LLM
-	token := os.Getenv("OPENAI_API_KEY")
-	if token == "" { token = "dummy" }
-	config := openai.DefaultConfig(token)
-	if baseURL := os.Getenv("OPENAI_BASE_URL"); baseURL != "" {
-		config.BaseURL = baseURL
+	// 1. Client setup: LLM_API_KEY / LLM_BASE_URL / LLM_MODEL from the environment (or a sourced .env)
+	cfg, err := llm.LoadConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-	client := openai.NewClientWithConfig(config)
-	
+	client := llm.NewOpenAI(
+		llm.WithAPIKey(cfg.APIKey),
+		llm.WithBaseURL(cfg.BaseURL),
+		llm.WithModel(cfg.Model),
+	)
+
 	ctx := context.Background()
 
 	// 2. Tools
-	tools := []openai.Tool{
+	tools := []llm.ToolDef{
 		{
-			Type: openai.ToolTypeFunction,
-			Function: &openai.FunctionDefinition{
-				Name:        "delete_db",
-				Description: "Delete a database by name. DANGEROUS ACTION.",
-				Parameters: json.RawMessage(`{
-					"type": "object",
-					"properties": { "name": { "type": "string" } },
-					"required": ["name"]
-				}`),
-			},
+			Name:        "delete_db",
+			Description: "Delete a database by name. DANGEROUS ACTION.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": { "name": { "type": "string" } },
+				"required": ["name"]
+			}`),
 		},
 		{
-			Type: openai.ToolTypeFunction,
-			Function: &openai.FunctionDefinition{
-				Name:        "send_email",
-				Description: "Send an email",
-				Parameters: json.RawMessage(`{
-					"type": "object",
-					"properties": {
-						"to": { "type": "string" },
-						"subject": { "type": "string" },
-						"body": { "type": "string" }
-					},
-					"required": ["to", "subject", "body"]
-				}`),
-			},
+			Name:        "send_email",
+			Description: "Send an email",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"to": { "type": "string" },
+					"subject": { "type": "string" },
+					"body": { "type": "string" }
+				},
+				"required": ["to", "subject", "body"]
+			}`),
 		},
 	}
 
-	messages := []openai.ChatCompletionMessage{
+	messages := []llm.Message{
 		{
-			Role:    openai.ChatMessageRoleSystem,
+			Role:    "system",
 			Content: "You are a helpful assistant. IMPORTANT: 1) Always ask for explicit confirmation before deleting anything. 2) If user parameters are missing, ask clarifying questions.",
 		},
 	}
@@ -84,20 +81,20 @@ func main() {
 			break
 		}
 
-		messages = append(messages, openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleUser,
+		messages = append(messages, llm.Message{
+			Role:    "user",
 			Content: input,
 		})
 
 		// 4. Agent Execution Loop
 		for {
-			req := openai.ChatCompletionRequest{
-				Model:    openai.GPT4, // Local servers usually ignore this, but for OpenAI it's better to keep GPT-4 for safety
+			req := llm.Request{
+				Model:    cfg.Model,
 				Messages: messages,
 				Tools:    tools,
 			}
 
-			resp, err := client.CreateChatCompletion(ctx, req)
+			resp, err := client.Complete(ctx, req)
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				break
@@ -112,14 +109,14 @@ func main() {
 			}
 
 			for _, toolCall := range msg.ToolCalls {
-				fmt.Printf("  [System] Executing tool: %s\n", toolCall.Function.Name)
+				fmt.Printf("  [System] Executing tool: %s\n", toolCall.Name)
 				var result string
-				
-				// TODO: Implement tool calls here
-				result = "Executed" 
 
-				messages = append(messages, openai.ChatCompletionMessage{
-					Role:       openai.ChatMessageRoleTool,
+				// TODO: Implement tool calls here
+				result = "Executed"
+
+				messages = append(messages, llm.Message{
+					Role:       "tool",
 					Content:    result,
 					ToolCallID: toolCall.ID,
 				})

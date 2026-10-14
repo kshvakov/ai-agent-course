@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/kshvakov/agent/llm"
 )
 
 // Step represents a single step in the plan
@@ -33,12 +33,12 @@ type StepExecutor interface {
 // TODO 1: Implement plan creation function via LLM
 // Use LLM to decompose task into steps
 // Define dependencies between steps
-func createPlan(ctx context.Context, client *openai.Client, task string) (*Plan, error) {
+func createPlan(ctx context.Context, client llm.Client, model, task string) (*Plan, error) {
 	// TODO: Create prompt for task decomposition
 	// TODO: Call LLM to get plan
 	// TODO: Parse LLM response into Plan structure
 	// TODO: Return plan
-	
+
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -50,7 +50,7 @@ func findReadySteps(plan *Plan) ([]*Step, error) {
 	// TODO: Check if all dependencies are completed
 	// TODO: Detect cyclic dependencies
 	// TODO: Return ready steps
-	
+
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -62,7 +62,7 @@ func executePlanWithRetries(ctx context.Context, plan *Plan, executor StepExecut
 	// TODO: Execute steps
 	// TODO: Handle errors (retry, skip, abort)
 	// TODO: Track step status
-	
+
 	return fmt.Errorf("not implemented")
 }
 
@@ -71,7 +71,7 @@ func executePlanWithRetries(ctx context.Context, plan *Plan, executor StepExecut
 func savePlanState(planID string, plan *Plan) error {
 	// TODO: Serialize plan to JSON
 	// TODO: Save to file
-	
+
 	return fmt.Errorf("not implemented")
 }
 
@@ -81,7 +81,7 @@ func loadPlanState(planID string) (*Plan, error) {
 	// TODO: Read file
 	// TODO: Deserialize JSON to Plan
 	// TODO: Return plan
-	
+
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -95,18 +95,17 @@ func (e *MockExecutor) Execute(step *Step) (string, error) {
 }
 
 func main() {
-	// Client setup
-	token := os.Getenv("OPENAI_API_KEY")
-	baseURL := os.Getenv("OPENAI_BASE_URL")
-	if token == "" {
-		token = "dummy"
+	// Client setup: LLM_API_KEY / LLM_BASE_URL / LLM_MODEL from the environment (or a sourced .env)
+	cfg, err := llm.LoadConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-
-	config := openai.DefaultConfig(token)
-	if baseURL != "" {
-		config.BaseURL = baseURL
-	}
-	client := openai.NewClientWithConfig(config)
+	client := llm.NewOpenAI(
+		llm.WithAPIKey(cfg.APIKey),
+		llm.WithBaseURL(cfg.BaseURL),
+		llm.WithModel(cfg.Model),
+	)
 
 	ctx := context.Background()
 
@@ -117,7 +116,7 @@ func main() {
 	fmt.Printf("Task: %s\n\n", task)
 
 	// TODO: Create plan
-	plan, err := createPlan(ctx, client, task)
+	plan, err := createPlan(ctx, client, cfg.Model, task)
 	if err != nil {
 		fmt.Printf("Error creating plan: %v\n", err)
 		return
@@ -134,6 +133,6 @@ func main() {
 	}
 
 	fmt.Println("\nPlan executed successfully!")
-	
+
 	_ = json.RawMessage{}
 }

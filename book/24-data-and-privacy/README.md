@@ -88,8 +88,6 @@ func logWithRedaction(runID string, data map[string]any) {
 
 ### Integration point: the log boundary, not the model input
 
-> **Note:** the lab hasn't been revised yet (still on the old stack) — use it as a pointer; the canonical masking approach is in this chapter.
-
 In [`labs/lab05-human-interaction/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/labs/lab05-human-interaction/main.go), user input goes to the model **as is** — the agent needs the data for the task. Masking happens when writing to the log/trace:
 
 ```go

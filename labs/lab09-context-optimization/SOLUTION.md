@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/kshvakov/agent/llm"
 )
 
 // ---------------------- token accounting ----------------------
@@ -34,13 +34,13 @@ func estimateTokens(text string) int {
 	return len(text)/3 + 1
 }
 
-func estimateMessages(msgs []openai.ChatCompletionMessage) int {
+func estimateMessages(msgs []llm.Message) int {
 	total := 4 // envelope overhead
 	for _, m := range msgs {
 		total += estimateTokens(m.Content) + 4
 		for _, tc := range m.ToolCalls {
-			total += estimateTokens(tc.Function.Name) +
-				estimateTokens(tc.Function.Arguments) + 8
+			total += estimateTokens(tc.Name) +
+				estimateTokens(tc.Arguments) + 8
 		}
 	}
 	return total
@@ -49,31 +49,31 @@ func estimateMessages(msgs []openai.ChatCompletionMessage) int {
 // ---------------------- Run + condense ----------------------
 
 type Run struct {
-	messages     []openai.ChatCompletionMessage
+	messages     []llm.Message
 	lastTokens   int
 	contextMax   int
 	condenseDone bool
 
-	client *openai.Client
+	client llm.Client
 	model  string
-	tools  []openai.Tool
+	tools  []llm.ToolDef
 }
 
-func NewRun(client *openai.Client, model string, contextMax int, systemPrompt string, tools []openai.Tool) *Run {
+func NewRun(client llm.Client, model string, contextMax int, systemPrompt string, tools []llm.ToolDef) *Run {
 	return &Run{
 		client:     client,
 		model:      model,
 		contextMax: contextMax,
 		tools:      tools,
-		messages: []openai.ChatCompletionMessage{
-			{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
+		messages: []llm.Message{
+			{Role: "system", Content: systemPrompt},
 		},
 	}
 }
 
 func (r *Run) Step(ctx context.Context, userInput string) (string, error) {
-	r.messages = append(r.messages, openai.ChatCompletionMessage{
-		Role: openai.ChatMessageRoleUser, Content: userInput,
+	r.messages = append(r.messages, llm.Message{
+		Role: "user", Content: userInput,
 	})
 
 	for {
@@ -109,18 +109,17 @@ func (r *Run) Step(ctx context.Context, userInput string) (string, error) {
 
 		for _, tc := range msg.ToolCalls {
 			result := r.dispatchTool(ctx, tc)
-			r.messages = append(r.messages, openai.ChatCompletionMessage{
-				Role:       openai.ChatMessageRoleTool,
+			r.messages = append(r.messages, llm.Message{
+				Role:       "tool",
 				ToolCallID: tc.ID,
-				Name:       tc.Function.Name,
 				Content:    result,
 			})
 		}
 	}
 }
 
-func (r *Run) callLLM(ctx context.Context) (openai.ChatCompletionResponse, error) {
-	return r.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+func (r *Run) callLLM(ctx context.Context) (*llm.Response, error) {
+	return r.client.Complete(ctx, llm.Request{
 		Model:       r.model,
 		Messages:    r.messages,
 		Tools:       r.tools,
@@ -140,12 +139,12 @@ func (r *Run) logUsage() {
 		estimated, r.lastTokens, delta, pct, threshold)
 }
 
-func safeTail(msgs []openai.ChatCompletionMessage, n int) []openai.ChatCompletionMessage {
+func safeTail(msgs []llm.Message, n int) []llm.Message {
 	if n > len(msgs)-1 {
 		n = len(msgs) - 1
 	}
 	start := len(msgs) - n
-	for start > 1 && msgs[start].Role == openai.ChatMessageRoleTool {
+	for start > 1 && msgs[start].Role == "tool" {
 		start--
 	}
 	return msgs[start:]
@@ -165,10 +164,10 @@ func (r *Run) condense(ctx context.Context) error {
 		return err
 	}
 
-	next := make([]openai.ChatCompletionMessage, 0, 2+len(tail))
+	next := make([]llm.Message, 0, 2+len(tail))
 	next = append(next, system)
-	next = append(next, openai.ChatCompletionMessage{
-		Role:    openai.ChatMessageRoleUser,
+	next = append(next, llm.Message{
+		Role:    "user",
 		Content: "Context of previous work:\n\n" + summary,
 	})
 	next = append(next, tail...)
@@ -179,7 +178,7 @@ func (r *Run) condense(ctx context.Context) error {
 	return nil
 }
 
-func (r *Run) summarize(ctx context.Context, head []openai.ChatCompletionMessage) (string, error) {
+func (r *Run) summarize(ctx context.Context, head []llm.Message) (string, error) {
 	var b strings.Builder
 	for _, m := range head {
 		if m.Content == "" {
@@ -191,18 +190,18 @@ func (r *Run) summarize(ctx context.Context, head []openai.ChatCompletionMessage
 		b.WriteString("\n")
 	}
 
-	resp, err := r.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+	resp, err := r.client.Complete(ctx, llm.Request{
 		Model:       r.model,
 		Temperature: 0,
-		Messages: []openai.ChatCompletionMessage{
-			{Role: openai.ChatMessageRoleSystem, Content: `You are compressing the agent's working transcript into a brief handoff for the next step.
+		Messages: []llm.Message{
+			{Role: "system", Content: `You are compressing the agent's working transcript into a brief handoff for the next step.
 Preserve:
 1. The user's original task.
 2. Decisions already made and the reasoning behind them.
 3. Which files / resources have been read and what's relevant in them.
 4. What still needs to be done.
 Drop pleasantries and chatter.`},
-			{Role: openai.ChatMessageRoleUser, Content: b.String()},
+			{Role: "user", Content: b.String()},
 		},
 	})
 	if err != nil {
@@ -213,16 +212,16 @@ Drop pleasantries and chatter.`},
 
 // ---------------------- tools ----------------------
 
-func (r *Run) dispatchTool(_ context.Context, tc openai.ToolCall) string {
-	switch tc.Function.Name {
+func (r *Run) dispatchTool(_ context.Context, tc llm.ToolCall) string {
+	switch tc.Name {
 	case "fake_lookup":
 		var args struct {
 			Query string `json:"query"`
 		}
-		_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
+		_ = json.Unmarshal([]byte(tc.Arguments), &args)
 		return fmt.Sprintf("result for %q: ok", args.Query)
 	}
-	return "unknown tool: " + tc.Function.Name
+	return "unknown tool: " + tc.Name
 }
 
 func isContextOverflow(err error) bool {

@@ -40,7 +40,7 @@ In this lab you'll implement a **minimum viable** memory system for an agent: on
 
 | Horizon | Lifetime | Who writes | Where |
 |---|---|---|---|
-| In-Run | one run | runtime | `[]openai.ChatCompletionMessage` |
+| In-Run | one run | runtime | `[]llm.Message` |
 | Long-term | survives restart | agent via tool | JSON / SQLite |
 
 ### One threshold, one reaction
@@ -80,18 +80,18 @@ The right way: long-term memory is just **tools** in the catalog (like `read_fil
 
 ```go
 type Run struct {
-    messages     []openai.ChatCompletionMessage
+    messages     []llm.Message
     lastTokens   int
     contextMax   int
     condenseDone bool
-    client       *openai.Client
+    client       llm.Client
     model        string
-    tools        []openai.Tool
+    tools        []llm.ToolDef
 }
 
 func (r *Run) Step(ctx context.Context, userInput string) (string, error) {
-    r.messages = append(r.messages, openai.ChatCompletionMessage{
-        Role: openai.ChatMessageRoleUser, Content: userInput,
+    r.messages = append(r.messages, llm.Message{
+        Role: "user", Content: userInput,
     })
 
     if err := r.beforeRequest(ctx); err != nil {
@@ -142,10 +142,10 @@ func (r *Run) condense(ctx context.Context) error {
         return err
     }
 
-    next := make([]openai.ChatCompletionMessage, 0, 2+len(tail))
+    next := make([]llm.Message, 0, 2+len(tail))
     next = append(next, system)
-    next = append(next, openai.ChatCompletionMessage{
-        Role:    openai.ChatMessageRoleUser,
+    next = append(next, llm.Message{
+        Role:    "user",
         Content: "Context of previous work:\n\n" + summary,
     })
     next = append(next, tail...)
@@ -157,12 +157,12 @@ func (r *Run) condense(ctx context.Context) error {
 
 // safeTail returns >=N trailing messages, expanding the boundary to the left
 // if the first element is a tool result without its tool_call in the tail.
-func safeTail(msgs []openai.ChatCompletionMessage, n int) []openai.ChatCompletionMessage {
+func safeTail(msgs []llm.Message, n int) []llm.Message {
     if n > len(msgs)-1 {
         n = len(msgs) - 1
     }
     start := len(msgs) - n
-    for start > 1 && msgs[start].Role == openai.ChatMessageRoleTool {
+    for start > 1 && msgs[start].Role == "tool" {
         start--
     }
     return msgs[start:]
@@ -242,28 +242,28 @@ func (s *FileStore) Delete(_ context.Context, key string) error {
 Tool registration:
 
 ```go
-tools := []openai.Tool{
-    {Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{
+tools := []llm.ToolDef{
+    {
         Name: "memory_save",
         Description: "Save a long-term note. Use for stable facts about the user or project.",
         Parameters: jsonSchema(`{"type":"object","properties":{
             "key":{"type":"string"},"value":{"type":"string"}
         },"required":["key","value"]}`),
-    }},
-    {Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{
+    },
+    {
         Name: "memory_recall",
         Description: "Search long-term notes by query (substring).",
         Parameters: jsonSchema(`{"type":"object","properties":{
             "query":{"type":"string"}
         },"required":["query"]}`),
-    }},
-    {Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{
+    },
+    {
         Name: "memory_delete",
         Description: "Delete a note by key.",
         Parameters: jsonSchema(`{"type":"object","properties":{
             "key":{"type":"string"}
         },"required":["key"]}`),
-    }},
+    },
 }
 ```
 
@@ -292,8 +292,8 @@ for {
 
     for _, tc := range msg.ToolCalls {
         result := dispatchTool(ctx, store, tc)
-        r.messages = append(r.messages, openai.ChatCompletionMessage{
-            Role:       openai.ChatMessageRoleTool,
+        r.messages = append(r.messages, llm.Message{
+            Role:       "tool",
             ToolCallID: tc.ID,
             Content:    result,
         })

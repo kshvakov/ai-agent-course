@@ -182,34 +182,30 @@ func executeToolStep(toolName string, args map[string]interface{}, input string)
 ### Step 5: Agent Integration
 
 ```go
-tools := []openai.Tool{
+tools := []llm.ToolDef{
     {
-        Function: &openai.FunctionDefinition{
-            Name: "search_tool_catalog",
-            Description: "Search tool catalog for relevant tools. Use this BEFORE building pipelines.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"},
-                    "top_k": {"type": "number", "default": 5}
-                },
-                "required": ["query"]
-            }`),
-        },
+        Name: "search_tool_catalog",
+        Description: "Search tool catalog for relevant tools. Use this BEFORE building pipelines.",
+        Parameters: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "top_k": {"type": "number", "default": 5}
+            },
+            "required": ["query"]
+        }`),
     },
     {
-        Function: &openai.FunctionDefinition{
-            Name: "execute_pipeline",
-            Description: "Execute a pipeline of tools. Provide pipeline JSON with steps and risk_level.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "pipeline": {"type": "string"},
-                    "input_data": {"type": "string"}
-                },
-                "required": ["pipeline", "input_data"]
-            }`),
-        },
+        Name: "execute_pipeline",
+        Description: "Execute a pipeline of tools. Provide pipeline JSON with steps and risk_level.",
+        Parameters: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "pipeline": {"type": "string"},
+                "input_data": {"type": "string"}
+            },
+            "required": ["pipeline", "input_data"]
+        }`),
     },
 }
 ```

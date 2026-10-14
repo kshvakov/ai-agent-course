@@ -87,13 +87,13 @@ func estimateTokens(text string) int {
     return len(text) / 3 + 1
 }
 
-func estimateMessages(msgs []openai.ChatCompletionMessage) int {
+func estimateMessages(msgs []llm.Message) int {
     total := 4 // envelope overhead
     for _, m := range msgs {
         total += estimateTokens(m.Content) + 4
         for _, tc := range m.ToolCalls {
-            total += estimateTokens(tc.Function.Name) +
-                     estimateTokens(tc.Function.Arguments) + 8
+            total += estimateTokens(tc.Name) +
+                     estimateTokens(tc.Arguments) + 8
         }
     }
     return total
@@ -106,19 +106,19 @@ This is a poor estimate for billing, but good enough for "don't send a clearly o
 
 ```go
 type Run struct {
-    messages     []openai.ChatCompletionMessage
+    messages     []llm.Message
     lastTokens   int
     contextMax   int
     condenseDone bool
 
-    client *openai.Client
+    client llm.Client
     model  string
-    tools  []openai.Tool
+    tools  []llm.ToolDef
 }
 
 func (r *Run) Step(ctx context.Context, userInput string) (string, error) {
-    r.messages = append(r.messages, openai.ChatCompletionMessage{
-        Role: openai.ChatMessageRoleUser, Content: userInput,
+    r.messages = append(r.messages, llm.Message{
+        Role: "user", Content: userInput,
     })
 
     for {
@@ -149,10 +149,9 @@ func (r *Run) Step(ctx context.Context, userInput string) (string, error) {
 
         for _, tc := range msg.ToolCalls {
             result := r.dispatchTool(ctx, tc)
-            r.messages = append(r.messages, openai.ChatCompletionMessage{
-                Role:       openai.ChatMessageRoleTool,
+            r.messages = append(r.messages, llm.Message{
+                Role:       "tool",
                 ToolCallID: tc.ID,
-                Name:       tc.Function.Name,
                 Content:    result,
             })
         }
@@ -163,10 +162,10 @@ func (r *Run) Step(ctx context.Context, userInput string) (string, error) {
 ### Step 3: `safeTail`
 
 ```go
-func safeTail(msgs []openai.ChatCompletionMessage, n int) []openai.ChatCompletionMessage {
+func safeTail(msgs []llm.Message, n int) []llm.Message {
     if n > len(msgs)-1 { n = len(msgs) - 1 }
     start := len(msgs) - n
-    for start > 1 && msgs[start].Role == openai.ChatMessageRoleTool {
+    for start > 1 && msgs[start].Role == "tool" {
         start--
     }
     return msgs[start:]
@@ -192,10 +191,10 @@ func (r *Run) condense(ctx context.Context) error {
         return err
     }
 
-    next := make([]openai.ChatCompletionMessage, 0, 2+len(tail))
+    next := make([]llm.Message, 0, 2+len(tail))
     next = append(next, system)
-    next = append(next, openai.ChatCompletionMessage{
-        Role:    openai.ChatMessageRoleUser,
+    next = append(next, llm.Message{
+        Role:    "user",
         Content: "Context of previous work:\n\n" + summary,
     })
     next = append(next, tail...)

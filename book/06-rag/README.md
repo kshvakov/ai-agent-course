@@ -166,7 +166,7 @@ msg2 := resp2.Choices[0].Message
 
 ## Simple RAG vs Vector Search
 
-Simple RAG (keyword search) is implemented in [Lab 07](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab07-rag) — the lab is not yet revised and will be updated in a separate pass. Production uses **vector search** (Semantic Search), which searches by meaning rather than by words.
+Simple RAG (keyword search) is implemented in [Lab 07](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab07-rag), revised to the neutral client. Production uses **vector search** (Semantic Search), which searches by meaning rather than by words.
 
 **Simple RAG ([Lab 07](https://github.com/kshvakov/ai-agent-course/tree/main/labs/lab07-rag)):**
 ```go

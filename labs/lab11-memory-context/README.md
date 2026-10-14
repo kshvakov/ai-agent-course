@@ -54,7 +54,7 @@ The `Run` struct holds only the linear history of one run:
 
 ```go
 type Run struct {
-    messages    []openai.ChatCompletionMessage // linear log; system at index 0
+    messages    []llm.Message // linear log; system at index 0
     lastTokens  int                            // usage.PromptTokens of the last response
     contextMax  int                            // model window, e.g. 128_000
     condenseDone bool                          // limit: one condense per Run
@@ -89,9 +89,9 @@ func (r *Run) condense(ctx context.Context, llm LLM) error {
         return err
     }
 
-    next := make([]openai.ChatCompletionMessage, 0, 2+len(tail))
+    next := make([]llm.Message, 0, 2+len(tail))
     next = append(next, system)
-    next = append(next, openai.ChatCompletionMessage{
+    next = append(next, llm.Message{
         Role:    "user",
         Content: "Context of previous work:\n\n" + summary,
     })

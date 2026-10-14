@@ -61,26 +61,20 @@ Technically, calling an agent is just a function call. Inside function `runWorke
 ### Step 1: Defining Tools for Supervisor
 
 ```go
-supervisorTools := []openai.Tool{
+supervisorTools := []llm.ToolDef{
     {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name: "ask_network_expert",
-            Description: "Ask the network specialist about connectivity, pings, ports.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {"question": {"type": "string"}},
-                "required": ["question"]
-            }`),
-        },
+        Name: "ask_network_expert",
+        Description: "Ask the network specialist about connectivity, pings, ports.",
+        Parameters: json.RawMessage(`{
+            "type": "object",
+            "properties": {"question": {"type": "string"}},
+            "required": ["question"]
+        }`),
     },
     {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name: "ask_database_expert",
-            Description: "Ask the DB specialist about SQL, schemas, data.",
-            // ...
-        },
+        Name: "ask_database_expert",
+        Description: "Ask the DB specialist about SQL, schemas, data.",
+        // ...
     },
 }
 ```
@@ -90,29 +84,29 @@ supervisorTools := []openai.Tool{
 ### Step 2: Defining Tools for Workers
 
 ```go
-netTools := []openai.Tool{
-    {Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{Name: "ping", Description: "Ping a host"}},
+netTools := []llm.ToolDef{
+    {Name: "ping", Description: "Ping a host"},
 }
 
-dbTools := []openai.Tool{
-    {Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{Name: "run_sql", Description: "Run SQL query"}},
+dbTools := []llm.ToolDef{
+    {Name: "run_sql", Description: "Run SQL query"},
 }
 ```
 
 ### Step 3: Worker Launch Function
 
 ```go
-func runWorkerAgent(role, prompt, question string, tools []openai.Tool, client *openai.Client) string {
+func runWorkerAgent(role, prompt, question string, tools []llm.ToolDef, client llm.Client, model string) string {
     // Create NEW context for worker
-    messages := []openai.ChatCompletionMessage{
-        {Role: openai.ChatMessageRoleSystem, Content: prompt},
-        {Role: openai.ChatMessageRoleUser, Content: question},
+    messages := []llm.Message{
+        {Role: "system", Content: prompt},
+        {Role: "user", Content: question},
     }
     
     // Simple loop for worker (usually 1-2 steps)
     for i := 0; i < 5; i++ {
-        resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-            Model: "gpt-4o-mini",
+        resp, _ := client.Complete(ctx, llm.Request{
+            Model: model, // From LLM_MODEL (default glm-5.3)
             Messages: messages,
             Tools: tools,
         })
@@ -125,7 +119,7 @@ func runWorkerAgent(role, prompt, question string, tools []openai.Tool, client *
         
         // Execute worker tools
         for _, tc := range msg.ToolCalls {
-            result := executeWorkerTool(tc.Function.Name)
+            result := executeWorkerTool(tc.Name)
             messages = append(messages, toolResult)
         }
     }
@@ -137,7 +131,7 @@ func runWorkerAgent(role, prompt, question string, tools []openai.Tool, client *
 
 ```go
 for i := 0; i < 10; i++ {
-    resp := client.CreateChatCompletion(ctx, supervisorRequest)
+    resp, err := client.Complete(ctx, supervisorRequest)
     msg := resp.Choices[0].Message
     messages = append(messages, msg)
     
@@ -148,15 +142,15 @@ for i := 0; i < 10; i++ {
     
     for _, tc := range msg.ToolCalls {
         var workerResponse string
-        if tc.Function.Name == "ask_network_expert" {
-            workerResponse = runWorkerAgent("NetworkAdmin", "You are a Network Admin", question, netTools, client)
-        } else if tc.Function.Name == "ask_database_expert" {
-            workerResponse = runWorkerAgent("DBAdmin", "You are a DBA", question, dbTools, client)
+        if tc.Name == "ask_network_expert" {
+            workerResponse = runWorkerAgent("NetworkAdmin", "You are a Network Admin", question, netTools, client, model)
+        } else if tc.Name == "ask_database_expert" {
+            workerResponse = runWorkerAgent("DBAdmin", "You are a DBA", question, dbTools, client, model)
         }
         
         // Return worker answer to Supervisor
-        messages = append(messages, ChatCompletionMessage{
-            Role: openai.ChatMessageRoleTool,
+        messages = append(messages, llm.Message{
+            Role: "tool",
             Content: workerResponse,
             ToolCallID: tc.ID,
         })
@@ -178,7 +172,7 @@ for i := 0; i < 10; i++ {
 runWorkerAgent(supervisorMessages, ...)  // Worker receives all history!
 
 // GOOD
-runWorkerAgent([]ChatCompletionMessage{systemMsg, questionMsg}, ...)  // Only its task
+runWorkerAgent([]llm.Message{systemMsg, questionMsg}, ...)  // Only its task
 ```
 
 ### Error 2: Supervisor Doesn't Receive Worker Answer
@@ -190,8 +184,8 @@ runWorkerAgent([]ChatCompletionMessage{systemMsg, questionMsg}, ...)  // Only it
 **Solution:**
 ```go
 // MUST add worker answer:
-messages = append(messages, ChatCompletionMessage{
-    Role: openai.ChatMessageRoleTool,
+messages = append(messages, llm.Message{
+    Role: "tool",
     Content: workerResponse,  // Supervisor must see this!
     ToolCallID: tc.ID,
 })

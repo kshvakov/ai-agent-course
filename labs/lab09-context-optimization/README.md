@@ -82,7 +82,7 @@ In `main.go`, implement a correct context-management loop for a long dialogue wi
 
 ```go
 func estimateTokens(text string) int { /* len(text)/3 as a baseline */ }
-func estimateMessages(msgs []openai.ChatCompletionMessage) int
+func estimateMessages(msgs []llm.Message) int
 ```
 
 These functions are **only for a pre-send estimate**. Do not use them as the source of truth.
@@ -91,7 +91,7 @@ These functions are **only for a pre-send estimate**. Do not use them as the sou
 
 ```go
 type Run struct {
-    messages     []openai.ChatCompletionMessage
+    messages     []llm.Message
     lastTokens   int  // resp.Usage.PromptTokens from the previous response
     contextMax   int  // model window, e.g. 128_000
     condenseDone bool
@@ -108,7 +108,7 @@ Requirements:
 
 ```go
 func (r *Run) condense(ctx context.Context) error
-func safeTail(msgs []openai.ChatCompletionMessage, n int) []openai.ChatCompletionMessage
+func safeTail(msgs []llm.Message, n int) []llm.Message
 ```
 
 `safeTail` returns **at least** N trailing messages, expanding the boundary to the left if the tail starts with a `tool` whose matching `assistant.tool_call` is not in the tail.

@@ -247,7 +247,7 @@ for i := 0; i < MaxIterations; i++ {
 
 ### Integration point 2: Context optimization
 
-In your runtime, add condense triggered by the context-window threshold (ch. 12/13), not by the run budget (the lab09-context-optimization lab is not yet revised, still on the old stack):
+In your runtime, add condense triggered by the context-window threshold (ch. 12/13), not by the run budget (the revised lab09-context-optimization uses the same client):
 
 ```go
 func adaptiveContextManagement(ctx context.Context, client Client, lastResp *Response, messages []Message, condenseAt float64) []Message {

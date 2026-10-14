@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -74,10 +75,18 @@ func NewOpenAI(opts ...Option) *OpenAIClient {
 }
 
 func toOpenAIRequest(req Request, model string) openai.ChatCompletionRequest {
+	// go-openai's Temperature is omitempty, so a plain 0 is dropped from the
+	// wire and the provider default (~1.0) applies. Upstream-documented
+	// workaround (README FAQ): smallest positive float32 — greedy decoding,
+	// but survives marshaling; some providers (e.g. GLM) reject literal 0.
+	temp := float32(req.Temperature)
+	if temp == 0 {
+		temp = math.SmallestNonzeroFloat32
+	}
 	oaiReq := openai.ChatCompletionRequest{
 		Model:       model,
 		Messages:    make([]openai.ChatCompletionMessage, 0, len(req.Messages)),
-		Temperature: float32(req.Temperature),
+		Temperature: temp,
 	}
 	for _, m := range req.Messages {
 		msg := openai.ChatCompletionMessage{Role: m.Role, Content: m.Content, ToolCallID: m.ToolCallID}

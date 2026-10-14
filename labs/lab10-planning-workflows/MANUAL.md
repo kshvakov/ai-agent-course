@@ -95,9 +95,9 @@ Return plan in JSON format:
   ]
 }`, task)
 
-resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model: "gpt-4o-mini",
-    Messages: []openai.ChatCompletionMessage{
+resp, _ := client.Complete(ctx, llm.Request{
+    Model: model, // From LLM_MODEL (default glm-5.3)
+    Messages: []llm.Message{
         {Role: "user", Content: prompt},
     },
 })

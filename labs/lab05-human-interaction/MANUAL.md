@@ -51,7 +51,7 @@ Outer loop (Chat):
 
 We explicitly write in the system prompt: *"Always ask for explicit confirmation before deleting anything"*.
 
-LLM (especially GPT-4) follows this rule well. Instead of generating `ToolCall("delete_db")` it generates text *"Are you sure you want to delete...?"*.
+A strong LLM (the model from LLM_MODEL, default glm-5.3) follows this rule well. Instead of generating `ToolCall("delete_db")` it generates text *"Are you sure you want to delete...?"*.
 
 Since this is text, the inner loop breaks, and the question is shown to the user.
 
@@ -69,14 +69,11 @@ The agent receives confirmation and this time generates `ToolCall("delete_db")`.
 ### Step 1: Defining Critical Tools
 
 ```go
-tools := []openai.Tool{
+tools := []llm.ToolDef{
     {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "delete_db",
-            Description: "Delete a database by name. DANGEROUS ACTION.",
-            // ...
-        },
+        Name:        "delete_db",
+        Description: "Delete a database by name. DANGEROUS ACTION.",
+        // ...
     },
 }
 ```
@@ -103,7 +100,7 @@ for {
     
     // Inner loop (Agent)
     for {
-        resp := client.CreateChatCompletion(...)
+        resp, err := client.Complete(ctx, req)
         msg := resp.Choices[0].Message
         messages = append(messages, msg)
         
@@ -134,7 +131,7 @@ for {
 
 **Solution:**
 1. Strengthen System Prompt: "CRITICAL: Never delete without explicit confirmation"
-2. Use a stronger model (GPT-4 instead of GPT-3.5)
+2. Use a stronger model (set a higher-tier model via LLM_MODEL)
 3. Add Few-Shot examples to prompt
 
 ### Error 2: Agent Doesn't Clarify Parameters
@@ -162,7 +159,7 @@ Agent: [Tries to call send_email without subject and text]
 **Solution:**
 ```go
 // After user confirmation:
-messages = append(messages, ChatCompletionMessage{
+messages = append(messages, llm.Message{
     Role:    "user",
     Content: "yes",  // Confirmation
 })

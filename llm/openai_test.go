@@ -166,6 +166,35 @@ func TestComplete_RetriesNonJSONErrorBody(t *testing.T) {
 	}
 }
 
+func TestComplete_TemperatureZeroSent(t *testing.T) {
+	var raw map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &raw)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, okResponse("ok"))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	if _, err := c.Complete(context.Background(), Request{
+		Model:       "m",
+		Messages:    []Message{{Role: "user", Content: "hi"}},
+		Temperature: 0, // deterministic behavior must reach the wire
+	}); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	temp, ok := raw["temperature"].(float64)
+	if !ok {
+		t.Fatalf("wire temperature missing: %v", raw["temperature"])
+	}
+	// 0 is sent as math.SmallestNonzeroFloat32 (upstream workaround for
+	// omitempty): present on the wire, indistinguishable from 0 for samplers.
+	if temp <= 0 || temp > 1e-6 {
+		t.Errorf("wire temperature = %v, want ~0 (1e-45)", temp)
+	}
+}
+
 func TestStream_RecvUntilEOF(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

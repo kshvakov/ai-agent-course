@@ -140,11 +140,11 @@ We **direct the model's attention** in the right direction.
 ### Step 1: Tool Definition
 
 ```go
-tools := []openai.Tool{
-    {Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{Name: "check_http", Description: "Check service HTTP status"}},
-    {Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{Name: "read_logs", Description: "Read service logs. Do this if HTTP is 500/502."}},
-    {Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{Name: "restart_service", Description: "Restart the service. Use ONLY if logs show transient error."}},
-    {Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{Name: "rollback_deploy", Description: "Rollback to previous version. Use if logs show Config/Syntax error."}},
+tools := []llm.ToolDef{
+    {Name: "check_http", Description: "Check service HTTP status"},
+    {Name: "read_logs", Description: "Read service logs. Do this if HTTP is 500/502."},
+    {Name: "restart_service", Description: "Restart the service. Use ONLY if logs show transient error."},
+    {Name: "rollback_deploy", Description: "Rollback to previous version. Use if logs show Config/Syntax error."},
 }
 ```
 
@@ -170,7 +170,7 @@ ALWAYS Think step by step. Output your thought process before calling a tool.`
 
 ```go
 for i := 0; i < 15; i++ {
-    resp, err := client.CreateChatCompletion(ctx, req)
+    resp, err := client.Complete(ctx, req)
     msg := resp.Choices[0].Message
     messages = append(messages, msg)
     
@@ -185,7 +185,7 @@ for i := 0; i < 15; i++ {
     }
     
     for _, toolCall := range msg.ToolCalls {
-        fmt.Printf("🔧 Call: %s\n", toolCall.Function.Name)
+        fmt.Printf("🔧 Call: %s\n", toolCall.Name)
         result := executeTool(toolCall)
         fmt.Printf("📦 Result: %s\n", result)
         
@@ -205,7 +205,7 @@ for i := 0; i < 15; i++ {
 **Solution:**
 1. Strengthen SOP: "CRITICAL: Never restart without reading logs first"
 2. Add Few-Shot examples to prompt
-3. Use a stronger model (GPT-4)
+3. Use a stronger model (set a higher-tier model via LLM_MODEL)
 
 ### Error 2: Agent Loops on One Step
 
