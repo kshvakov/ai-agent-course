@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/kshvakov/agent/llm"
 )
 
 // Entry — одна запись в long-term памяти.
@@ -63,34 +63,34 @@ func (s *FileStore) flush() error {
 // Run — состояние одного запуска агента.
 // system живёт в messages[0] и НЕ меняется в течение Run.
 type Run struct {
-	messages     []openai.ChatCompletionMessage
+	messages     []llm.Message
 	lastTokens   int
 	contextMax   int
 	condenseDone bool
 
-	client *openai.Client
+	client llm.Client
 	model  string
-	tools  []openai.Tool
+	tools  []llm.ToolDef
 	store  Store
 }
 
-func NewRun(client *openai.Client, model string, contextMax int, store Store, systemPrompt string, tools []openai.Tool) *Run {
+func NewRun(client llm.Client, model string, contextMax int, store Store, systemPrompt string, tools []llm.ToolDef) *Run {
 	return &Run{
 		client:     client,
 		model:      model,
 		contextMax: contextMax,
 		store:      store,
 		tools:      tools,
-		messages: []openai.ChatCompletionMessage{
-			{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
+		messages: []llm.Message{
+			{Role: "system", Content: systemPrompt},
 		},
 	}
 }
 
 // Step добавляет ввод пользователя, гоняет цикл с tool calls и возвращает финальный текст ассистента.
 func (r *Run) Step(ctx context.Context, userInput string) (string, error) {
-	r.messages = append(r.messages, openai.ChatCompletionMessage{
-		Role:    openai.ChatMessageRoleUser,
+	r.messages = append(r.messages, llm.Message{
+		Role:    "user",
 		Content: userInput,
 	})
 
@@ -115,18 +115,17 @@ func (r *Run) Step(ctx context.Context, userInput string) (string, error) {
 
 		for _, tc := range msg.ToolCalls {
 			result := r.dispatchTool(ctx, tc)
-			r.messages = append(r.messages, openai.ChatCompletionMessage{
-				Role:       openai.ChatMessageRoleTool,
+			r.messages = append(r.messages, llm.Message{
+				Role:       "tool",
 				ToolCallID: tc.ID,
-				Name:       tc.Function.Name,
 				Content:    result,
 			})
 		}
 	}
 }
 
-func (r *Run) callLLM(ctx context.Context) (openai.ChatCompletionResponse, error) {
-	return r.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+func (r *Run) callLLM(ctx context.Context) (*llm.Response, error) {
+	return r.client.Complete(ctx, llm.Request{
 		Model:       r.model,
 		Messages:    r.messages,
 		Tools:       r.tools,
@@ -154,7 +153,7 @@ func (r *Run) condense(ctx context.Context) error {
 }
 
 // summarize вызывает LLM, чтобы получить краткую справку по куску истории.
-func (r *Run) summarize(ctx context.Context, head []openai.ChatCompletionMessage) (string, error) {
+func (r *Run) summarize(ctx context.Context, head []llm.Message) (string, error) {
 	// TODO 9: соберите input как линейный текст (роль: контент),
 	// отправьте отдельный запрос с системным промптом из MANUAL.md
 	// (раздел «Шаг 2: condense») и верните Choices[0].Message.Content.
@@ -163,13 +162,13 @@ func (r *Run) summarize(ctx context.Context, head []openai.ChatCompletionMessage
 
 // dispatchTool разруливает вызовы memory_save / memory_recall / memory_delete.
 // Возвращает строку, которая идёт в content tool-сообщения.
-func (r *Run) dispatchTool(ctx context.Context, tc openai.ToolCall) string {
-	switch tc.Function.Name {
+func (r *Run) dispatchTool(ctx context.Context, tc llm.ToolCall) string {
+	switch tc.Name {
 	case "memory_save":
 		var args struct {
 			Key, Value string
 		}
-		if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+		if err := json.Unmarshal([]byte(tc.Arguments), &args); err != nil {
 			return fmt.Sprintf("error: %v", err)
 		}
 		if err := r.store.Save(ctx, args.Key, args.Value); err != nil {
@@ -179,7 +178,7 @@ func (r *Run) dispatchTool(ctx context.Context, tc openai.ToolCall) string {
 
 	case "memory_recall":
 		var args struct{ Query string }
-		if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+		if err := json.Unmarshal([]byte(tc.Arguments), &args); err != nil {
 			return fmt.Sprintf("error: %v", err)
 		}
 		hits, err := r.store.Recall(ctx, args.Query)
@@ -191,7 +190,7 @@ func (r *Run) dispatchTool(ctx context.Context, tc openai.ToolCall) string {
 
 	case "memory_delete":
 		var args struct{ Key string }
-		if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+		if err := json.Unmarshal([]byte(tc.Arguments), &args); err != nil {
 			return fmt.Sprintf("error: %v", err)
 		}
 		if err := r.store.Delete(ctx, args.Key); err != nil {
@@ -199,7 +198,7 @@ func (r *Run) dispatchTool(ctx context.Context, tc openai.ToolCall) string {
 		}
 		return "ok"
 	}
-	return fmt.Sprintf("unknown tool: %s", tc.Function.Name)
+	return fmt.Sprintf("unknown tool: %s", tc.Name)
 }
 
 // isContextOverflow возвращает true, если ошибка похожа на переполнение окна модели.
@@ -214,17 +213,17 @@ func jsonSchema(s string) json.RawMessage {
 }
 
 func main() {
-	token := os.Getenv("OPENAI_API_KEY")
-	baseURL := os.Getenv("OPENAI_BASE_URL")
-	if token == "" {
-		token = "dummy"
+	// Конфигурация клиента: LLM_API_KEY / LLM_BASE_URL / LLM_MODEL из окружения (или из .env)
+	cfg, err := llm.LoadConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-
-	cfg := openai.DefaultConfig(token)
-	if baseURL != "" {
-		cfg.BaseURL = baseURL
-	}
-	client := openai.NewClientWithConfig(cfg)
+	client := llm.NewOpenAI(
+		llm.WithAPIKey(cfg.APIKey),
+		llm.WithBaseURL(cfg.BaseURL),
+		llm.WithModel(cfg.Model),
+	)
 
 	store, err := NewFileStore("memory.json")
 	if err != nil {
@@ -232,8 +231,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	tools := []openai.Tool{
-		{Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{
+	tools := []llm.ToolDef{
+		{
 			Name:        "memory_save",
 			Description: "Save a long-term note. Use for stable facts about the user or project.",
 			Parameters: jsonSchema(`{
@@ -244,8 +243,8 @@ func main() {
 				},
 				"required":["key","value"]
 			}`),
-		}},
-		{Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{
+		},
+		{
 			Name:        "memory_recall",
 			Description: "Search long-term notes by query (substring).",
 			Parameters: jsonSchema(`{
@@ -255,8 +254,8 @@ func main() {
 				},
 				"required":["query"]
 			}`),
-		}},
-		{Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{
+		},
+		{
 			Name:        "memory_delete",
 			Description: "Delete a note by key.",
 			Parameters: jsonSchema(`{
@@ -266,14 +265,14 @@ func main() {
 				},
 				"required":["key"]
 			}`),
-		}},
+		},
 	}
 
 	systemPrompt := `You are an assistant.
 You have memory_save / memory_recall / memory_delete tools that persist between sessions.
 Use them for stable facts about the user and project. Don't store transient statuses.`
 
-	run := NewRun(client, "gpt-4o-mini", 128_000, store, systemPrompt, tools)
+	run := NewRun(client, cfg.Model, 128_000, store, systemPrompt, tools)
 
 	ctx := context.Background()
 

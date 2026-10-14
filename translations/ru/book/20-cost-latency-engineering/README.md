@@ -64,7 +64,7 @@ func checkTokenBudget(budget TokenBudget) error {
 
 ### Шаг 2: Лимиты итераций
 
-Ограничьте количество итераций ReAct loop — канон цикла и лимитов в [главе 04](../04-autonomy-and-loops/README.md); лаба [`lab04-autonomy`](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab04-autonomy) пока не ревизована и будет обновлена отдельным этапом. Примеры используют нейтральный клиент из главы 04: `client.Complete(ctx, Request{...})`:
+Ограничьте количество итераций ReAct loop — канон цикла и лимитов в [главе 04](../04-autonomy-and-loops/README.md); лаба [`lab04-autonomy`](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab04-autonomy) переведена на тот же нейтральный клиент. Примеры используют нейтральный клиент из главы 04: `client.Complete(ctx, Request{...})`:
 
 ```go
 func runAgent(ctx context.Context, client Client, userInput string) (string, error) {
@@ -223,7 +223,7 @@ func runAgentWithTimeout(ctx context.Context, client Client, userInput string) (
 
 ### Точка интеграции 1: Agent Loop
 
-В своём рантайме из главы 04 добавьте проверку бюджета и лимит итераций (лаба lab04-autonomy пока не ревизована и будет обновлена отдельным этапом):
+В своём рантайме из главы 04 добавьте проверку бюджета и лимит итераций (ревизованная lab04-autonomy использует ту же форму цикла):
 
 ```go
 const MaxIterations = 10
@@ -247,7 +247,7 @@ for i := 0; i < MaxIterations; i++ {
 
 ### Точка интеграции 2: Context Optimization
 
-В своём рантайме добавьте condense по порогу окна (гл. 12/13), не по бюджету хода (лаба lab09-context-optimization пока не ревизована):
+В своём рантайме добавьте condense по порогу окна (гл. 12/13), не по бюджету хода (ревизованная lab09-context-optimization использует тот же клиент):
 
 ```go
 func adaptiveContextManagement(ctx context.Context, client Client, lastResp *Response, messages []Message, condenseAt float64) []Message {
@@ -591,7 +591,7 @@ for i := 0; i < MaxIterations; i++ {
 
 ### Упражнение 1: Реализуйте проверку бюджета токенов
 
-Добавьте проверку бюджета в свой рантайм из главы 04 (лаба lab04-autonomy пока не ревизована):
+Добавьте проверку бюджета в свой рантайм из главы 04 (ревизованная lab04-autonomy использует тот же клиент):
 
 ```go
 func checkTokenBudget(used int, limit int) error {

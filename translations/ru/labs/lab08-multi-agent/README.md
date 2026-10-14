@@ -49,22 +49,16 @@ Supervisor собирает результаты и отвечает польз�
 Supervisor имеет инструменты для вызова специалистов:
 
 ```go
-supervisorTools := []openai.Tool{
+supervisorTools := []llm.ToolDef{
     {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name: "ask_network_expert",
-            Description: "Ask the network specialist about connectivity, pings, ports.",
-            // ...
-        },
+        Name: "ask_network_expert",
+        Description: "Ask the network specialist about connectivity, pings, ports.",
+        // ...
     },
     {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name: "ask_database_expert",
-            Description: "Ask the DB specialist about SQL, schemas, data.",
-            // ...
-        },
+        Name: "ask_database_expert",
+        Description: "Ask the DB specialist about SQL, schemas, data.",
+        // ...
     },
 }
 ```
@@ -72,12 +66,12 @@ supervisorTools := []openai.Tool{
 ### Часть 2: Определение инструментов для Workers
 
 ```go
-netTools := []openai.Tool{
-    {Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{Name: "ping", Description: "Ping a host"}},
+netTools := []llm.ToolDef{
+    {Name: "ping", Description: "Ping a host"},
 }
 
-dbTools := []openai.Tool{
-    {Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{Name: "run_sql", Description: "Run SQL query"}},
+dbTools := []llm.ToolDef{
+    {Name: "run_sql", Description: "Run SQL query"},
 }
 ```
 

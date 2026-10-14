@@ -54,7 +54,7 @@ func (s *StdioToolServer) Start() error {
 	// TODO: Проверяйте версию
 	// TODO: Выполняйте инструмент
 	// TODO: Пишите ответ в stdout (JSON)
-	
+
 	return fmt.Errorf("not implemented")
 }
 
@@ -78,7 +78,7 @@ func (s *HTTPToolServer) Start(port string) error {
 	// TODO: Создайте HTTP endpoint POST /execute
 	// TODO: Обработайте запрос
 	// TODO: Верните JSON ответ
-	
+
 	return fmt.Errorf("not implemented")
 }
 
@@ -87,7 +87,7 @@ func checkVersionCompatibility(tool *ToolDefinition, requestedVersion string) bo
 	// TODO: Проверьте, совместима ли запрошенная версия
 	// TODO: Учтите поле CompatibleWith
 	// TODO: Верните true если совместима
-	
+
 	return false
 }
 
@@ -104,7 +104,7 @@ type StdioToolClient struct {
 func NewStdioToolClient(serverPath string) (*StdioToolClient, error) {
 	// TODO: Запустите tool server как отдельный процесс
 	// TODO: Настройте stdin/stdout для коммуникации
-	
+
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -112,7 +112,7 @@ func (c *StdioToolClient) CallTool(tool string, version string, arguments json.R
 	// TODO: Отправьте запрос в tool server через stdin
 	// TODO: Прочитайте ответ из stdout
 	// TODO: Верните результат
-	
+
 	return "", fmt.Errorf("not implemented")
 }
 
@@ -132,7 +132,7 @@ func (c *HTTPToolClient) CallTool(tool string, version string, arguments json.Ra
 	// TODO: Отправьте HTTP POST запрос
 	// TODO: Обработайте ответ
 	// TODO: Верните результат
-	
+
 	return "", fmt.Errorf("not implemented")
 }
 
@@ -154,7 +154,7 @@ func main() {
 	fmt.Println("Starting stdio tool server...\n")
 
 	server := NewStdioToolServer()
-	
+
 	// Регистрируем инструмент
 	server.RegisterTool(&ToolDefinition{
 		Name:           "check_status",
@@ -170,4 +170,3 @@ func main() {
 	_ = bufio.NewReader(os.Stdin)
 	_ = context.Background()
 }
-

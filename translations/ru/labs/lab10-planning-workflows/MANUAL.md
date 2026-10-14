@@ -95,9 +95,9 @@ prompt := fmt.Sprintf(`Разбей задачу на шаги с зависим
   ]
 }`, task)
 
-resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-    Model: "gpt-4o-mini",
-    Messages: []openai.ChatCompletionMessage{
+resp, _ := client.Complete(ctx, llm.Request{
+    Model: model, // Из LLM_MODEL (по умолчанию glm-5.3)
+    Messages: []llm.Message{
         {Role: "user", Content: prompt},
     },
 })

@@ -3,7 +3,7 @@
 ## 📝 Разбор решения
 
 ### Инициализация для Локальной модели
-Обратите внимание на использование `NewClientWithConfig`. Это стандартный паттерн для всех лабораторных.
+Обратите внимание на использование `llm.LoadConfig()` + `llm.NewOpenAI(...)`. Это стандартный паттерн для всех лабораторных.
 
 ### Как определить, умеет ли модель Function Calling?
 
@@ -46,12 +46,12 @@
 allowedTools := map[string]bool{
     "get_server_status": true,
 }
-if !allowedTools[call.Function.Name] {
-    return fmt.Errorf("unknown tool: %s", call.Function.Name)
+if !allowedTools[call.Name] {
+    return fmt.Errorf("unknown tool: %s", call.Name)
 }
 
 // 2. Валидация JSON
-if !json.Valid([]byte(call.Function.Arguments)) {
+if !json.Valid([]byte(call.Arguments)) {
     return fmt.Errorf("invalid JSON in arguments")
 }
 
@@ -59,7 +59,7 @@ if !json.Valid([]byte(call.Function.Arguments)) {
 var args struct {
     IP string `json:"ip"`
 }
-if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
     return fmt.Errorf("failed to parse arguments: %v", err)
 }
 if args.IP == "" {
@@ -99,8 +99,8 @@ systemPrompt := `You are a DevOps assistant. When user asks about server status,
 **Решение:**
 ```go
 // Валидация перед парсингом
-if !json.Valid([]byte(call.Function.Arguments)) {
-    return fmt.Errorf("invalid JSON: %s", call.Function.Arguments)
+if !json.Valid([]byte(call.Arguments)) {
+    return fmt.Errorf("invalid JSON: %s", call.Arguments)
 }
 ```
 
@@ -116,8 +116,8 @@ if !json.Valid([]byte(call.Function.Arguments)) {
 **Решение:**
 ```go
 // Валидация имени
-if call.Function.Name != "get_server_status" {
-    return fmt.Errorf("unknown function: %s. Available: get_server_status", call.Function.Name)
+if call.Name != "get_server_status" {
+    return fmt.Errorf("unknown function: %s. Available: get_server_status", call.Name)
 }
 ```
 
@@ -132,7 +132,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/kshvakov/agent/llm"
 )
 
 func runGetServerStatus(ip string) string {
@@ -143,46 +143,44 @@ func runGetServerStatus(ip string) string {
 }
 
 func main() {
-	// Config
-	token := os.Getenv("OPENAI_API_KEY")
-	if token == "" { token = "dummy" }
-	baseURL := os.Getenv("OPENAI_BASE_URL")
-	
-	config := openai.DefaultConfig(token)
-	if baseURL != "" {
-		config.BaseURL = baseURL
+	// Конфигурация: LLM_API_KEY / LLM_BASE_URL / LLM_MODEL из окружения (или из .env)
+	cfg, err := llm.LoadConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-	client := openai.NewClientWithConfig(config)
+	client := llm.NewOpenAI(
+		llm.WithAPIKey(cfg.APIKey),
+		llm.WithBaseURL(cfg.BaseURL),
+		llm.WithModel(cfg.Model),
+	)
 
 	// Tools
-	tools := []openai.Tool{
+	tools := []llm.ToolDef{
 		{
-			Type: openai.ToolTypeFunction,
-			Function: &openai.FunctionDefinition{
-				Name:        "get_server_status",
-				Description: "Get the status of a server by IP",
-				Parameters: json.RawMessage(`{
-					"type": "object",
-					"properties": {
-						"ip": { "type": "string", "description": "IP address of the server" }
-					},
-					"required": ["ip"]
-				}`),
-			},
+			Name:        "get_server_status",
+			Description: "Get the status of a server by IP",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"ip": { "type": "string", "description": "IP address of the server" }
+				},
+				"required": ["ip"]
+			}`),
 		},
 	}
 
 	// Request
-	req := openai.ChatCompletionRequest{
-		Model: "gpt-4o-mini",
-		Messages: []openai.ChatCompletionMessage{
-			{Role: openai.ChatMessageRoleUser, Content: "Is server 192.168.1.10 online?"},
+	req := llm.Request{
+		Model: cfg.Model,
+		Messages: []llm.Message{
+			{Role: "user", Content: "Is server 192.168.1.10 online?"},
 		},
 		Tools: tools,
 	}
 
 	ctx := context.Background()
-	resp, err := client.CreateChatCompletion(ctx, req)
+	resp, err := client.Complete(ctx, req)
 	if err != nil {
 		fmt.Printf("Error: %v\n(Check if your local server is running!)\n", err)
 		return
@@ -193,14 +191,14 @@ func main() {
 	// Handling
 	if len(msg.ToolCalls) > 0 {
 		call := msg.ToolCalls[0]
-		fmt.Printf("🤖 AI wants to call: %s\n", call.Function.Name)
-		fmt.Printf("📦 Arguments JSON: %s\n", call.Function.Arguments)
+		fmt.Printf("🤖 AI wants to call: %s\n", call.Name)
+		fmt.Printf("📦 Arguments JSON: %s\n", call.Arguments)
 
-		if call.Function.Name == "get_server_status" {
+		if call.Name == "get_server_status" {
 			var args struct {
 				IP string `json:"ip"`
 			}
-			json.Unmarshal([]byte(call.Function.Arguments), &args)
+			json.Unmarshal([]byte(call.Arguments), &args)
 
 			result := runGetServerStatus(args.IP)
 			fmt.Printf("✅ Execution Result: %s\n", result)

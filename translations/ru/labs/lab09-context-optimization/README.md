@@ -82,7 +82,7 @@
 
 ```go
 func estimateTokens(text string) int { /* len(text)/3 как байзлайн */ }
-func estimateMessages(msgs []openai.ChatCompletionMessage) int
+func estimateMessages(msgs []llm.Message) int
 ```
 
 Эти функции — **только для прикидки до отправки**. Не используйте их как первоисточник.
@@ -91,7 +91,7 @@ func estimateMessages(msgs []openai.ChatCompletionMessage) int
 
 ```go
 type Run struct {
-    messages     []openai.ChatCompletionMessage
+    messages     []llm.Message
     lastTokens   int  // resp.Usage.PromptTokens с прошлого ответа
     contextMax   int  // окно модели, например 128_000
     condenseDone bool
@@ -108,7 +108,7 @@ type Run struct {
 
 ```go
 func (r *Run) condense(ctx context.Context) error
-func safeTail(msgs []openai.ChatCompletionMessage, n int) []openai.ChatCompletionMessage
+func safeTail(msgs []llm.Message, n int) []llm.Message
 ```
 
 `safeTail` возвращает **не менее** N последних сообщений, расширяя границу влево, если хвост начинается с `tool` без своего `assistant.tool_call` в хвосте.

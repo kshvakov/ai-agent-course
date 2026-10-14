@@ -51,7 +51,7 @@
 
 Мы явно прописываем в системном промпте: *"Always ask for explicit confirmation before deleting anything"*.
 
-LLM (особенно GPT-4) хорошо следует этому правилу. Вместо генерации `ToolCall("delete_db")` она генерирует текст *"Are you sure you want to delete...?"*.
+Сильная LLM (модель из `LLM_MODEL`, по умолчанию glm-5.3) хорошо следует этому правилу. Вместо генерации `ToolCall("delete_db")` она генерирует текст *"Are you sure you want to delete...?"*.
 
 Поскольку это текст, внутренний цикл прерывается, и вопрос показывается пользователю.
 
@@ -78,14 +78,11 @@ LLM (особенно GPT-4) хорошо следует этому правил
 ### Шаг 1: Определение критических инструментов
 
 ```go
-tools := []openai.Tool{
+tools := []llm.ToolDef{
     {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "delete_db",
-            Description: "Delete a database by name. DANGEROUS ACTION.",
-            // ...
-        },
+        Name:        "delete_db",
+        Description: "Delete a database by name. DANGEROUS ACTION.",
+        // ...
     },
 }
 ```
@@ -112,7 +109,7 @@ for {
     
     // Внутренний цикл (Agent)
     for {
-        resp := client.CreateChatCompletion(...)
+        resp, err := client.Complete(ctx, req)
         msg := resp.Choices[0].Message
         messages = append(messages, msg)
         
@@ -143,7 +140,7 @@ for {
 
 **Решение:**
 1. Усильте System Prompt: "CRITICAL: Never delete without explicit confirmation"
-2. Используйте модель помощнее (GPT-4 вместо GPT-3.5)
+2. Используйте модель помощнее (задайте более мощную модель через `LLM_MODEL`)
 3. Добавьте Few-Shot примеры в промпт
 
 ### Ошибка 2: Агент не уточняет параметры
@@ -171,7 +168,7 @@ Agent: [Пытается вызвать send_email без темы и текст
 **Решение:**
 ```go
 // После подтверждения пользователя:
-messages = append(messages, ChatCompletionMessage{
+messages = append(messages, llm.Message{
     Role:    "user",
     Content: "yes",  // Подтверждение
 })

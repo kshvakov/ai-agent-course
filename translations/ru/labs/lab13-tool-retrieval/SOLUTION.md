@@ -15,7 +15,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/kshvakov/agent/llm"
 )
 
 // ... (toolCatalog, sampleLogs, типы остаются теми же) ...

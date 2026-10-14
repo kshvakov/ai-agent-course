@@ -30,7 +30,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/kshvakov/agent/llm"
 )
 
 // ---------------------- long-term memory ----------------------
@@ -126,33 +126,33 @@ func (s *FileStore) flush() error {
 // ---------------------- Run + condense ----------------------
 
 type Run struct {
-	messages     []openai.ChatCompletionMessage
+	messages     []llm.Message
 	lastTokens   int
 	contextMax   int
 	condenseDone bool
 
-	client *openai.Client
+	client llm.Client
 	model  string
-	tools  []openai.Tool
+	tools  []llm.ToolDef
 	store  Store
 }
 
-func NewRun(client *openai.Client, model string, contextMax int, store Store, systemPrompt string, tools []openai.Tool) *Run {
+func NewRun(client llm.Client, model string, contextMax int, store Store, systemPrompt string, tools []llm.ToolDef) *Run {
 	return &Run{
 		client:     client,
 		model:      model,
 		contextMax: contextMax,
 		store:      store,
 		tools:      tools,
-		messages: []openai.ChatCompletionMessage{
-			{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
+		messages: []llm.Message{
+			{Role: "system", Content: systemPrompt},
 		},
 	}
 }
 
 func (r *Run) Step(ctx context.Context, userInput string) (string, error) {
-	r.messages = append(r.messages, openai.ChatCompletionMessage{
-		Role: openai.ChatMessageRoleUser, Content: userInput,
+	r.messages = append(r.messages, llm.Message{
+		Role: "user", Content: userInput,
 	})
 
 	for {
@@ -186,18 +186,17 @@ func (r *Run) Step(ctx context.Context, userInput string) (string, error) {
 
 		for _, tc := range msg.ToolCalls {
 			result := r.dispatchTool(ctx, tc)
-			r.messages = append(r.messages, openai.ChatCompletionMessage{
-				Role:       openai.ChatMessageRoleTool,
+			r.messages = append(r.messages, llm.Message{
+				Role:       "tool",
 				ToolCallID: tc.ID,
-				Name:       tc.Function.Name,
 				Content:    result,
 			})
 		}
 	}
 }
 
-func (r *Run) callLLM(ctx context.Context) (openai.ChatCompletionResponse, error) {
-	return r.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+func (r *Run) callLLM(ctx context.Context) (*llm.Response, error) {
+	return r.client.Complete(ctx, llm.Request{
 		Model:       r.model,
 		Messages:    r.messages,
 		Tools:       r.tools,
@@ -219,10 +218,10 @@ func (r *Run) condense(ctx context.Context) error {
 		return err
 	}
 
-	next := make([]openai.ChatCompletionMessage, 0, 2+len(tail))
+	next := make([]llm.Message, 0, 2+len(tail))
 	next = append(next, system)
-	next = append(next, openai.ChatCompletionMessage{
-		Role:    openai.ChatMessageRoleUser,
+	next = append(next, llm.Message{
+		Role:    "user",
 		Content: "Контекст предыдущей работы:\n\n" + summary,
 	})
 	next = append(next, tail...)
@@ -234,18 +233,18 @@ func (r *Run) condense(ctx context.Context) error {
 
 // safeTail возвращает >=N последних сообщений, расширяя границу влево,
 // если первое сообщение в хвосте — tool result без своего assistant tool_call в хвосте.
-func safeTail(msgs []openai.ChatCompletionMessage, n int) []openai.ChatCompletionMessage {
+func safeTail(msgs []llm.Message, n int) []llm.Message {
 	if n > len(msgs)-1 {
 		n = len(msgs) - 1
 	}
 	start := len(msgs) - n
-	for start > 1 && msgs[start].Role == openai.ChatMessageRoleTool {
+	for start > 1 && msgs[start].Role == "tool" {
 		start--
 	}
 	return msgs[start:]
 }
 
-func (r *Run) summarize(ctx context.Context, head []openai.ChatCompletionMessage) (string, error) {
+func (r *Run) summarize(ctx context.Context, head []llm.Message) (string, error) {
 	var b strings.Builder
 	for _, m := range head {
 		if m.Content == "" {
@@ -257,18 +256,18 @@ func (r *Run) summarize(ctx context.Context, head []openai.ChatCompletionMessage
 		b.WriteString("\n")
 	}
 
-	resp, err := r.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+	resp, err := r.client.Complete(ctx, llm.Request{
 		Model:       r.model,
 		Temperature: 0,
-		Messages: []openai.ChatCompletionMessage{
-			{Role: openai.ChatMessageRoleSystem, Content: `Ты сжимаешь рабочую переписку агента в краткую справку для следующего шага.
+		Messages: []llm.Message{
+			{Role: "system", Content: `Ты сжимаешь рабочую переписку агента в краткую справку для следующего шага.
 Сохрани:
 1. Исходную задачу пользователя.
 2. Решения, которые уже приняты, и обоснования.
 3. Какие файлы / ресурсы прочитаны и что в них релевантно.
 4. Что ещё осталось сделать.
 Опусти вежливости и служебный шум.`},
-			{Role: openai.ChatMessageRoleUser, Content: b.String()},
+			{Role: "user", Content: b.String()},
 		},
 	})
 	if err != nil {
@@ -279,11 +278,11 @@ func (r *Run) summarize(ctx context.Context, head []openai.ChatCompletionMessage
 
 // ---------------------- tools dispatching ----------------------
 
-func (r *Run) dispatchTool(ctx context.Context, tc openai.ToolCall) string {
-	switch tc.Function.Name {
+func (r *Run) dispatchTool(ctx context.Context, tc llm.ToolCall) string {
+	switch tc.Name {
 	case "memory_save":
 		var args struct{ Key, Value string }
-		if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+		if err := json.Unmarshal([]byte(tc.Arguments), &args); err != nil {
 			return "error: " + err.Error()
 		}
 		if err := r.store.Save(ctx, args.Key, args.Value); err != nil {
@@ -293,7 +292,7 @@ func (r *Run) dispatchTool(ctx context.Context, tc openai.ToolCall) string {
 
 	case "memory_recall":
 		var args struct{ Query string }
-		if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+		if err := json.Unmarshal([]byte(tc.Arguments), &args); err != nil {
 			return "error: " + err.Error()
 		}
 		hits, err := r.store.Recall(ctx, args.Query)
@@ -305,7 +304,7 @@ func (r *Run) dispatchTool(ctx context.Context, tc openai.ToolCall) string {
 
 	case "memory_delete":
 		var args struct{ Key string }
-		if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+		if err := json.Unmarshal([]byte(tc.Arguments), &args); err != nil {
 			return "error: " + err.Error()
 		}
 		if err := r.store.Delete(ctx, args.Key); err != nil {
@@ -313,7 +312,7 @@ func (r *Run) dispatchTool(ctx context.Context, tc openai.ToolCall) string {
 		}
 		return "ok"
 	}
-	return "unknown tool: " + tc.Function.Name
+	return "unknown tool: " + tc.Name
 }
 
 func isContextOverflow(err error) bool {

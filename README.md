@@ -153,7 +153,7 @@ The course consists of a preparatory stage (Lab 00) and 12 main laboratory assig
 
 ## Environment Setup
 
-Labs with an LLM client (00–02, 04–11, 13) use the neutral `llm` package, configured via environment variables. They can be exported by hand or live in a `.env` file in the repo root (already in `.gitignore` — source it before running: `set -a; source .env; set +a`). Lab 03 (tool registry) and Lab 12 (tool server) have no LLM client by design; the Russian translation is not yet revised and still uses the old stack:
+Labs with an LLM client (00–02, 04–11, 13) use the neutral `llm` package, configured via environment variables. They can be exported by hand or live in a `.env` file in the repo root (already in `.gitignore` — source it before running: `set -a; source .env; set +a`). Lab 03 (tool registry) and Lab 12 (tool server) have no LLM client by design:
 
 *   `LLM_API_KEY` — required (local models accept any non-empty string);
 *   `LLM_BASE_URL` — provider endpoint, e.g. LM Studio;

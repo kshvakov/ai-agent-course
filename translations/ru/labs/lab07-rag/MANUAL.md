@@ -131,10 +131,11 @@ If you don't know the procedure, search first.`
 
 **Решение:**
 ```go
-// Убедитесь, что результат поиска добавлен в историю:
-messages = append(messages, ChatCompletionMessage{
-    Role:    "tool",
-    Content: searchResult,  // Агент должен это увидеть!
+// Убедитесь, что результат поиска добавлен в историю (связан с вызовом через ToolCallID):
+messages = append(messages, llm.Message{
+    Role:       "tool",
+    ToolCallID: call.ID,
+    Content:    searchResult,  // Агент должен это увидеть!
 })
 ```
 

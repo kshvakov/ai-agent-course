@@ -61,26 +61,20 @@ Supervisor собирает результаты и отвечает польз�
 ### Шаг 1: Определение инструментов для Supervisor
 
 ```go
-supervisorTools := []openai.Tool{
+supervisorTools := []llm.ToolDef{
     {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name: "ask_network_expert",
-            Description: "Ask the network specialist about connectivity, pings, ports.",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {"question": {"type": "string"}},
-                "required": ["question"]
-            }`),
-        },
+        Name: "ask_network_expert",
+        Description: "Ask the network specialist about connectivity, pings, ports.",
+        Parameters: json.RawMessage(`{
+            "type": "object",
+            "properties": {"question": {"type": "string"}},
+            "required": ["question"]
+        }`),
     },
     {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name: "ask_database_expert",
-            Description: "Ask the DB specialist about SQL, schemas, data.",
-            // ...
-        },
+        Name: "ask_database_expert",
+        Description: "Ask the DB specialist about SQL, schemas, data.",
+        // ...
     },
 }
 ```
@@ -90,29 +84,29 @@ supervisorTools := []openai.Tool{
 ### Шаг 2: Определение инструментов для Workers
 
 ```go
-netTools := []openai.Tool{
-    {Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{Name: "ping", Description: "Ping a host"}},
+netTools := []llm.ToolDef{
+    {Name: "ping", Description: "Ping a host"},
 }
 
-dbTools := []openai.Tool{
-    {Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{Name: "run_sql", Description: "Run SQL query"}},
+dbTools := []llm.ToolDef{
+    {Name: "run_sql", Description: "Run SQL query"},
 }
 ```
 
 ### Шаг 3: Функция запуска Worker-а
 
 ```go
-func runWorkerAgent(role, prompt, question string, tools []openai.Tool, client *openai.Client) string {
+func runWorkerAgent(role, prompt, question string, tools []llm.ToolDef, client llm.Client, model string) string {
     // Создаем НОВЫЙ контекст для работника
-    messages := []openai.ChatCompletionMessage{
-        {Role: openai.ChatMessageRoleSystem, Content: prompt},
-        {Role: openai.ChatMessageRoleUser, Content: question},
+    messages := []llm.Message{
+        {Role: "system", Content: prompt},
+        {Role: "user", Content: question},
     }
     
     // Простой цикл для работника (1-2 шага обычно)
     for i := 0; i < 5; i++ {
-        resp, _ := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-            Model: "gpt-4o-mini",
+        resp, _ := client.Complete(ctx, llm.Request{
+            Model: model, // Из LLM_MODEL (по умолчанию glm-5.3)
             Messages: messages,
             Tools: tools,
         })
@@ -125,7 +119,7 @@ func runWorkerAgent(role, prompt, question string, tools []openai.Tool, client *
         
         // Выполняем инструменты работника
         for _, tc := range msg.ToolCalls {
-            result := executeWorkerTool(tc.Function.Name)
+            result := executeWorkerTool(tc.Name)
             messages = append(messages, toolResult)
         }
     }
@@ -137,7 +131,7 @@ func runWorkerAgent(role, prompt, question string, tools []openai.Tool, client *
 
 ```go
 for i := 0; i < 10; i++ {
-    resp := client.CreateChatCompletion(ctx, supervisorRequest)
+    resp, err := client.Complete(ctx, supervisorRequest)
     msg := resp.Choices[0].Message
     messages = append(messages, msg)
     
@@ -148,15 +142,15 @@ for i := 0; i < 10; i++ {
     
     for _, tc := range msg.ToolCalls {
         var workerResponse string
-        if tc.Function.Name == "ask_network_expert" {
-            workerResponse = runWorkerAgent("NetworkAdmin", "You are a Network Admin", question, netTools, client)
-        } else if tc.Function.Name == "ask_database_expert" {
-            workerResponse = runWorkerAgent("DBAdmin", "You are a DBA", question, dbTools, client)
+        if tc.Name == "ask_network_expert" {
+            workerResponse = runWorkerAgent("NetworkAdmin", "You are a Network Admin", question, netTools, client, model)
+        } else if tc.Name == "ask_database_expert" {
+            workerResponse = runWorkerAgent("DBAdmin", "You are a DBA", question, dbTools, client, model)
         }
         
         // Возвращаем ответ работника Supervisor-у
-        messages = append(messages, ChatCompletionMessage{
-            Role: openai.ChatMessageRoleTool,
+        messages = append(messages, llm.Message{
+            Role: "tool",
             Content: workerResponse,
             ToolCallID: tc.ID,
         })
@@ -178,7 +172,7 @@ for i := 0; i < 10; i++ {
 runWorkerAgent(supervisorMessages, ...)  // Worker видит всю историю!
 
 // ХОРОШО
-runWorkerAgent([]ChatCompletionMessage{systemMsg, questionMsg}, ...)  // Только своя задача
+runWorkerAgent([]llm.Message{systemMsg, questionMsg}, ...)  // Только своя задача
 ```
 
 ### Ошибка 2: Supervisor не получает ответ Worker-а
@@ -190,8 +184,8 @@ runWorkerAgent([]ChatCompletionMessage{systemMsg, questionMsg}, ...)  // Тол�
 **Решение:**
 ```go
 // ОБЯЗАТЕЛЬНО добавляйте ответ Worker-а:
-messages = append(messages, ChatCompletionMessage{
-    Role: openai.ChatMessageRoleTool,
+messages = append(messages, llm.Message{
+    Role: "tool",
     Content: workerResponse,  // Supervisor должен это увидеть!
     ToolCallID: tc.ID,
 })

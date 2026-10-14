@@ -88,8 +88,6 @@ func logWithRedaction(runID string, data map[string]any) {
 
 ### Точка интеграции: граница логов, а не вход модели
 
-> **Примечание:** лаба пока не ревизована (остаётся на старом стеке) — используйте её как наводку, канон маскирования — в этой главе.
-
 В [`labs/lab05-human-interaction/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab05-human-interaction/main.go) вход пользователя уходит в модель **как есть** — агенту нужны данные для задачи. Маскирование — в момент записи в лог/трейс:
 
 ```go

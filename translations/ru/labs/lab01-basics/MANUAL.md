@@ -33,7 +33,7 @@
 **Пример:**
 
 ```go
-messages := []ChatCompletionMessage{
+messages := []llm.Message{
     {Role: "system", Content: "Ты опытный Linux администратор"},
     {Role: "user", Content: "Как проверить статус сервиса?"},
     {Role: "assistant", Content: "Используйте команду systemctl status nginx"},
@@ -48,19 +48,24 @@ messages := []ChatCompletionMessage{
 ### Шаг 1: Инициализация клиента
 
 ```go
-config := openai.DefaultConfig(token)
-if baseURL != "" {
-    config.BaseURL = baseURL  // Для локальных моделей
+cfg, err := llm.LoadConfig() // LLM_API_KEY / LLM_BASE_URL / LLM_MODEL из окружения (или из .env)
+if err != nil {
+    fmt.Fprintln(os.Stderr, err)
+    os.Exit(1)
 }
-client := openai.NewClientWithConfig(config)
+client := llm.NewOpenAI(
+    llm.WithAPIKey(cfg.APIKey),
+    llm.WithBaseURL(cfg.BaseURL), // Для локальных моделей
+    llm.WithModel(cfg.Model),
+)
 ```
 
 ### Шаг 2: Создание истории
 
 ```go
-messages := []openai.ChatCompletionMessage{
+messages := []llm.Message{
     {
-        Role:    openai.ChatMessageRoleSystem,
+        Role:    "system",
         Content: "Ты опытный Linux администратор. Отвечай кратко и по делу.",
     },
 }
@@ -76,14 +81,14 @@ for {
     input := readUserInput()
     
     // 2. Добавляем в историю
-    messages = append(messages, openai.ChatCompletionMessage{
-        Role:    openai.ChatMessageRoleUser,
+    messages = append(messages, llm.Message{
+        Role:    "user",
         Content: input,
     })
     
     // 3. Отправляем ВСЮ историю в API
-    resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-        Model:    "gpt-4o-mini",
+    resp, err := client.Complete(ctx, llm.Request{
+        Model:    cfg.Model, // Из LLM_MODEL (по умолчанию glm-5.3)
         Messages: messages,  // Вся история!
     })
     
@@ -91,8 +96,8 @@ for {
     answer := resp.Choices[0].Message.Content
     
     // 5. Сохраняем ответ в историю
-    messages = append(messages, openai.ChatCompletionMessage{
-        Role:    openai.ChatMessageRoleAssistant,
+    messages = append(messages, llm.Message{
+        Role:    "assistant",
         Content: answer,
     })
 }
@@ -110,13 +115,13 @@ for {
 ```go
 // ПЛОХО
 messages = append(messages, userMessage)
-resp := client.CreateChatCompletion(...)
+resp, _ := client.Complete(ctx, req)
 answer := resp.Choices[0].Message.Content
 // История не обновлена!
 
 // ХОРОШО
 messages = append(messages, userMessage)
-resp := client.CreateChatCompletion(...)
+resp, _ := client.Complete(ctx, req)
 messages = append(messages, resp.Choices[0].Message)  // Сохраняем ответ!
 ```
 
@@ -129,7 +134,7 @@ messages = append(messages, resp.Choices[0].Message)  // Сохраняем от
 **Решение:**
 ```go
 // System Prompt должен быть ПЕРВЫМ сообщением
-messages := []openai.ChatCompletionMessage{
+messages := []llm.Message{
     {Role: "system", Content: "Ты DevOps инженер"},  // Первое!
     {Role: "user", Content: "..."},
 }
@@ -147,7 +152,7 @@ messages := []openai.ChatCompletionMessage{
 if len(messages) > maxHistoryLength {
     // Оставляем System Prompt + последние N-1 сообщений
     messages = append(
-        []openai.ChatCompletionMessage{messages[0]},  // System
+        []llm.Message{messages[0]},  // System
         messages[len(messages)-maxHistoryLength+1:]...,  // Последние
     )
 }
@@ -169,8 +174,6 @@ if len(messages) > maxHistoryLength {
 Подсчитайте, сколько токенов используется в истории:
 
 ```go
-import "github.com/sashabaranov/go-openai"
-
 // Примерная оценка (1 токен ≈ 4 символа)
 tokenCount := 0
 for _, msg := range messages {

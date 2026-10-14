@@ -6,30 +6,26 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/kshvakov/agent/llm"
 )
 
 func main() {
-	// 1. Настройка клиента (OpenAI или Local LLM)
-	token := os.Getenv("OPENAI_API_KEY")
-	baseURL := os.Getenv("OPENAI_BASE_URL")
-
-	if token == "" {
-		token = "dummy-token" // Для локальных моделей токен часто не важен
-		fmt.Println("Warning: OPENAI_API_KEY is not set. Using dummy token.")
+	// 1. Настройка клиента: LLM_API_KEY / LLM_BASE_URL / LLM_MODEL из окружения (или из .env)
+	cfg, err := llm.LoadConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-
-	config := openai.DefaultConfig(token)
-	if baseURL != "" {
-		config.BaseURL = baseURL
-		fmt.Printf("Using Custom Base URL: %s\n", baseURL)
-	}
-
-	// client := openai.NewClientWithConfig(config)
-	// _ = client // TODO: remove this
+	client := llm.NewOpenAI(
+		llm.WithAPIKey(cfg.APIKey),
+		llm.WithBaseURL(cfg.BaseURL),
+		llm.WithModel(cfg.Model),
+	)
+	_ = client // TODO: используйте client.Complete(ctx, req) в шаге 4
 
 	// 2. Инициализируйте историю сообщений
-	// messages := ...
+	var messages []llm.Message // TODO: Инициализируйте историю сообщений (начните с system prompt)
+	_ = messages
 
 	reader := bufio.NewReader(os.Stdin)
 	ctx := context.Background()
@@ -40,24 +36,27 @@ func main() {
 		fmt.Print("> ")
 
 		var input string
-		fmt.Scanln(&input) // Warning: Scanln reads only one word. Better use reader.ReadString('\n')
-		_ = reader         // TODO: Use reader instead of Scanln
+		fmt.Scanln(&input) // Внимание: Scanln читает только одно слово. Лучше использовать reader.ReadString('\n')
+		_ = reader         // TODO: Используйте reader вместо Scanln
 
 		if input == "exit" {
 			break
 		}
 
-		// 3. Add User message to history
+		// 3. Добавьте сообщение пользователя в историю
+		// messages = append(messages, llm.Message{Role: "user", Content: input})
 
-		// 4. Call API
-		// req := openai.ChatCompletionRequest{
-		//     // Для локальных моделей имя модели часто игнорируется, но лучше указать что-то
-		//     Model: "gpt-4o-mini",
-		//     Messages: messages,
+		// 4. Вызов API
+		// req := llm.Request{
+		//     Model:    cfg.Model,
+		//     Messages: messages, // Вся история!
 		// }
-		// resp, err := client.CreateChatCompletion(ctx, req)
+		// resp, err := client.Complete(ctx, req)
 
-		// 5. Handle response & Add Assistant message to history
+		// 5. Обработайте ответ и добавьте сообщение ассистента в историю
+		// answer := resp.Choices[0].Message.Content
+		// fmt.Println("AI:", answer)
+		// messages = append(messages, llm.Message{Role: "assistant", Content: answer})
 		_ = ctx
 	}
 }

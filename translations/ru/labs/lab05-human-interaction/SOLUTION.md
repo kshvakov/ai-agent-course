@@ -35,9 +35,9 @@ func calculateRisk(toolName string, args json.RawMessage) float64 {
 }
 
 // Проверка наличия подтверждения в истории
-func hasConfirmationInHistory(messages []openai.ChatCompletionMessage) bool {
+func hasConfirmationInHistory(messages []llm.Message) bool {
     for _, msg := range messages {
-        if msg.Role == openai.ChatMessageRoleUser {
+        if msg.Role == "user" {
             content := strings.ToLower(strings.TrimSpace(msg.Content))
             if content == "yes" || content == "подтверждаю" || strings.Contains(content, "confirm") {
                 return true
@@ -48,9 +48,9 @@ func hasConfirmationInHistory(messages []openai.ChatCompletionMessage) bool {
 }
 
 // Модифицированная функция выполнения инструмента
-func executeToolWithSafetyCheck(toolCall openai.ToolCall, messages []openai.ChatCompletionMessage) (string, error) {
+func executeToolWithSafetyCheck(toolCall llm.ToolCall, messages []llm.Message) (string, error) {
     // Проверка риска на уровне Runtime
-    riskScore := calculateRisk(toolCall.Function.Name, json.RawMessage(toolCall.Function.Arguments))
+    riskScore := calculateRisk(toolCall.Name, json.RawMessage(toolCall.Arguments))
     
     if riskScore > 0.8 {
         // Проверяем, было ли подтверждение
@@ -70,7 +70,7 @@ func executeToolWithSafetyCheck(toolCall openai.ToolCall, messages []openai.Chat
 ```go
 // В цикле выполнения инструментов
 for _, toolCall := range msg.ToolCalls {
-    fmt.Printf("  [⚙️ System] Checking tool: %s\n", toolCall.Function.Name)
+    fmt.Printf("  [⚙️ System] Checking tool: %s\n", toolCall.Name)
     
     result, err := executeToolWithSafetyCheck(toolCall, messages)
     if err != nil {
@@ -81,8 +81,8 @@ for _, toolCall := range msg.ToolCalls {
     // Если требуется подтверждение — НЕ выполняем, а возвращаем в модель
     if strings.Contains(result, "REQUIRES_CONFIRMATION") {
         // Добавляем результат как tool message
-        messages = append(messages, openai.ChatCompletionMessage{
-            Role:       openai.ChatMessageRoleTool,
+        messages = append(messages, llm.Message{
+            Role:       "tool",
             Content:    result,  // Модель увидит "REQUIRES_CONFIRMATION"
             ToolCallID: toolCall.ID,
         })
@@ -94,8 +94,8 @@ for _, toolCall := range msg.ToolCalls {
     
     // Если подтверждение получено — выполняем инструмент
     fmt.Printf("  [✅ Result] %s\n", result)
-    messages = append(messages, openai.ChatCompletionMessage{
-        Role:       openai.ChatMessageRoleTool,
+    messages = append(messages, llm.Message{
+        Role:       "tool",
         Content:    result,
         ToolCallID: toolCall.ID,
     })
@@ -150,7 +150,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/kshvakov/agent/llm"
 )
 
 // --- Mock Tools ---
@@ -164,51 +164,48 @@ func sendEmail(to, subject, body string) string {
 }
 
 func main() {
-	// Config
-	token := os.Getenv("OPENAI_API_KEY")
-	if token == "" { token = "dummy" }
-	config := openai.DefaultConfig(token)
-	if baseURL := os.Getenv("OPENAI_BASE_URL"); baseURL != "" {
-		config.BaseURL = baseURL
+	// Конфигурация клиента: LLM_API_KEY / LLM_BASE_URL / LLM_MODEL из окружения (или из .env)
+	cfg, err := llm.LoadConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-	client := openai.NewClientWithConfig(config)
+	client := llm.NewOpenAI(
+		llm.WithAPIKey(cfg.APIKey),
+		llm.WithBaseURL(cfg.BaseURL),
+		llm.WithModel(cfg.Model),
+	)
 	
 	ctx := context.Background()
 
-	tools := []openai.Tool{
+	tools := []llm.ToolDef{
 		{
-			Type: openai.ToolTypeFunction,
-			Function: &openai.FunctionDefinition{
-				Name:        "delete_db",
-				Description: "Delete a database by name. DANGEROUS.",
-				Parameters: json.RawMessage(`{
-					"type": "object",
-					"properties": { "name": { "type": "string" } },
-					"required": ["name"]
-				}`),
-			},
+			Name:        "delete_db",
+			Description: "Delete a database by name. DANGEROUS.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": { "name": { "type": "string" } },
+				"required": ["name"]
+			}`),
 		},
 		{
-			Type: openai.ToolTypeFunction,
-			Function: &openai.FunctionDefinition{
-				Name:        "send_email",
-				Description: "Send an email",
-				Parameters: json.RawMessage(`{
-					"type": "object",
-					"properties": {
-						"to": { "type": "string" },
-						"subject": { "type": "string" },
-						"body": { "type": "string" }
-					},
-					"required": ["to", "subject", "body"]
-				}`),
-			},
+			Name:        "send_email",
+			Description: "Send an email",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"to": { "type": "string" },
+					"subject": { "type": "string" },
+					"body": { "type": "string" }
+				},
+				"required": ["to", "subject", "body"]
+			}`),
 		},
 	}
 
-	messages := []openai.ChatCompletionMessage{
+	messages := []llm.Message{
 		{
-			Role:    openai.ChatMessageRoleSystem,
+			Role:    "system",
 			Content: "You are a helpful assistant. IMPORTANT: 1) Always ask for explicit confirmation before deleting anything. 2) If user parameters are missing, ask clarifying questions.",
 		},
 	}
@@ -228,20 +225,20 @@ func main() {
 			continue
 		}
 
-		messages = append(messages, openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleUser,
+		messages = append(messages, llm.Message{
+			Role:    "user",
 			Content: input,
 		})
 
 		// Agent Execution Loop
 		for {
-			req := openai.ChatCompletionRequest{
-				Model:    openai.GPT4,
+			req := llm.Request{
+				Model:    cfg.Model, // Из LLM_MODEL (по умолчанию glm-5.3)
 				Messages: messages,
 				Tools:    tools,
 			}
 
-			resp, err := client.CreateChatCompletion(ctx, req)
+			resp, err := client.Complete(ctx, req)
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				break
@@ -258,23 +255,23 @@ func main() {
 
 			// Если это инструменты - выполняем их автономно
 			for _, toolCall := range msg.ToolCalls {
-				fmt.Printf("  [⚙️ System] Executing tool: %s\n", toolCall.Function.Name)
+				fmt.Printf("  [⚙️ System] Executing tool: %s\n", toolCall.Name)
 
 				var result string
-				if toolCall.Function.Name == "delete_db" {
+				if toolCall.Name == "delete_db" {
 					var args struct { Name string `json:"name"` }
-					json.Unmarshal([]byte(toolCall.Function.Arguments), &args)
+					json.Unmarshal([]byte(toolCall.Arguments), &args)
 					result = deleteDB(args.Name)
-				} else if toolCall.Function.Name == "send_email" {
+				} else if toolCall.Name == "send_email" {
 					var args struct { To, Subject, Body string }
-					json.Unmarshal([]byte(toolCall.Function.Arguments), &args)
+					json.Unmarshal([]byte(toolCall.Arguments), &args)
 					result = sendEmail(args.To, args.Subject, args.Body)
 				}
 
 				fmt.Printf("  [✅ Result] %s\n", result)
 
-				messages = append(messages, openai.ChatCompletionMessage{
-					Role:       openai.ChatMessageRoleTool,
+				messages = append(messages, llm.Message{
+					Role:       "tool",
 					Content:    result,
 					ToolCallID: toolCall.ID,
 				})

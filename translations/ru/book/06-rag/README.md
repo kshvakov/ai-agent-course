@@ -166,7 +166,7 @@ msg2 := resp2.Choices[0].Message
 
 ## Простой RAG vs Векторный поиск
 
-Простой RAG (поиск по ключевым словам) реализуется в [Lab 07](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab07-rag) — лаба пока не ревизована и будет обновлена отдельным этапом. В продакшене используется **векторный поиск** (Semantic Search), который ищет по смыслу, а не по словам.
+Простой RAG (поиск по ключевым словам) реализуется в [Lab 07](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab07-rag), переведена на нейтральный клиент. В продакшене используется **векторный поиск** (Semantic Search), который ищет по смыслу, а не по словам.
 
 **Простой RAG ([Lab 07](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab07-rag)):**
 ```go

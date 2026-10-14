@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/kshvakov/agent/llm"
 )
 
 // estimateTokens — грубая прикидка количества токенов в строке.
@@ -22,43 +22,44 @@ func estimateTokens(text string) int {
 	return len(text)/3 + 1
 }
 
-// estimateMessages — прикидка для всей истории, с учётом tool calls и envelope.
-func estimateMessages(msgs []openai.ChatCompletionMessage) int {
+// estimateMessages — прикидка для всей истории, с учётом
+// tool calls и envelope на каждое сообщение.
+func estimateMessages(msgs []llm.Message) int {
 	// TODO 1: пройтись по сообщениям, прибавить estimateTokens(content),
-	// 4 токена per-message overhead, для каждого ToolCall — estimateTokens(name)
-	// + estimateTokens(args) + 8.
+	// 4 токена per-message overhead, для каждого ToolCall —
+	// estimateTokens(name) + estimateTokens(args) + 8.
 	return 0
 }
 
 // Run — состояние одного «прогона» агента.
 // system живёт в messages[0] и НЕ меняется в течение Run.
 type Run struct {
-	messages     []openai.ChatCompletionMessage
+	messages     []llm.Message
 	lastTokens   int  // resp.Usage.PromptTokens с прошлого ответа
 	contextMax   int  // окно модели; берите из конфигурации, не хардкод
 	condenseDone bool // лимит: один condense на Run
 
-	client *openai.Client
+	client llm.Client
 	model  string
-	tools  []openai.Tool
+	tools  []llm.ToolDef
 }
 
-func NewRun(client *openai.Client, model string, contextMax int, systemPrompt string, tools []openai.Tool) *Run {
+func NewRun(client llm.Client, model string, contextMax int, systemPrompt string, tools []llm.ToolDef) *Run {
 	return &Run{
 		client:     client,
 		model:      model,
 		contextMax: contextMax,
 		tools:      tools,
-		messages: []openai.ChatCompletionMessage{
-			{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
+		messages: []llm.Message{
+			{Role: "system", Content: systemPrompt},
 		},
 	}
 }
 
 // Step добавляет ввод пользователя, гоняет цикл с tool calls, возвращает финальный текст.
 func (r *Run) Step(ctx context.Context, userInput string) (string, error) {
-	r.messages = append(r.messages, openai.ChatCompletionMessage{
-		Role:    openai.ChatMessageRoleUser,
+	r.messages = append(r.messages, llm.Message{
+		Role:    "user",
 		Content: userInput,
 	})
 
@@ -69,7 +70,7 @@ func (r *Run) Step(ctx context.Context, userInput string) (string, error) {
 		resp, err := r.callLLM(ctx)
 		if err != nil {
 			// TODO 3: реактивный condense на ContextOverflow + ровно один повтор.
-			// Если повтор тоже падает с overflow — fail с понятной ошибкой.
+			// Если повтор тоже падает с overflow — вернуть понятную ошибку.
 			return "", err
 		}
 
@@ -85,18 +86,17 @@ func (r *Run) Step(ctx context.Context, userInput string) (string, error) {
 
 		for _, tc := range msg.ToolCalls {
 			result := r.dispatchTool(ctx, tc)
-			r.messages = append(r.messages, openai.ChatCompletionMessage{
-				Role:       openai.ChatMessageRoleTool,
+			r.messages = append(r.messages, llm.Message{
+				Role:       "tool",
 				ToolCallID: tc.ID,
-				Name:       tc.Function.Name,
 				Content:    result,
 			})
 		}
 	}
 }
 
-func (r *Run) callLLM(ctx context.Context) (openai.ChatCompletionResponse, error) {
-	return r.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+func (r *Run) callLLM(ctx context.Context) (*llm.Response, error) {
+	return r.client.Complete(ctx, llm.Request{
 		Model:       r.model,
 		Messages:    r.messages,
 		Tools:       r.tools,
@@ -118,13 +118,14 @@ func (r *Run) logUsage() {
 }
 
 // safeTail возвращает >=N последних сообщений, расширяя границу влево,
-// если хвост начинается с tool result без своего assistant tool_call в хвосте.
-func safeTail(msgs []openai.ChatCompletionMessage, n int) []openai.ChatCompletionMessage {
+// если хвост начинается с tool result, для которого парного assistant tool_call
+// нет в хвосте.
+func safeTail(msgs []llm.Message, n int) []llm.Message {
 	if n > len(msgs)-1 {
 		n = len(msgs) - 1
 	}
 	start := len(msgs) - n
-	for start > 1 && msgs[start].Role == openai.ChatMessageRoleTool {
+	for start > 1 && msgs[start].Role == "tool" {
 		start--
 	}
 	return msgs[start:]
@@ -149,29 +150,30 @@ func (r *Run) condense(ctx context.Context) error {
 }
 
 // summarize вызывает LLM, чтобы получить краткую справку по куску истории.
-func (r *Run) summarize(ctx context.Context, head []openai.ChatCompletionMessage) (string, error) {
+func (r *Run) summarize(ctx context.Context, head []llm.Message) (string, error) {
 	// TODO 5: соберите input как линейный текст ("role: content\n"),
 	// вызовите r.client с системным промптом из MANUAL.md (раздел «Шаг 4: condense»),
-	// верните Choices[0].Message.Content.
+	// и верните Choices[0].Message.Content.
 	return "", fmt.Errorf("summarize not implemented")
 }
 
-// dispatchTool — пример простого fake-инструмента, чтобы демо могло крутить tool calls
+// dispatchTool — простой fake-инструмент, чтобы демо могло крутить tool calls
 // и проверять защиту пар при condense.
-func (r *Run) dispatchTool(ctx context.Context, tc openai.ToolCall) string {
-	switch tc.Function.Name {
+func (r *Run) dispatchTool(ctx context.Context, tc llm.ToolCall) string {
+	switch tc.Name {
 	case "fake_lookup":
 		var args struct {
 			Query string `json:"query"`
 		}
-		_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
+		_ = json.Unmarshal([]byte(tc.Arguments), &args)
 		return fmt.Sprintf("result for %q: ok", args.Query)
 	}
-	return "unknown tool: " + tc.Function.Name
+	return "unknown tool: " + tc.Name
 }
 
 // isContextOverflow возвращает true, если ошибка похожа на переполнение окна.
-// TODO 6: распарсите ошибку OpenAI SDK или проверьте подстроку "context_length"/"context window".
+// TODO 6: распарсите ошибку OpenAI SDK или проверьте подстроки
+// "context_length" / "context window".
 func isContextOverflow(err error) bool {
 	if err == nil {
 		return false
@@ -185,20 +187,20 @@ func isContextOverflow(err error) bool {
 func jsonSchema(s string) json.RawMessage { return json.RawMessage(s) }
 
 func main() {
-	token := os.Getenv("OPENAI_API_KEY")
-	baseURL := os.Getenv("OPENAI_BASE_URL")
-	if token == "" {
-		token = "dummy"
+	// Конфигурация клиента: LLM_API_KEY / LLM_BASE_URL / LLM_MODEL из окружения (или из .env)
+	cfg, err := llm.LoadConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
+	client := llm.NewOpenAI(
+		llm.WithAPIKey(cfg.APIKey),
+		llm.WithBaseURL(cfg.BaseURL),
+		llm.WithModel(cfg.Model),
+	)
 
-	cfg := openai.DefaultConfig(token)
-	if baseURL != "" {
-		cfg.BaseURL = baseURL
-	}
-	client := openai.NewClientWithConfig(cfg)
-
-	tools := []openai.Tool{
-		{Type: openai.ToolTypeFunction, Function: &openai.FunctionDefinition{
+	tools := []llm.ToolDef{
+		{
 			Name:        "fake_lookup",
 			Description: "Fake lookup tool used to exercise tool_call/tool_result pairs in the history.",
 			Parameters: jsonSchema(`{
@@ -206,7 +208,7 @@ func main() {
 				"properties":{"query":{"type":"string"}},
 				"required":["query"]
 			}`),
-		}},
+		},
 	}
 
 	systemPrompt := "Ты ассистент. Отвечай кратко и по существу. Если нужен поиск — вызывай fake_lookup."
@@ -215,7 +217,7 @@ func main() {
 	// В проде значение приходит из метаданных модели или конфигурации.
 	const contextMax = 4_000
 
-	run := NewRun(client, "gpt-4o-mini", contextMax, systemPrompt, tools)
+	run := NewRun(client, cfg.Model, contextMax, systemPrompt, tools)
 
 	ctx := context.Background()
 

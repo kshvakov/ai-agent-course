@@ -20,7 +20,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/kshvakov/agent/llm"
 )
 
 // База знаний
@@ -59,53 +59,47 @@ func searchKnowledgeBase(query string) string {
 }
 
 func main() {
-	// Config
-	token := os.Getenv("OPENAI_API_KEY")
-	if token == "" { token = "dummy" }
-	config := openai.DefaultConfig(token)
-	if baseURL := os.Getenv("OPENAI_BASE_URL"); baseURL != "" {
-		config.BaseURL = baseURL
+	// Конфигурация клиента: LLM_API_KEY / LLM_BASE_URL / LLM_MODEL из окружения (или из .env)
+	cfg, err := llm.LoadConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-	client := openai.NewClientWithConfig(config)
+	client := llm.NewOpenAI(
+		llm.WithAPIKey(cfg.APIKey),
+		llm.WithBaseURL(cfg.BaseURL),
+		llm.WithModel(cfg.Model),
+	)
 	
 	ctx := context.Background()
 
 	// Tools
-	tools := []openai.Tool{
+	tools := []llm.ToolDef{
 		{
-			Type: openai.ToolTypeFunction,
-			Function: &openai.FunctionDefinition{
-				Name:        "search_knowledge_base",
-				Description: "Search the knowledge base for policies, guides, and procedures. ALWAYS use this before any action that might have a policy or procedure.",
-				Parameters: json.RawMessage(`{
-					"type": "object",
-					"properties": {
-						"query": {"type": "string", "description": "Search query (e.g., 'restart', 'backup', 'phoenix')"}
-					},
-					"required": ["query"]
-				}`),
-			},
+			Name:        "search_knowledge_base",
+			Description: "Search the knowledge base for policies, guides, and procedures. ALWAYS use this before any action that might have a policy or procedure.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"query": {"type": "string", "description": "Search query (e.g., 'restart', 'backup', 'phoenix')"}
+				},
+				"required": ["query"]
+			}`),
 		},
 		{
-			Type: openai.ToolTypeFunction,
-			Function: &openai.FunctionDefinition{
-				Name:        "run_backup",
-				Description: "Run database backup. Required before server restarts.",
-			},
+			Name:        "run_backup",
+			Description: "Run database backup. Required before server restarts.",
 		},
 		{
-			Type: openai.ToolTypeFunction,
-			Function: &openai.FunctionDefinition{
-				Name:        "restart_server",
-				Description: "Restart a server by name",
-				Parameters: json.RawMessage(`{
-					"type": "object",
-					"properties": {
-						"name": {"type": "string"}
-					},
-					"required": ["name"]
-				}`),
-			},
+			Name:        "restart_server",
+			Description: "Restart a server by name",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"name": {"type": "string"}
+				},
+				"required": ["name"]
+			}`),
 		},
 	}
 
@@ -113,25 +107,26 @@ func main() {
 CRITICAL RULE: Before ANY restart action, you MUST search the knowledge base for policies and procedures.
 If you don't know the procedure, search first. Always follow the policies you find.`
 
-	messages := []openai.ChatCompletionMessage{
-		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
-		{Role: openai.ChatMessageRoleUser, Content: "Перезагрузи сервер Phoenix согласно регламенту"},
+	messages := []llm.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: "Перезагрузи сервер Phoenix согласно регламенту"},
 	}
 
 	fmt.Println("🏁 Starting Agent with RAG...\n")
 
 	// THE AGENT LOOP
 	for i := 0; i < 10; i++ {
-		req := openai.ChatCompletionRequest{
-			Model:    "gpt-4o-mini",
+		req := llm.Request{
+			Model:    cfg.Model, // Из LLM_MODEL (по умолчанию glm-5.3)
 			Messages: messages,
 			Tools:    tools,
 			Temperature: 0.1,
 		}
 
-		resp, err := client.CreateChatCompletion(ctx, req)
+		resp, err := client.Complete(ctx, req)
 		if err != nil {
-			panic(err)
+			fmt.Fprintf(os.Stderr, "API Error: %v\n", err)
+			os.Exit(1)
 		}
 
 		msg := resp.Choices[0].Message
@@ -143,15 +138,15 @@ If you don't know the procedure, search first. Always follow the policies you fi
 		}
 
 		for _, toolCall := range msg.ToolCalls {
-			fmt.Printf("🤖 Agent decided to call: %s\n", toolCall.Function.Name)
+			fmt.Printf("🤖 Agent decided to call: %s\n", toolCall.Name)
 			
 			var result string
-			switch toolCall.Function.Name {
+			switch toolCall.Name {
 			case "search_knowledge_base":
 				var args struct {
 					Query string `json:"query"`
 				}
-				json.Unmarshal([]byte(toolCall.Function.Arguments), &args)
+				json.Unmarshal([]byte(toolCall.Arguments), &args)
 				result = searchKnowledgeBase(args.Query)
 			case "run_backup":
 				result = runBackup()
@@ -159,14 +154,14 @@ If you don't know the procedure, search first. Always follow the policies you fi
 				var args struct {
 					Name string `json:"name"`
 				}
-				json.Unmarshal([]byte(toolCall.Function.Arguments), &args)
+				json.Unmarshal([]byte(toolCall.Arguments), &args)
 				result = restartServer(args.Name)
 			}
 
 			fmt.Printf("   Result: %s\n", result)
 
-			messages = append(messages, openai.ChatCompletionMessage{
-				Role:       openai.ChatMessageRoleTool,
+			messages = append(messages, llm.Message{
+				Role:       "tool",
 				Content:    result,
 				ToolCallID: toolCall.ID,
 			})

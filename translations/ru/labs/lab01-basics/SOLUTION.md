@@ -6,14 +6,19 @@
 ## 📝 Разбор решения
 
 ### 1. Инициализация Клиента (Local & Cloud)
-Мы добавили проверку `OPENAI_BASE_URL`. Это позволяет переключаться между облаком (OpenAI) и локальным сервером (LM Studio, Ollama, vLLM) без переписывания кода.
+`llm.LoadConfig()` читает `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` (экспортированные или загруженные из `.env`). Это позволяет переключаться между облаком и локальным сервером (LM Studio, Ollama, vLLM) без переписывания кода.
 
 ```go
-config := openai.DefaultConfig(token)
-if baseURL != "" {
-    config.BaseURL = baseURL
+cfg, err := llm.LoadConfig()
+if err != nil {
+    fmt.Fprintln(os.Stderr, err)
+    os.Exit(1)
 }
-client := openai.NewClientWithConfig(config)
+client := llm.NewOpenAI(
+    llm.WithAPIKey(cfg.APIKey),
+    llm.WithBaseURL(cfg.BaseURL),
+    llm.WithModel(cfg.Model),
+)
 ```
 
 ### 2. Управление Памятью (Context Loop)
@@ -31,31 +36,26 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/kshvakov/agent/llm"
 )
 
 func main() {
-	// Конфигурация клиента
-	token := os.Getenv("OPENAI_API_KEY")
-	baseURL := os.Getenv("OPENAI_BASE_URL")
-
-	if token == "" {
-		token = "local-token"
-		fmt.Println("No API Key provided. Assuming local model usage.")
+	// Конфигурация клиента: LLM_API_KEY / LLM_BASE_URL / LLM_MODEL из окружения (или из .env)
+	cfg, err := llm.LoadConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-
-	config := openai.DefaultConfig(token)
-	if baseURL != "" {
-		config.BaseURL = baseURL
-		fmt.Printf("Connected to: %s\n", baseURL)
-	}
-
-	client := openai.NewClientWithConfig(config)
+	client := llm.NewOpenAI(
+		llm.WithAPIKey(cfg.APIKey),
+		llm.WithBaseURL(cfg.BaseURL),
+		llm.WithModel(cfg.Model),
+	)
 
 	// Инициализация памяти
-	messages := []openai.ChatCompletionMessage{
+	messages := []llm.Message{
 		{
-			Role:    openai.ChatMessageRoleSystem,
+			Role:    "system",
 			Content: "Ты опытный Linux администратор. Отвечай кратко и по делу.",
 		},
 	}
@@ -77,17 +77,15 @@ func main() {
 			continue
 		}
 
-		messages = append(messages, openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleUser,
+		messages = append(messages, llm.Message{
+			Role:    "user",
 			Content: input,
 		})
 
-		req := openai.ChatCompletionRequest{
-			Model:    "gpt-4o-mini", // Или "local-model", имя часто игнорируется локальными серверами
+		resp, err := client.Complete(ctx, llm.Request{
+			Model:    cfg.Model, // Из LLM_MODEL (по умолчанию glm-5.3)
 			Messages: messages,
-		}
-
-		resp, err := client.CreateChatCompletion(ctx, req)
+		})
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			continue
@@ -96,8 +94,8 @@ func main() {
 		answer := resp.Choices[0].Message.Content
 		fmt.Println("AI:", answer)
 
-		messages = append(messages, openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleAssistant,
+		messages = append(messages, llm.Message{
+			Role:    "assistant",
 			Content: answer,
 		})
 	}

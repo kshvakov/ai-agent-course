@@ -231,7 +231,7 @@ func resumeTask(ctx context.Context, store *TaskStore, taskID string) error {
 
 ### Точка интеграции 1: Agent Loop
 
-> **Примечание:** лабы пока не ревизованы (остаются на старом стеке) — используйте их как наводку, канон смотрите в этой главе.
+> **Примечание:** лаба lab04 переведена на нейтральный клиент; канонический материал — в этой главе.
 
 В [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab04-autonomy/main.go) добавьте сохранение состояния:
 
@@ -255,7 +255,7 @@ store.Save(task)
 
 ### Точка интеграции 2: Tool Execution
 
-> **Примечание:** лабы пока не ревизованы (остаются на старом стеке) — используйте их как наводку, канон смотрите в этой главе.
+> **Примечание:** лаба lab02 переведена на нейтральный клиент; канонический материал — в этой главе.
 
 В [`labs/lab02-tools/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab02-tools/main.go) добавьте retry для инструментов:
 
@@ -273,7 +273,7 @@ func executeToolWithRetry(ctx context.Context, toolCall ToolCall) (string, error
 
 ## Мини-пример кода
 
-> **Примечание:** лаба пока не ревизована (остаётся на старом стеке) — используйте её как наводку, канон смотрите в этой главе.
+> **Примечание:** лаба lab04 переведена на нейтральный клиент; канонический материал — в этой главе.
 
 Полный пример с workflow и state management на базе [`labs/lab04-autonomy/main.go`](https://github.com/kshvakov/ai-agent-course/blob/main/translations/ru/labs/lab04-autonomy/main.go). Клиент LLM — нейтральный (`llm.Client`): retry транзиентных ошибок уже внутри клиента, здесь мы управляем только состоянием и границами:
 

@@ -100,7 +100,7 @@ func generateRunID() string {
 
 ### Шаг 3: Логирование в agent loop
 
-Вставьте логирование в цикл агента (канон цикла — [глава 04](../04-autonomy-and-loops/README.md); лаба [`lab04-autonomy`](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab04-autonomy) пока не ревизована и будет обновлена отдельным этапом). Примеры используют нейтральный клиент из главы 04: `client.Complete(ctx, Request{...})` возвращает ответ с `resp.Choices[0].Message` и `resp.Usage` (`PromptTokens` / `CompletionTokens` / `CacheReadTokens` от провайдера):
+Вставьте логирование в цикл агента (канон цикла — [глава 04](../04-autonomy-and-loops/README.md); лаба [`lab04-autonomy`](https://github.com/kshvakov/ai-agent-course/tree/main/translations/ru/labs/lab04-autonomy) переведена на тот же нейтральный клиент). Примеры используют нейтральный клиент из главы 04: `client.Complete(ctx, Request{...})` возвращает ответ с `resp.Choices[0].Message` и `resp.Usage` (`PromptTokens` / `CompletionTokens` / `CacheReadTokens` от провайдера):
 
 ```go
 func runAgent(ctx context.Context, client Client, userInput string) (string, error) {
@@ -220,7 +220,7 @@ func logAgentRunError(runID string, err error) {
 
 ### Шаг 5: Логирование tool execution
 
-В функции выполнения инструментов добавьте логирование (канон tools — [глава 03](../03-tools-and-function-calling/README.md); лаба lab02-tools пока не ревизована):
+В функции выполнения инструментов добавьте логирование (канон tools — [глава 03](../03-tools-and-function-calling/README.md); ревизованная lab02-tools использует тот же клиент):
 
 ```go
 func executeToolWithLogging(runID string, toolCall ToolCall) (string, error) {
@@ -260,7 +260,7 @@ func executeToolWithLogging(runID string, toolCall ToolCall) (string, error) {
 
 ### Точка интеграции 1: Agent Loop
 
-В своём рантайме из главы 04 (лаба lab04-autonomy пока не ревизована — добавьте логирование в цикл агента:
+В своём рантайме из главы 04 (ревизованная lab04-autonomy использует ту же форму цикла) — добавьте логирование в цикл агента:
 
 ```go
 // В начале main():
@@ -280,7 +280,7 @@ log.Printf("TOOL_EXECUTED: run_id=%s tool=%s result=%s", runID, toolCall.Name, r
 
 ### Точка интеграции 2: Tool Execution
 
-В своём рантайме добавьте логирование при выполнении инструментов (лаба lab02-tools пока не ревизована):
+В своём рантайме добавьте логирование при выполнении инструментов (ревизованная lab02-tools использует тот же клиент):
 
 ```go
 // В функции выполнения инструмента:
@@ -1044,7 +1044,7 @@ log.Printf("TOKENS_USED: run_id=%s prompt=%d completion=%d cache_read=%d",
 
 ### Упражнение 1: Реализуйте структурированное логирование
 
-Добавьте структурированное логирование в свой рантайм из главы 04 (лаба lab04-autonomy пока не ревизована):
+Добавьте структурированное логирование в свой рантайм из главы 04 (ревизованная lab04-autonomy использует ту же форму цикла; канонический материал — в этой главе):
 
 ```go
 func logAgentRun(runID string, userInput string, toolCalls []ToolCall, result string) {

@@ -33,7 +33,7 @@ func (t *AnsibleRunPlaybookTool) Execute(args json.RawMessage) (string, error) {
 	// TODO: Парсинг аргументов
 	// var params struct { Playbook string }
 	// json.Unmarshal(args, &params)
-	
+
 	// TODO: exec.Command("ansible-playbook", params.Playbook)
 	return "Playbook executed successfully", nil
 }
@@ -41,7 +41,7 @@ func (t *AnsibleRunPlaybookTool) Execute(args json.RawMessage) (string, error) {
 func main() {
 	// 4. Реестр инструментов (Map)
 	registry := make(map[string]Tool)
-	
+
 	pTool := &ProxmoxListVMsTool{}
 	registry[pTool.Name()] = pTool
 
@@ -62,4 +62,3 @@ func main() {
 		fmt.Println("Tool not found")
 	}
 }
-

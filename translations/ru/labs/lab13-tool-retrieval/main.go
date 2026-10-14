@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/kshvakov/agent/llm"
 )
 
 // ToolDefinition описывает инструмент в каталоге
@@ -30,7 +30,7 @@ var toolCatalog = []ToolDefinition{
 	{Name: "awk", Description: "Pattern scanning and processing. Use for complex text transformations.", Tags: []string{"transform", "parse", "text"}, RiskLevel: "safe"},
 	{Name: "sed", Description: "Stream editor for filtering and transforming text.", Tags: []string{"transform", "filter", "text"}, RiskLevel: "safe"},
 	{Name: "tr", Description: "Translate or delete characters. Use for character-level transformations.", Tags: []string{"transform", "text"}, RiskLevel: "safe"},
-	// Добавлено больше инструментов для демонстрации большого каталога (50+ инструментов)
+	// Добавлено больше инструментов, чтобы каталог был больше (50+ инструментов)
 	{Name: "find", Description: "Search for files in directory tree.", Tags: []string{"file", "search"}, RiskLevel: "moderate"},
 	{Name: "ls", Description: "List directory contents.", Tags: []string{"file", "list"}, RiskLevel: "safe"},
 	{Name: "cat", Description: "Display file contents.", Tags: []string{"file", "read"}, RiskLevel: "safe"},
@@ -146,52 +146,45 @@ func executePipeline(pipelineJSON string, inputData string) (string, error) {
 }
 
 func main() {
-	// 1. Настройка клиента (Local-First)
-	token := os.Getenv("OPENAI_API_KEY")
-	baseURL := os.Getenv("OPENAI_BASE_URL")
-	if token == "" {
-		token = "dummy"
+	// 1. Конфигурация клиента: LLM_API_KEY / LLM_BASE_URL / LLM_MODEL из окружения (или из .env)
+	cfg, err := llm.LoadConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-
-	config := openai.DefaultConfig(token)
-	if baseURL != "" {
-		config.BaseURL = baseURL
-	}
-	client := openai.NewClientWithConfig(config)
+	client := llm.NewOpenAI(
+		llm.WithAPIKey(cfg.APIKey),
+		llm.WithBaseURL(cfg.BaseURL),
+		llm.WithModel(cfg.Model),
+	)
 
 	ctx := context.Background()
 
-	// 2. Определение инструментов
-	tools := []openai.Tool{
+	// 2. Определяем инструменты
+	tools := []llm.ToolDef{
 		{
-			Type: openai.ToolTypeFunction,
-			Function: &openai.FunctionDefinition{
-				Name:        "search_tool_catalog",
-				Description: "Search tool catalog for relevant tools. Use this BEFORE building pipelines to find which tools are available.",
-				Parameters: json.RawMessage(`{
-					"type": "object",
-					"properties": {
-						"query": {"type": "string", "description": "Search query (e.g., 'error filter sort')"},
-						"top_k": {"type": "number", "description": "Number of tools to return (default: 5)"}
-					},
-					"required": ["query"]
-				}`),
-			},
+			Name:        "search_tool_catalog",
+			Description: "Search tool catalog for relevant tools. Use this BEFORE building pipelines to find which tools are available.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"query": {"type": "string", "description": "Search query (e.g., 'error filter sort')"},
+					"top_k": {"type": "number", "description": "Number of tools to return (default: 5)"}
+				},
+				"required": ["query"]
+			}`),
 		},
 		{
-			Type: openai.ToolTypeFunction,
-			Function: &openai.FunctionDefinition{
-				Name:        "execute_pipeline",
-				Description: "Execute a pipeline of tools. Provide pipeline JSON with 'steps' (array of {tool, args}), 'risk_level' (safe/moderate/dangerous), and optional 'expected_output'.",
-				Parameters: json.RawMessage(`{
-					"type": "object",
-					"properties": {
-						"pipeline": {"type": "string", "description": "JSON pipeline definition"},
-						"input_data": {"type": "string", "description": "Input data (e.g., log file content)"}
-					},
-					"required": ["pipeline", "input_data"]
-				}`),
-			},
+			Name:        "execute_pipeline",
+			Description: "Execute a pipeline of tools. Provide pipeline JSON with 'steps' (array of {tool, args}), 'risk_level' (safe/moderate/dangerous), and optional 'expected_output'.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"pipeline": {"type": "string", "description": "JSON pipeline definition"},
+					"input_data": {"type": "string", "description": "Input data (e.g., log file content)"}
+				},
+				"required": ["pipeline", "input_data"]
+			}`),
 		},
 	}
 
@@ -214,49 +207,50 @@ Example pipeline JSON:
     "expected_output": "Top 10 error lines, sorted"
 }`
 
-	messages := []openai.ChatCompletionMessage{
-		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
-		{Role: openai.ChatMessageRoleUser, Content: "Find top 5 most frequent error lines from the logs, sorted by frequency"},
+	messages := []llm.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: "Find top 5 most frequent error lines from the logs, sorted by frequency"},
 	}
 
 	fmt.Println("Starting Agent with Tool Retrieval...")
 	fmt.Printf("Tool catalog size: %d tools\n", len(toolCatalog))
 	fmt.Printf("Sample logs: %d lines\n", len(strings.Split(sampleLogs, "\n")))
 
-	// 3. ЦИКЛ АГЕНТА
+	// 3. THE LOOP
 	for i := 0; i < 10; i++ {
-		req := openai.ChatCompletionRequest{
-			Model:    "gpt-4o-mini",
+		req := llm.Request{
+			Model:    cfg.Model,
 			Messages: messages,
 			Tools:    tools,
 		}
 
-		resp, err := client.CreateChatCompletion(ctx, req)
+		resp, err := client.Complete(ctx, req)
 		if err != nil {
-			panic(fmt.Sprintf("API Error: %v", err))
+			fmt.Fprintf(os.Stderr, "API Error: %v\n", err)
+			os.Exit(1)
 		}
 
 		msg := resp.Choices[0].Message
 		messages = append(messages, msg)
 
-		// 4. Анализ ответа
+		// 4. Анализируем ответ
 		if len(msg.ToolCalls) == 0 {
 			fmt.Println("\nAI:", msg.Content)
 			break
 		}
 
-		// 5. Выполнение инструментов
+		// 5. Выполняем инструменты
 		for _, toolCall := range msg.ToolCalls {
-			fmt.Printf("\nExecuting tool: %s\n", toolCall.Function.Name)
+			fmt.Printf("\nExecuting tool: %s\n", toolCall.Name)
 
 			var result string
 
-			if toolCall.Function.Name == "search_tool_catalog" {
+			if toolCall.Name == "search_tool_catalog" {
 				var args struct {
 					Query string  `json:"query"`
 					TopK  float64 `json:"top_k,omitempty"`
 				}
-				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
+				if err := json.Unmarshal([]byte(toolCall.Arguments), &args); err != nil {
 					result = fmt.Sprintf("Error: Invalid JSON: %v", err)
 				} else {
 					topK := 5
@@ -269,12 +263,12 @@ Example pipeline JSON:
 						result += fmt.Sprintf("- %s: %s (tags: %v)\n", tool.Name, tool.Description, tool.Tags)
 					}
 				}
-			} else if toolCall.Function.Name == "execute_pipeline" {
+			} else if toolCall.Name == "execute_pipeline" {
 				var args struct {
 					Pipeline  string `json:"pipeline"`
 					InputData string `json:"input_data"`
 				}
-				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
+				if err := json.Unmarshal([]byte(toolCall.Arguments), &args); err != nil {
 					result = fmt.Sprintf("Error: Invalid JSON: %v", err)
 				} else {
 					result, err = executePipeline(args.Pipeline, args.InputData)
@@ -283,13 +277,13 @@ Example pipeline JSON:
 					}
 				}
 			} else {
-				result = fmt.Sprintf("Error: Unknown tool %s", toolCall.Function.Name)
+				result = fmt.Sprintf("Error: Unknown tool %s", toolCall.Name)
 			}
 
 			fmt.Println("Tool Output:", result)
 
-			messages = append(messages, openai.ChatCompletionMessage{
-				Role:       openai.ChatMessageRoleTool,
+			messages = append(messages, llm.Message{
+				Role:       "tool",
 				Content:    result,
 				ToolCallID: toolCall.ID,
 			})

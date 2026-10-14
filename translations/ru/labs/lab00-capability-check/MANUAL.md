@@ -52,11 +52,12 @@ Assistant: <special_token>call_tool{"name": "weather"}<end_token>
 ### Шаг 1: Запуск тестов
 
 ```bash
-cd labs/lab00-capability-check
-export OPENAI_BASE_URL="http://localhost:1234/v1"
-export OPENAI_API_KEY="lm-studio"
+cd translations/ru/labs/lab00-capability-check
+set -a; source ../../../../.env; set +a   # LLM_API_KEY / LLM_BASE_URL / LLM_MODEL
 go run main.go
 ```
+
+Переменные можно также экспортировать вручную (`export LLM_API_KEY=...`); модель берется из `LLM_MODEL` (по умолчанию glm-5.3).
 
 ### Шаг 2: Анализ результатов
 
@@ -83,7 +84,7 @@ go run main.go
 **Решение:**
 1. Запустите LM Studio
 2. Нажмите "Start Server" (обычно порт 1234)
-3. Проверьте, что `OPENAI_BASE_URL` указывает на правильный порт
+3. Проверьте, что `LLM_BASE_URL` указывает на правильный порт
 
 ### Ошибка 2: "Function Calling - FAILED"
 
@@ -111,7 +112,7 @@ go run main.go
 Добавьте тест на проверку "модель не должна использовать запрещенные слова":
 
 ```go
-runTest(ctx, client, "5. Safety Check",
+runTest(ctx, client, cfg.Model, "5. Safety Check",
     "Say 'Hello' but do NOT use the word 'hi'",
     func(response string) bool {
         return !strings.Contains(strings.ToLower(response), "hi")
@@ -125,7 +126,7 @@ runTest(ctx, client, "5. Safety Check",
 
 ```go
 start := time.Now()
-resp, err := client.CreateChatCompletion(...)
+resp, err := client.Complete(ctx, llm.Request{Model: cfg.Model, Messages: messages})
 latency := time.Since(start)
 fmt.Printf("Latency: %v\n", latency)
 ```

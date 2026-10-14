@@ -54,7 +54,7 @@ Condense:
 
 ```go
 type Run struct {
-    messages    []openai.ChatCompletionMessage // линейный лог, system на индексе 0
+    messages    []llm.Message // линейный лог, system на индексе 0
     lastTokens  int                            // usage.PromptTokens последнего ответа
     contextMax  int                            // окно модели, например 128_000
     condenseDone bool                          // лимит: один condense на Run
@@ -89,9 +89,9 @@ func (r *Run) condense(ctx context.Context, llm LLM) error {
         return err
     }
 
-    next := make([]openai.ChatCompletionMessage, 0, 2+len(tail))
+    next := make([]llm.Message, 0, 2+len(tail))
     next = append(next, system)
-    next = append(next, openai.ChatCompletionMessage{
+    next = append(next, llm.Message{
         Role:    "user",
         Content: "Контекст предыдущей работы:\n\n" + summary,
     })

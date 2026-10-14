@@ -14,7 +14,7 @@
 ## Задание
 В файле `main.go` вы найдете заготовку консольного чата.
 
-1.  **Инициализация:** Создайте клиент OpenAI. Если задана переменная `OPENAI_BASE_URL` (для LM Studio/Ollama), используйте её.
+1.  **Инициализация:** Загрузите настройки подключения с помощью `llm.LoadConfig()` (переменные окружения `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`, обычно загружаются из `.env`) и создайте клиент через `llm.NewOpenAI(...)`.
 2.  **Memory Loop:** Реализуйте цикл:
     *   Считать ввод пользователя.
     *   Добавить сообщение пользователя в историю (`messages`).
@@ -27,7 +27,9 @@
 1.  Запустите LM Studio -> Start Server (Port 1234).
 2.  В терминале:
 ```bash
-export OPENAI_BASE_URL="http://localhost:1234/v1"
-export OPENAI_API_KEY="lm-studio"
+export LLM_API_KEY="lm-studio"
+export LLM_BASE_URL="http://localhost:1234/v1"
+# export LLM_MODEL="glm-5.3"  # опционально, по умолчанию glm-5.3
 go run main.go
 ```
+(Переменные могут лежать в файле `.env` в корне репозитория: `set -a; source ../../../../.env; set +a`.)

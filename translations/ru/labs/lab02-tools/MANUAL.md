@@ -35,23 +35,20 @@ Function Calling — это результат специальной трени
 ### Шаг 1: Определение инструмента
 
 ```go
-tools := []openai.Tool{
+tools := []llm.ToolDef{
     {
-        Type: openai.ToolTypeFunction,
-        Function: &openai.FunctionDefinition{
-            Name:        "get_server_status",
-            Description: "Get the status of a server by IP address",
-            Parameters: json.RawMessage(`{
-                "type": "object",
-                "properties": {
-                    "ip": {
-                        "type": "string",
-                        "description": "IP address of the server"
-                    }
-                },
-                "required": ["ip"]
-            }`),
-        },
+        Name:        "get_server_status",
+        Description: "Get the status of a server by IP address",
+        Parameters: json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "ip": {
+                    "type": "string",
+                    "description": "IP address of the server"
+                }
+            },
+            "required": ["ip"]
+        }`),
     },
 }
 ```
@@ -61,8 +58,8 @@ tools := []openai.Tool{
 ### Шаг 2: Отправка запроса с инструментами
 
 ```go
-req := openai.ChatCompletionRequest{
-    Model:    "gpt-4o-mini",
+req := llm.Request{
+    Model:    cfg.Model, // Из LLM_MODEL (по умолчанию glm-5.3)
     Messages: messages,
     Tools:    tools,  // Передаем список инструментов
 }
@@ -71,21 +68,21 @@ req := openai.ChatCompletionRequest{
 ### Шаг 3: Обработка ответа
 
 ```go
-resp, err := client.CreateChatCompletion(ctx, req)
+resp, err := client.Complete(ctx, req)
 msg := resp.Choices[0].Message
 
 // Проверяем, хочет ли модель вызвать функцию
 if len(msg.ToolCalls) > 0 {
     // Модель хочет вызвать инструмент!
     call := msg.ToolCalls[0]
-    fmt.Printf("Function: %s\n", call.Function.Name)
-    fmt.Printf("Arguments: %s\n", call.Function.Arguments)
+    fmt.Printf("Function: %s\n", call.Name)
+    fmt.Printf("Arguments: %s\n", call.Arguments)
     
     // Парсим аргументы
     var args struct {
         IP string `json:"ip"`
     }
-    json.Unmarshal([]byte(call.Function.Arguments), &args)
+    json.Unmarshal([]byte(call.Arguments), &args)
     
     // Вызываем реальную функцию
     result := runGetServerStatus(args.IP)
@@ -124,7 +121,7 @@ if len(msg.ToolCalls) > 0 {
 **Решение:**
 ```go
 // Валидация JSON перед парсингом
-if !json.Valid([]byte(call.Function.Arguments)) {
+if !json.Valid([]byte(call.Arguments)) {
     return "Error: Invalid JSON", nil
 }
 ```
@@ -144,7 +141,7 @@ if !json.Valid([]byte(call.Function.Arguments)) {
 allowedFunctions := map[string]bool{
     "get_server_status": true,
 }
-if !allowedFunctions[call.Function.Name] {
+if !allowedFunctions[call.Name] {
     return "Error: Unknown function", nil
 }
 ```
