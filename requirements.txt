@@ -1,5 +1,7 @@
 mkdocs-material>=9.5.0
-mkdocs-static-i18n>=1.0.0
+# <2: llms_txt plugin relies on i18n 1.x behavior (on_nav rerun per locale,
+# en first; on_post_build inside the last locale build)
+mkdocs-static-i18n>=1.0.0,<2
 pymdown-extensions>=10.0.0
 
 

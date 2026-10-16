@@ -48,6 +48,7 @@ plugins:
   - auto_description:
       max_length: 160
       min_length: 100
+  - llms_txt:
   - i18n:
       docs_structure: folder
       fallback_to_default: false
@@ -193,12 +194,33 @@ extra:
       ru: Практический курс по созданию автономных AI-агентов на Go
     # Optional. If set, will be used for OpenGraph/Twitter.
     # Can be absolute URL or a path relative to site root, e.g. "assets/social-card.png"
-    social_image: ""
+    social_image: assets/images/social-card.png
     # Course structured data (schema.org Course)
     course:
       name:
         en: Designing Autonomous AI Agents
         ru: Проектирование Автономных AI Агентов
+      teaches:
+        en:
+          - Building autonomous AI agents in Go
+          - Tools and function calling (JSON Schema, the tool-runtime contract)
+          - The ReAct loop and agent autonomy
+          - Safety and Human-in-the-Loop controls
+          - RAG and knowledge bases
+          - Multi-agent orchestration
+          - Evals and reliability engineering
+          - Context and memory engineering
+          - "Production readiness: observability, cost, security, data privacy"
+        ru:
+          - Разработка автономных AI-агентов на Go
+          - Инструменты и Function Calling (JSON Schema, контракт tool-runtime)
+          - Цикл ReAct и автономность агента
+          - Безопасность и Human-in-the-Loop
+          - RAG и базы знаний
+          - Оркестрация мультиагентных систем
+          - Evals и обеспечение надежности
+          - Инжиниринг контекста и памяти
+          - "Продакшн-готовность: observability, стоимость, безопасность, приватность"
       provider:
         name: Kirill Shvakov
         # Optional: sameAs URLs (GitHub, LinkedIn, etc.)

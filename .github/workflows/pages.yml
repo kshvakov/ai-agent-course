@@ -49,6 +49,9 @@ jobs:
       - name: Check site anchors
         run: python .mkdocs/scripts/check_site_anchors.py build/site
 
+      - name: Check llms.txt / 404 artifacts
+        run: python .mkdocs/scripts/check_llms_txt.py build/site
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

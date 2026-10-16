@@ -50,6 +50,13 @@
   {%- set is_ru = path.startswith('ru/') -%}
   {%- set lang = 'ru' if is_ru else 'en' -%}
   {%- set og_locale = 'ru_RU' if is_ru else 'en_US' -%}
+  {# i18n's ru homepage does not always set is_homepage — check the URL too. #}
+  {%- set is_home = page.is_homepage or path == 'ru/' -%}
+  {# Localized course title for OG/Twitter on homepages. #}
+  {%- set course_home_title = config.site_name -%}
+  {%- if config.extra and config.extra.seo and config.extra.seo.course and config.extra.seo.course.name and config.extra.seo.course.name.get(lang) -%}
+    {%- set course_home_title = config.extra.seo.course.name.get(lang) -%}
+  {%- endif -%}
 
   {%- set page_desc = "" -%}
   {%- if page.meta and page.meta.description -%}
@@ -65,17 +72,22 @@
     {%- set robots_value = page.meta.robots -%}
   {%- endif -%}
 
-  {# MkDocs Material already renders canonical/description/hreflang. We override description to ensure proper escaping. #}
-  {%- if page_desc -%}
-    <meta name="description" content="{{ page_desc | e }}" />
-  {%- endif -%}
+  {# Material renders the single <meta name="description"> from page.meta
+     (auto_description fills it per page, localized). Do NOT emit a second one. #}
   <meta name="robots" content="{{ robots_value | e }}" />
+
+  {# x-default hreflang: crawlers with no language match get the EN version #}
+  {%- if is_ru -%}
+    <link rel="alternate" hreflang="x-default" href="{{ base }}/{{ path[3:] }}" />
+  {%- else -%}
+    <link rel="alternate" hreflang="x-default" href="{{ canonical }}" />
+  {%- endif -%}
 
   {# OpenGraph #}
   <meta property="og:site_name" content="{{ config.site_name | e }}" />
-  <meta property="og:title" content="{{ (config.site_name if page.is_homepage else page.title) | e }}" />
+  <meta property="og:title" content="{{ (course_home_title if is_home else page.title) | e }}" />
   <meta property="og:url" content="{{ canonical | e }}" />
-  <meta property="og:type" content="{{ 'website' if page.is_homepage else 'article' }}" />
+  <meta property="og:type" content="{{ 'website' if is_home else 'article' }}" />
   <meta property="og:locale" content="{{ og_locale }}" />
   {%- if page_desc -%}
     <meta property="og:description" content="{{ page_desc | e }}" />
@@ -102,7 +114,7 @@
     <meta name="twitter:card" content="summary" />
   {%- endif -%}
 
-  <meta name="twitter:title" content="{{ (config.site_name if page.is_homepage else page.title) | e }}" />
+  <meta name="twitter:title" content="{{ (course_home_title if is_home else page.title) | e }}" />
   {%- if page_desc -%}
     <meta name="twitter:description" content="{{ page_desc | e }}" />
   {%- endif -%}
@@ -152,11 +164,8 @@
   {# /Breadcrumbs schema.org #}
 
   {# Course schema.org (JSON-LD) - only on homepage #}
-  {%- if page.is_homepage -%}
-    {%- set course_name = config.site_name -%}
-    {%- if config.extra and config.extra.seo and config.extra.seo.course and config.extra.seo.course.name and config.extra.seo.course.name.get(lang) -%}
-      {%- set course_name = config.extra.seo.course.name.get(lang) -%}
-    {%- endif -%}
+  {%- if is_home -%}
+    {%- set course_name = course_home_title -%}
 
     {%- set provider_name = "Kirill Shvakov" -%}
     {%- if config.extra and config.extra.seo and config.extra.seo.course and config.extra.seo.course.provider and config.extra.seo.course.provider.name -%}
@@ -171,6 +180,11 @@
       {%- set _ = provider_schema.update({'sameAs': config.extra.seo.course.provider.sameAs}) -%}
     {%- endif -%}
 
+    {%- set teaches_list = [] -%}
+    {%- if config.extra and config.extra.seo and config.extra.seo.course and config.extra.seo.course.teaches and config.extra.seo.course.teaches.get(lang) -%}
+      {%- set teaches_list = config.extra.seo.course.teaches.get(lang) -%}
+    {%- endif -%}
+
     {%- set course_schema = {
       '@context': 'https://schema.org',
       '@type': 'Course',
@@ -179,8 +193,14 @@
       'provider': provider_schema,
       'url': canonical,
       'inLanguage': lang,
-      'courseMode': 'online'
+      'hasCourseInstance': {
+        '@type': 'CourseInstance',
+        'courseMode': 'online'
+      }
     } -%}
+    {%- if teaches_list -%}
+      {%- set _ = course_schema.update({'teaches': teaches_list}) -%}
+    {%- endif -%}
     <script type="application/ld+json">{{ course_schema | tojson }}</script>
 
     {# WebSite schema.org (JSON-LD) - only on homepage #}
@@ -214,6 +234,22 @@
   <script type="application/ld+json">{{ person_schema | tojson }}</script>
   {# /Person schema.org #}
   {# --- /SEO meta tags --- #}
+{% endblock %}
+
+{# Homepage <title>: Material renders bare site_name for homepages, so we
+   inject keyword-rich titles; other pages keep the theme's default. #}
+{% block htmltitle %}
+  {# Block scope is separate from extrahead — recompute here. #}
+  {%- set p_url = (page.url | default('', true)) -%}
+  {%- if page.is_homepage or p_url == 'ru/' -%}
+    {%- if p_url.startswith('ru/') -%}
+      <title>Проектирование Автономных AI Агентов — практический курс по AI-агентам на Go</title>
+    {%- else -%}
+      <title>AI Agent Course — Designing Autonomous AI Agents in Go</title>
+    {%- endif -%}
+  {%- else -%}
+    {{ super() }}
+  {%- endif -%}
 {% endblock %}
 
 {% block scripts %}

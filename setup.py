@@ -14,6 +14,7 @@ setup(
     entry_points={
         "mkdocs.plugins": [
             "auto_description = mkdocs_plugins.auto_description:AutoDescriptionPlugin",
+            "llms_txt = mkdocs_plugins.llms_txt:LlmsTxtPlugin",
         ],
     },
 )

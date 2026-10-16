@@ -30,10 +30,11 @@ install: venv ## Install dependencies (requirements.txt) into the venv
 prepare: install ## Prepare documentation (python .mkdocs/scripts/prepare_docs.py)
 	@"$(PYTHON)" .mkdocs/scripts/prepare_docs.py
 
-build: prepare ## Full build: mkdocs build + anchor fix + anchor check (same as CI)
+build: prepare ## Full build: mkdocs build + anchor fix + anchor check + llms check (same as CI)
 	@"$(MKDOCS)" build
 	@"$(PYTHON)" .mkdocs/scripts/fix_anchor_slashes.py build/site
 	@"$(PYTHON)" .mkdocs/scripts/check_site_anchors.py build/site
+	@"$(PYTHON)" .mkdocs/scripts/check_llms_txt.py build/site
 
 serve: prepare ## Run local MkDocs server
 	@"$(MKDOCS)" serve
